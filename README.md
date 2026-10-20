@@ -126,7 +126,10 @@ Invalid cwd is rejected before mount-table construction, leaving the session
 usable and its default eligibility unchanged.
 
 `printCallback` gets each run of printed text as `(stream, text)`, with
-`stream` `'stdout'` or `'stderr'`. `CollectStreams` and `CollectString` are
+`stream` `'stdout'` or `'stderr'`. It is a callback of type
+`FutureOr<void> Function(String stream, String text)`; one that returns a
+future is awaited before the next run is delivered, so a slow sink holds
+the feed back. `CollectStreams` and `CollectString` are
 ready-made callbacks that collect it under a byte cap:
 
 ```dart
@@ -134,6 +137,11 @@ final out = CollectString();
 await session.feedRun('print("hi")', printCallback: out.call);
 print(out.output); // hi
 ```
+
+A collector outlives the feed it served: it keeps the prints of every feed
+it is passed to, and its cap covers them all, so a collector reused across
+feeds fills up. Reading `output` does not drain it; a new collector starts
+empty.
 
 Without a callback, printed text goes to the process's stdout and stderr on
 native and to the console in a browser.
@@ -166,6 +174,15 @@ with `loadSnapshot`.
 
 `pathlib`, `open()`, `os.getenv`, `datetime.now` and the like are OS calls.
 Pass `os:`, an `OsHandler`, to answer them; without one they are declined.
+A handler is a callback of type that returns the answer:
+
+```dart
+FutureOr<MontyValue> Function(
+  String name,
+  List<MontyValue> args,
+  Map<String, MontyValue> kwargs,
+)
+```
 
 ```dart
 await session.feedRun(
@@ -364,6 +381,93 @@ A class defined in the sandbox comes back as `MontyClassProxy`; its
 `classType` (`MontyClassTypeProxy`) names the class and says whether it is a
 dataclass. A function or a type comes back as `MontyStdTypeProxy`, whose
 `kind` is `'function'` or `'type'`.
+
+### Telemetry
+
+`instrumentTelemetry` installs an adapter for the isolate's lifetime: every
+pool and session in the isolate then reports its spans, logs and
+measurements through it. Monty owns no exporter, so the adapter is yours: it
+receives the records and hands them to your own SDK.
+
+```dart
+class LoggingTelemetry implements MontyTelemetry {
+  @override
+  Object? currentContext() => null;
+
+  @override
+  Object? contextWithSpan(Object? context, Object span) => context;
+
+  @override
+  Object startSpan(
+    String name,
+    Object? parent,
+    Map<String, Object> attributes, {
+    required BigInt startTimeUnixNanos,
+  }) => name;
+
+  @override
+  void endSpan(
+    Object span,
+    Map<String, Object> attributes, {
+    required BigInt endTimeUnixNanos,
+  }) {}
+
+  @override
+  void emitLog(
+    Object? span,
+    String severity,
+    String body,
+    Map<String, Object> attributes, {
+    required BigInt timestampUnixNanos,
+    required int severityNumber,
+  }) {
+    print('[$severity] $body');
+  }
+
+  @override
+  void recordMetric(
+    String name,
+    String kind,
+    String unit,
+    String description,
+    num value,
+    Map<String, Object> attributes, {
+    required Object? context,
+  }) {
+    print('$name: $value');
+  }
+
+  @override
+  R runInContext<R>(Object? context, R Function() body) => body();
+}
+
+void main() {
+  instrumentTelemetry(LoggingTelemetry());
+}
+```
+
+The contract:
+
+- The context and the span are your own tokens: Monty hands them back and
+  reads nothing in them. `currentContext` gives the parent of a session's
+  spans, `startSpan` opens a span under a parent and returns its token, and
+  `endSpan` and `emitLog` take that token again. An adapter that ignores
+  spans returns any token and ignores it thereafter.
+- `runInContext` runs a host callback with the context current, including
+  its asynchronous continuations. The callback runs once whatever the
+  adapter does: one that does not call it has it run anyway.
+- Every measurement carries an explicitly empty context (`context` is
+  null): use your SDK's empty context, not the ambient span. The name, kind,
+  unit and description are upstream's instrument names.
+- Attribute values are strings, integers, doubles or booleans. Delivery is
+  synchronous; there is nothing to flush.
+- A signal that throws — spans, logs or metrics — is disabled for the rest
+  of the isolate and reported once through the zone `instrumentTelemetry`
+  was called in. The other signals keep working.
+
+Without an adapter, no records are made and a snapshot's trace context is
+null. A second `instrumentTelemetry` call throws `StateError`: the
+installation cannot be undone.
 
 ### Testing
 

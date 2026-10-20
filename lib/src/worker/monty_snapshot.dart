@@ -1,11 +1,11 @@
 /// Step-by-step driving of a session: what `feedStart` and each resume reach,
 /// and the answers a host gives to a call.
 ///
-/// The types become the public `MontySnapshot` family and the five
-/// `ExternalResult` names at the cutover ([MontyComplete] then takes the
-/// name `MontyComplete`); until then they are internal.
-///
-/// Internal to the package; nothing here is exported.
+/// The package exports the snapshot family ([MontySnapshot], [MontyComplete],
+/// [FunctionSnapshot], [FutureSnapshot], [NameLookupSnapshot]), the answers
+/// a host gives ([ExternalResult], [ExternalReturnValue],
+/// [ExternalSettledResult], [ExternalFuture]), [ExternalException] and
+/// [SourceRange]; the rest of this library is internal.
 library;
 
 import 'dart:typed_data';

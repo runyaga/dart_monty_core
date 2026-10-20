@@ -8,7 +8,8 @@
 /// [CollectStreams.call] is what the session calls for each printed
 /// fragment, and may be called directly too.
 ///
-/// Internal until the cutover exports both; nothing here is exported.
+/// The package exports both collectors, [CollectStreams] and
+/// [CollectString]; the rest of this library is internal.
 library;
 
 import 'dart:async';
@@ -29,14 +30,18 @@ const int collectStreamsEntryOverhead = 64;
 /// Collects each printed fragment as a `(stream, text)` record, in order
 /// (upstream's `CollectStreams`).
 ///
-/// Each record is charged its text's UTF-8 bytes plus
-/// [collectStreamsEntryOverhead], against `maxBytes`
-/// ([defaultMaxPrintCollectBytes] by default; null for no cap, for trusted
-/// code only). The cap is the collector's own, not the session's
-/// `maxMemory`.
+/// Each record is charged its text's UTF-8 bytes plus 64 bytes, against
+/// `maxBytes` (10 MiB by default; null for no cap, for trusted code only).
+/// The cap is the collector's own, not the session's `maxMemory`.
+///
+/// A collector outlives the feed it served: it keeps the prints of every
+/// feed it is passed to, and the cap covers them all, so a collector reused
+/// across feeds fills up. Reading [output] does not drain it; a new
+/// collector starts empty.
 final class CollectStreams {
-  /// An empty collector capped at [maxBytes]. A negative [maxBytes] throws
-  /// [ArgumentError], as upstream refuses it (`OverflowError` there).
+  /// An empty collector capped at [maxBytes] (10 MiB by default). A negative
+  /// [maxBytes] throws [ArgumentError], as upstream refuses it
+  /// (`OverflowError` there).
   CollectStreams({int? maxBytes = defaultMaxPrintCollectBytes})
     : _maxBytes = _checkedCap(maxBytes);
 
@@ -62,7 +67,8 @@ final class CollectStreams {
   }
 
   /// The records so far, in a new list: reading does not drain the
-  /// collector, and changing the list does not reach it.
+  /// collector, and changing the list does not reach it. They are the
+  /// records of every feed the collector has served.
   List<(String, String)> get output => List.of(_output);
 
   /// Upstream's `repr`: `CollectStreams(output=[('stdout', 'text'), ...])`.
@@ -80,12 +86,17 @@ final class CollectStreams {
 /// (upstream's `CollectString`).
 ///
 /// The text is charged its UTF-8 bytes, with no overhead, against
-/// `maxBytes` ([defaultMaxPrintCollectBytes] by default; null for no cap,
-/// for trusted code only). The cap is the collector's own, not the
-/// session's `maxMemory`.
+/// `maxBytes` (10 MiB by default; null for no cap, for trusted code only).
+/// The cap is the collector's own, not the session's `maxMemory`.
+///
+/// A collector outlives the feed it served: it keeps the prints of every
+/// feed it is passed to, and the cap covers them all, so a collector reused
+/// across feeds fills up. Reading [output] does not drain it; a new
+/// collector starts empty.
 final class CollectString {
-  /// An empty collector capped at [maxBytes]. A negative [maxBytes] throws
-  /// [ArgumentError], as upstream refuses it (`OverflowError` there).
+  /// An empty collector capped at [maxBytes] (10 MiB by default). A negative
+  /// [maxBytes] throws [ArgumentError], as upstream refuses it
+  /// (`OverflowError` there).
   CollectString({int? maxBytes = defaultMaxPrintCollectBytes})
     : _maxBytes = _checkedCap(maxBytes);
 

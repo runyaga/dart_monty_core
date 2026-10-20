@@ -17,7 +17,8 @@
 ///       build_worker: true
 /// ```
 ///
-/// Internal to the package; nothing here is exported.
+/// The package exports [runMontyWorkerIfChild]; the rest of this library is
+/// internal.
 library;
 
 import 'dart:ffi';

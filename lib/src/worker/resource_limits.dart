@@ -6,7 +6,8 @@
 /// argument parsing refuses is an [ArgumentError] with upstream's message,
 /// raised by [ResourceLimitsInternal.validate] at checkout.
 ///
-/// Internal until the cutover exports it; nothing here is exported.
+/// The package exports [ResourceLimits]; the rest of this library is
+/// internal.
 library;
 
 import 'dart:typed_data';

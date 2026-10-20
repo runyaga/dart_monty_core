@@ -14,6 +14,32 @@
 /// );
 /// print(value); // MontyInt(43)
 /// ```
+///
+/// ## Callbacks
+///
+/// The session's feeds and calls take three callbacks, each a plain function
+/// type: the OS handler `OsHandler`, the host function a `MontyHostFunction`
+/// holds, and the print callback a feed takes.
+///
+/// ```dart
+/// // the OS handler
+/// FutureOr<MontyValue> Function(
+///   String name,
+///   List<MontyValue> args,
+///   Map<String, MontyValue> kwargs,
+/// )
+///
+/// // a host function
+/// FutureOr<MontyValue> Function(
+///   List<MontyValue> args,
+///   Map<String, MontyValue> kwargs,
+/// )
+///
+/// // a print callback
+/// FutureOr<void> Function(String stream, String text)
+/// ```
+///
+/// `coroutine` marks a host function as an `async def` one.
 library;
 
 // Every export line names what it exports, so a name added to a file under

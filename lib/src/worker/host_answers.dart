@@ -2,7 +2,8 @@
 /// functions, OS calls, name lookups and pending futures, as upstream's
 /// async binding answers them.
 ///
-/// Internal to the package; nothing here is exported.
+/// The package exports [OsHandler], [coroutine] and [parityCoroutine]; the
+/// rest of this library is internal.
 library;
 
 import 'dart:async';
@@ -105,6 +106,9 @@ typedef OsHandler =
 /// upstream: Dart cannot tell an `async` function from one that returns a
 /// [Future], so the mark says which it is.
 ///
+/// [function] is a host function: it takes the call's positional and
+/// keyword arguments and returns a [MontyValue], directly or as a future.
+///
 /// A call to the returned function, as the `fn` of an `externalLookup`
 /// entry's [MontyHostFunction], is a coroutine in the sandbox: one the
 /// sandbox awaits with nothing else to run is awaited in place, and any
@@ -122,8 +126,11 @@ ProtoExternalFunction coroutine(ProtoExternalFunction function) {
   return marked;
 }
 
-/// Marks a parity [function] as a coroutine, as [coroutine] marks a
-/// [ProtoExternalFunction], for use with [MontyHostFunction.parity].
+/// Marks a parity [function] as a coroutine, as [coroutine] marks a host
+/// function, for use with [MontyHostFunction.parity].
+///
+/// A parity function takes the call's positional and keyword arguments and
+/// returns any value, directly or as a future.
 FutureOr<Object?> Function(
   List<MontyValue> args,
   Map<String, MontyValue> kwargs,

@@ -40,15 +40,26 @@ final class Monty {
   /// [ArgumentError] before any worker starts.
   ///
   /// [maxProcesses] bounds the workers alive at once (the platform's default
-  /// when null). [checkoutTimeout] bounds how long [checkout] waits for a
-  /// free worker (forever when null); [requestTimeout] bounds each request
-  /// turn (unbounded when null). [maxCheckoutsPerWorker] retires a worker
-  /// after that many checkouts. [feedDurationLimitGrace] and
+  /// when null: the number of processors on native, the browser's hardware
+  /// concurrency on the web, 4 where the browser does not say).
+  /// [checkoutTimeout] bounds how long [checkout]
+  /// waits for a free worker (forever when null); [requestTimeout] bounds
+  /// each request turn (unbounded when null). [maxCheckoutsPerWorker]
+  /// retires a worker after that many checkouts (never when null; 0 retires
+  /// each worker at its first release). [feedDurationLimitGrace] and
   /// [turnDurationLimitGrace] are how far past a session's duration limits
-  /// the parent lets a turn run before it kills the worker; null leaves that
-  /// limit unguarded by the parent. [workerLocation] is where the worker is
-  /// found: an executable on native, an asset base URL on the web; null
-  /// searches the usual places.
+  /// the parent lets a turn run before it kills the worker (one second by
+  /// default); null leaves that limit unguarded by the parent.
+  /// [workerLocation] is where the worker is found: an executable on
+  /// native, an asset base URL on the web; null searches the usual places.
+  ///
+  /// [minProcesses] is 1 by default and must not be negative;
+  /// [maxProcesses] must be at least 1 and at least [minProcesses];
+  /// [maxCheckoutsPerWorker] must fit an unsigned 32-bit integer; and a
+  /// duration must not be negative. A value outside its domain throws
+  /// [ArgumentError] with upstream's message, before any worker starts; so
+  /// does an impossible pool size. A worker that is not ready within 30
+  /// seconds fails the call with a `MontyCrashedError`.
   static Future<Monty> start({
     int minProcesses = 1,
     int? maxProcesses,
@@ -74,6 +85,10 @@ final class Monty {
   /// Runs [body] with a pool started as [start] does with the same
   /// settings, and closes the pool however [body] ends: the form of
   /// upstream's `async with AsyncMonty()`.
+  ///
+  /// The settings are [start]'s, with the same defaults and the same
+  /// domains: an [ArgumentError] for a setting upstream refuses comes
+  /// before the pool starts.
   static Future<T> withPool<T>(
     Future<T> Function(Monty monty) body, {
     int minProcesses = 1,
@@ -99,15 +114,26 @@ final class Monty {
   );
 
   /// Dedicates a worker to a new session (upstream `checkout`): [scriptName]
-  /// is the file name tracebacks report, [limits] the resource limits,
-  /// [typeCheck] whether each snippet is type-checked first (with
+  /// is the file name tracebacks report (`main.py` by default), [limits] the
+  /// resource limits (null leaves every one off, the recursion depth and
+  /// the suspension count at upstream's 1000), [typeCheck] whether each
+  /// snippet is type-checked first (false by default, with
   /// [typeCheckStubs], [typeCheckFormat] and [typeCheckColor]); the check runs
   /// in the worker under the limits' feed duration, so set one when the source
   /// is untrusted,
   /// [assertMessageAnnotations] how many bytes of each operand an `assert`
-  /// message shows, [printFlushInterval] how long the worker may hold
-  /// printed text, and [osPolicy] the clock, zone, sleep and randomness the
-  /// session gets. A null setting keeps upstream's default.
+  /// message shows (null keeps the worker's default of 120 bytes, 0 turns
+  /// the annotations off), [printFlushInterval] how long the worker may hold
+  /// printed text (null keeps the worker's default, zero sends each line as
+  /// it ends), and [osPolicy] the clock, zone, sleep and randomness the
+  /// session gets (null is upstream's default policy). A null setting keeps
+  /// upstream's default.
+  ///
+  /// [typeCheckFormat] is one of `full`, `concise`, `azure`, `json`,
+  /// `jsonlines` (also `json-lines`), `rdjson`, `pylint`, `gitlab` or
+  /// `github`, ASCII case ignored, and `full` by default.
+  /// [assertMessageAnnotations] must fit an unsigned 32-bit integer, and
+  /// [printFlushInterval] must not be negative.
   ///
   /// Throws [ArgumentError] for a setting upstream refuses, with upstream's
   /// message, before any worker is taken, an unknown IANA zone name
@@ -141,6 +167,10 @@ final class Monty {
   /// Runs [body] with a session from [checkout] with the same settings, and
   /// closes the session however [body] ends: the form of upstream's
   /// `async with pool.checkout()`.
+  ///
+  /// The settings are [checkout]'s, with the same defaults and the same
+  /// domains: an [ArgumentError] for a setting upstream refuses comes
+  /// before a worker is taken.
   Future<T> withSession<T>(
     Future<T> Function(MontySession session) body, {
     String scriptName = 'main.py',

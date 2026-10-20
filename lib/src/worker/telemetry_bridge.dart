@@ -92,7 +92,10 @@ final class TelemetryBridge {
     );
   }
 
-  /// Never retries a callback or replaces its result with an adapter error.
+  /// Runs [body] with [context] current: the adapter is asked to run it,
+  /// and the body runs once whatever the adapter does. An adapter that
+  /// throws disables the spans for the rest of this isolate; the body still
+  /// runs, and its own error is the caller's.
   R invoke<R>(Object? context, R Function() body) {
     if (!spansEnabled) return body();
     final call = _Invocation(body);

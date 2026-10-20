@@ -13,8 +13,9 @@
 /// the factory functions here ([raisedError], [typingError], [crashedError],
 /// [protocolError]), which a fake session uses too.
 ///
-/// Internal until the cutover exports the classes in place of today's
-/// public errors; nothing here is exported.
+/// The package exports [MontyError] and its four subclasses
+/// ([MontySyntaxError], [MontyRuntimeError], [MontyTypingError],
+/// [MontyCrashedError]) and [Frame]; the rest of this library is internal.
 library;
 
 import 'package:dart_monty_core/src/platform/monty_value.dart';

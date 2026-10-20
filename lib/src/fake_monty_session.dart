@@ -1,8 +1,7 @@
 /// A scriptable session for testing host code without a worker (C4 API3).
 ///
-/// Internal until the cutover, when `dart_monty_core_testing.dart` exports
-/// [FakeMontySession] as its only name; until then it takes host functions
-/// in the session's internal map (C4 pre-cutover.md).
+/// `dart_monty_core_testing.dart` exports [FakeMontySession] as its only
+/// name; the rest of this library is internal.
 library;
 
 import 'dart:async';

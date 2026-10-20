@@ -873,7 +873,8 @@ int printFlushIntervalMs(Duration interval) {
 const int _u32Max = 0xffffffff;
 
 /// Throws [ArgumentError] unless [value] is in 0..2^32 - 1, with upstream's
-/// message. (Upstream spells 0 `False`, which this `int?` takes as 0.)
+/// message. Zero is accepted: it turns the annotations off, as upstream's
+/// `False` does, even though upstream's message names 1 as the lower bound.
 void validateAssertMessageAnnotations(int? value) {
   if (value != null && (value < 0 || value > _u32Max)) {
     throw ArgumentError.value(

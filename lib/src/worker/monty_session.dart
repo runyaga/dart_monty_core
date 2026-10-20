@@ -109,14 +109,20 @@ abstract interface class MontySession {
   ///
   /// [os] answers OS calls; without it they are declined.
   ///
-  /// [printCallback] receives each run of printed text, in order, and its
-  /// future is awaited before the next event is read. Without one, the text
-  /// goes to the process's stdout and stderr on native and to the console
-  /// in a browser. A callback that throws gets no more text; the turn runs
-  /// to its end, then its error is thrown, as a [MontyError] (`printFailure`).
-  /// The session runs on if the turn completed or raised, and is finished if
-  /// it ended suspended on a host call. A callback that never completes is
-  /// ended by `requestTimeout` or [close], as any turn is.
+  /// [printCallback] receives each run of printed text as `(stream, text)`,
+  /// `stream` `'stdout'` or `'stderr'`, in order; a callback that returns a
+  /// future is awaited before the next run is delivered. Without one, the
+  /// text goes to the process's stdout and stderr on native and to the
+  /// console in a browser. A callback that throws gets no more text; the
+  /// turn runs to its end, then its error is thrown as a [MontyError]: a
+  /// collector's overflow as its `MemoryError` ([MontyRuntimeError]), an
+  /// [ExternalException] as its Python type (as `Exception` when upstream
+  /// knows no such type), any other throw as `Exception` with its text — a
+  /// [MontySyntaxError] for a `SyntaxError`, a [MontyRuntimeError]
+  /// otherwise. None of them carries a traceback. The session runs on if the
+  /// turn completed or raised, and is finished if it ended suspended on a
+  /// host call. A callback that never completes is ended by
+  /// `requestTimeout` or [close], as any turn is.
   ///
   /// A request over the frame limit (256 MiB) is refused before it is sent,
   /// with [MontyRuntimeError] (`RuntimeError`). For [inputs] the session runs

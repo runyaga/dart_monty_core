@@ -7,7 +7,8 @@
 /// upstream's argument parsing refuses is an [ArgumentError] with upstream's
 /// message, raised by `OsPolicyInternal.validate` at checkout.
 ///
-/// Internal until the cutover exports them; nothing here is exported.
+/// The package exports [OsPolicy], [TimeZone] and [RandomSeed]; the rest of
+/// this library is internal.
 library;
 
 import 'dart:typed_data';
