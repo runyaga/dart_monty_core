@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+## 0.110.0-dev.4 - 2026-10-20
+
+### Breaking
+
+- `MontyValue.fromDart` converts a `Uint8List` to `MontyBytes` (a copy), at the top level and nested. A `Uint8List` handed back from `dartValue` reaches the sandbox as `bytes`, not a `list` of ints.
+- `MontyValue.fromDart` throws an `ArgumentError` for the map that `dartValue` returns for `MontyNamedTuple`, `MontyTimeZone`, `MontyComplex`, `MontyFileHandle`, `MontyExceptionValue`, `MontyClassProxy` and `MontyClassTypeProxy`, at the top level or nested in a list or map. Pass the `MontyValue` itself. A map built by the caller converts to a dict whatever its keys, including a copy of such a map, as `pydantic_monty` converts every host dict.
+
+### Added
+
+- `MontyHostFunction.parity` and `parityCoroutine` convert host function and coroutine results under Monty 1.1.0 parity rules: `null` becomes Python `None`, and an unconvertible object raises Python `TypeError` with `Cannot convert <T> to Monty value — wrap class instances in pydantic_monty.ClassInstance(...)`.
+
+- Export `FrameTooLargeException` from `package:dart_monty_core/dart_monty_core.dart`.
+
+### Changed
+
+- The package declares its API reference with a `documentation` key in pubspec.yaml, and the Markdown documentation is checked in CI.
+
+### Fixed
+
+- Guard worker-pool factory rollback (`_openEach`), startup cleanup (`_startAll`), startup timeout cancellation (`_ready`), and `PendingSpawn` late start/kill paths so secondary cleanup failures and losing sibling failures do not mask the primary error or escape as unhandled zone errors, recording suppressed failures in an internal bounded sink.
+
+- Dartdoc and error text now state what the code does. Worker-location errors name `workerLocation`, the `MontyBigInt` doc gives the 2^53 boundary, and the `MontyValue`, `MontyError` and `FakeMontySession` docs match the API.
+
 ## 0.110.0-dev.3 - 2026-10-17
 
 ### Added
