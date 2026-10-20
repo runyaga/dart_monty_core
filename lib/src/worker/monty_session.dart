@@ -33,16 +33,19 @@ import 'package:fixnum/fixnum.dart';
 
 /// A Python session on a worker dedicated to it until [close].
 ///
-/// Every call is async. Protocol turns are serialized, as upstream's are;
-/// whole feeds are not: a feed that suspends and is resumed spans several
-/// turns, and while a host call is answered it holds no turn. A
-/// [feedRun] made while another feed's turn is in flight waits
-/// for that turn, then runs only if the other feed has finished: once
-/// that feed suspends on a host call it throws [StateError] instead
-/// (upstream's "feed called while a suspension is awaiting an answer"),
-/// as it does if the session closed meanwhile. A [feedRun] made from
-/// inside one of its own session's print callbacks throws [StateError]
-/// at once: that callback runs inside the turn.
+/// Every call is async. One call holds the session's turn at a time, as
+/// upstream's turn lock serializes turns; a call made while another holds
+/// it queues, first come first served. Whole feeds are not serialized: a
+/// feed that suspends and is resumed spans several turns, and while a
+/// host call is answered it holds no turn. A queued feed runs only when
+/// the calls ahead of it end. A suspension wakes the queue at once: each
+/// waiting feed throws [StateError] (upstream's "feed called while
+/// a suspension is awaiting an answer") instead of waiting for the
+/// answer — and a feed that arrives while a suspension awaits, with
+/// nobody ahead of it, throws at once rather than queues. A close wakes
+/// the queue too, and each waiting feed then fails as finished. A
+/// [feedRun] made from inside one of its own session's print callbacks
+/// throws [StateError] at once: that callback runs inside the turn.
 ///
 /// A Python exception throws [MontyRuntimeError] (or [MontySyntaxError])
 /// and the session stays usable. A dead worker throws [MontyCrashedError];
@@ -113,10 +116,12 @@ abstract interface class MontySession {
   /// [os] answers OS calls; without it they are declined.
   ///
   /// [printCallback] receives each run of printed text as `(stream, text)`,
-  /// `stream` `'stdout'` or `'stderr'`, in order; a callback that returns a
-  /// future is awaited before the next run is delivered. Without one, the
-  /// text goes to the process's stdout and stderr on native and to the
-  /// console in a browser. A callback that throws gets no more text; the
+  /// `stream` `'stdout'` or `'stderr'`, in order. It takes any function of
+  /// type `FutureOr<void> Function(String stream, String text)`; no named
+  /// type is exported for it. A callback that returns a future is awaited
+  /// before the next run is delivered. Without one, the text goes to the
+  /// process's stdout and stderr on native and to the console in a browser.
+  /// A callback that throws gets no more text; the
   /// turn runs to its end, then its error is thrown as a [MontyError]: a
   /// collector's overflow as its `MemoryError` ([MontyRuntimeError]), an
   /// [ExternalException] as its Python type (as `Exception` when upstream
@@ -124,8 +129,9 @@ abstract interface class MontySession {
   /// [MontySyntaxError] for a `SyntaxError`, a [MontyRuntimeError]
   /// otherwise. None of them carries a traceback. The session runs on if the
   /// turn completed or raised, and is finished if it ended suspended on a
-  /// host call. A callback that never completes is ended by
-  /// `requestTimeout` or [close], as any turn is.
+  /// host call. A callback that never completes is ended as a turn is: by
+  /// the turn's deadline — `requestTimeout` or a duration backstop,
+  /// whichever is earliest — or by [close]; each kills the worker.
   ///
   /// A request over the frame limit (256 MiB) is refused before it is sent,
   /// with [MontyRuntimeError] (`RuntimeError`). For [inputs] the session runs
@@ -262,11 +268,14 @@ abstract interface class MontySession {
   /// Ends the session and gives its slot back, exactly once.
   ///
   /// With no protocol turn in flight (idle, or a host callback running) it
-  /// sends `Reset` and returns the worker to the pool. A call waiting on a
-  /// host callback fails as finished at once; the callback is not
-  /// interrupted, and its result is dropped when it comes. With a turn in
-  /// flight it kills the worker, and that call fails with
-  /// [MontyCrashedError] ([CrashCause.killed]). Never throws. Idempotent.
+  /// sends `Reset` and returns the worker to the pool, waiting for the
+  /// reply up to the pool's `requestTimeout` — without one, as long as the
+  /// worker takes. A call waiting on a host callback fails as finished at
+  /// once; the callback is not interrupted, and its result is dropped when
+  /// it comes. With a turn in flight — a dump made from host code
+  /// included — it kills the worker, and that call fails with a
+  /// [MontyCrashedError] whose message is 'monty worker killed: the
+  /// session was closed during a turn'. Never throws. Idempotent.
   ///
   /// A session collected without a close has its worker killed and its
   /// slot freed by a finalizer. That is a backstop only: a finalizer may
@@ -1470,11 +1479,14 @@ pb.RaisedException _raised(String type, String message) =>
 /// waited: the one that would pass it aborts the feed with an in-sandbox
 /// `TimeoutError`. A worker reply can only tighten either limit.
 ///
-/// A turn's deadline is the pool's `requestTimeout`; an execution turn's is
-/// also bounded by what the feed budget has left and by the turn budget,
-/// each plus its grace (upstream's duration backstops). Past it the worker
-/// is killed and the turn fails with [MontyCrashedError]. Time spent in
-/// host callbacks is never counted: it falls between turns.
+/// A turn's deadline is the pool's `requestTimeout`; an execution turn's
+/// is the earliest of three — that timeout, what the feed budget has left
+/// plus its grace, and the turn budget plus its grace (upstream's duration
+/// backstops). The earliest wins; a null timeout, or a duration limit or
+/// grace left unset, drops its term, and with all three unset there is no
+/// deadline. Past it the worker is killed and the turn fails with
+/// [MontyCrashedError]. Time spent in host callbacks is never counted: it
+/// falls between turns.
 ///
 /// A frame failure is mapped here, at the transport, by direction. A
 /// request too large to frame is refused before a byte is written — the

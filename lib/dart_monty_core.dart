@@ -39,6 +39,10 @@
 /// FutureOr<void> Function(String stream, String text)
 /// ```
 ///
+/// `OsHandler` is exported as the named type of the first; the host
+/// function and the print callback have no named type in the exports —
+/// pass any function of the shape above.
+///
 /// `coroutine` marks a host function as an `async def` one.
 library;
 

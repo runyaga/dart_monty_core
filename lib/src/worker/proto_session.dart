@@ -672,6 +672,11 @@ final class SessionConfig {
 
 /// Receives one run of printed text, as it arrives; a returned future is
 /// awaited before the next run is delivered.
+///
+/// The typedef itself is not exported: the public session methods take
+/// this shape, so any function of type
+/// `FutureOr<void> Function(String stream, String text)` works, with no
+/// named type to import.
 typedef ProtoPrintCallback =
     FutureOr<void> Function(String stream, String text);
 

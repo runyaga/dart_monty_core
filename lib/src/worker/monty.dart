@@ -49,7 +49,11 @@ final class Monty {
   /// each worker at its first release). [feedDurationLimitGrace] and
   /// [turnDurationLimitGrace] are how far past a session's duration limits
   /// the parent lets a turn run before it kills the worker (one second by
-  /// default); null leaves that limit unguarded by the parent.
+  /// default); null leaves that limit unguarded by the parent. Each
+  /// execution turn — a feed, or a resume after a suspension — runs under
+  /// the earliest of three deadlines: `requestTimeout`, what the session's
+  /// `maxFeedDuration` has left plus `feedDurationLimitGrace`, and
+  /// `maxTurnDuration` plus `turnDurationLimitGrace`.
   /// [workerLocation] is where the worker is found: an executable on
   /// native, an asset base URL on the web; null searches the usual places.
   ///

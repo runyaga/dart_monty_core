@@ -67,7 +67,12 @@ to the next. A live worker keeps the Dart process running, so a pool from
 | `close()` | Refuse new checkouts and end the idle workers |
 
 `requestTimeout` bounds each protocol turn; a turn past it kills the worker
-and the call fails with `MontyCrashedError` (`timedOut` is true).
+and the call fails with `MontyCrashedError` (`timedOut` is true). An
+execution turn — a feed, or a resume after a suspension — runs under the
+earliest of three deadlines: `requestTimeout`, what the session's
+`maxFeedDuration` has left plus `feedDurationLimitGrace`, and
+`maxTurnDuration` plus `turnDurationLimitGrace`; the earliest of the three
+wins, and one that is unset leaves its term out.
 
 `Monty.start` spawns `minProcesses` workers at once and fails if any of them
 cannot be located, spawned, or readied within 30 seconds — a
@@ -97,8 +102,14 @@ run one second by default; null leaves that limit unguarded by the parent.
 | `dump()` | The session as bytes, idle or suspended |
 | `loadSession(bytes)` / `loadSnapshot(bytes, {mount, externalLookup, printCallback, os})` | Restore a dump into a fresh session |
 | `installDependencies(requirements)` | Empty list succeeds; any other throws `MontyRuntimeError` (core's worker is the pure-Monty sandbox, as upstream's) |
-| `workerPid` | The worker's process id (null on the web) |
+| `workerPid` | The worker's process id (null on the web, while a protocol turn is in flight, and once the session is finished) |
 | `close()` | End the session; never throws |
+
+One call holds the session at a time: a second `feedRun` waits for the turn
+in flight and fails with `StateError` once the first feed suspends on a
+host call — a suspension wakes the waiting feeds at once and refuses each,
+and a feed arriving while a suspension awaits is refused at once instead
+of queueing. A close fails every waiting call as finished.
 
 ### Inputs, host functions and print
 
@@ -154,8 +165,10 @@ usable and its default eligibility unchanged.
 `stream` `'stdout'` or `'stderr'`. It is a callback of type
 `FutureOr<void> Function(String stream, String text)`; one that returns a
 future is awaited before the next run is delivered, so a slow sink holds
-the feed back. `CollectStreams` and `CollectString` are
-ready-made callbacks that collect it under a byte cap:
+the feed back. A callback that never returns is cut off by the turn's
+deadline — `requestTimeout` or a duration backstop, whichever comes
+first — or by `close`; each kills the worker. `CollectStreams` and
+`CollectString` are ready-made callbacks that collect it under a byte cap:
 
 ```dart
 final out = CollectString();

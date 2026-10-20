@@ -82,6 +82,11 @@ What limits cannot cover, the worker boundary does:
   session's own duration limits the parent lets a turn run before it kills
   the worker, for a worker that stops answering. Each is one second by
   default; null leaves its limit unguarded by the parent.
+- Each execution turn — a feed, or a resume after a suspension — runs
+  under the earliest of the three: `requestTimeout`, what the session's
+  `maxFeedDuration` has left plus `feedDurationLimitGrace`, and
+  `maxTurnDuration` plus `turnDurationLimitGrace`. The earliest wins; a
+  term that is unset leaves the deadline to the rest.
 - `MontySession.close()` during a turn kills the worker.
 - A worker whose allocator refuses an allocation over its hard limit exits;
   the call fails with `MontyRuntimeError` carrying `MemoryError` and the
@@ -97,9 +102,11 @@ answers it. Turns are serialized per session, as upstream's checkout lock
 serializes them; feeds are not. A feed that suspends and resumes spans
 several turns, and while its host call is answered the turn is free. A
 new feed waits only for the turn in flight: it runs when the earlier feed
-has finished, and is refused with `StateError` once that feed suspends. A
-dump is no call's turn: it runs between turns, so a host function may
-dump its own session while its call waits.
+has finished. A suspension wakes the waiting feeds at once and refuses
+each with `StateError`; a feed arriving while a suspension awaits is
+refused at once instead of queueing. A dump is no call's turn: it runs
+between turns, so a host function may dump its own session while its call
+waits.
 
 - **Host callbacks** run outside every turn: `externalLookup` entries,
   host-function calls, `os:` handlers and the host work behind `resumeAuto`
@@ -110,14 +117,18 @@ dump its own session while its call waits.
 - **Printing** runs inside the turn. Each print delivery is awaited before
   the next event is read, the turn's deadline covers it, and a print
   callback that calls its own session throws `StateError`: it would wait
-  on the turn it runs in. A callback that never completes is ended by
-  `requestTimeout` or `close`, as any turn is. Without a callback, printed
+  on the turn it runs in. A callback that never completes is ended by that
+  deadline — `requestTimeout` or a duration backstop, whichever comes
+  first — or by `close`; each kills the worker. Without a callback, printed
   text goes to the process's stdout and stderr on native and to the console
   on the web.
 - **Close** with no turn in flight — the session idle, or only a host
-  callback running — sends `Reset` and returns the worker to the pool.
-  With a turn in flight it kills the worker, and the call in flight fails
-  with `MontyCrashedError`. Close never throws and is idempotent.
+  callback running — sends `Reset` and returns the worker to the pool,
+  waiting for the reply up to the pool's `requestTimeout` (as long as the
+  worker takes without one). With a turn in flight — a dump made from
+  host code included — it kills the worker without a `Reset`, and the
+  call in flight fails with `MontyCrashedError`. Close never throws and is
+  idempotent.
 
 ## Host filesystem service
 

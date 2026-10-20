@@ -513,7 +513,8 @@ final class WorkerLease {
   /// Sends `Reset` and, on `Ok`, gives the worker back to the pool;
   /// otherwise kills it and rethrows the failure (a reply other than `Ok`
   /// is a [StateError]). The `Reset` turn is bounded by the pool's
-  /// `requestTimeout`. Once the pool is closed it kills the worker at once,
+  /// `requestTimeout`, and waits for the worker as long as it takes
+  /// without one. Once the pool is closed it kills the worker at once,
   /// without a `Reset`, unless an [WorkerPool.acquire] is waiting for it.
   ///
   /// Completes normally if [kill] ends the lease first. Idempotent.
