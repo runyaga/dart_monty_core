@@ -60,10 +60,10 @@ final class SourceRange {
   /// it instead ([SuspendedSnapshot.scriptName]).
   final String filename;
 
-  /// The first byte, a UTF-8 offset into that source.
+  /// Where the range starts: the UTF-8 byte offset of its first byte.
   final int start;
 
-  /// The byte after the last one.
+  /// Where the range ends: the UTF-8 byte offset just past its last byte.
   final int end;
 
   @override
@@ -115,8 +115,9 @@ final class ExternalReturnValue extends ExternalSettledResult {
   /// The call returned [value].
   const ExternalReturnValue(this.value);
 
-  /// What the call returned. A plain Dart value is converted with
-  /// [MontyValue.fromDart] first.
+  /// What the call returned: a [MontyValue], always — the constructor
+  /// converts nothing. Convert a plain Dart value with
+  /// [MontyValue.fromDart] yourself.
   final MontyValue value;
 
   @override
@@ -138,7 +139,11 @@ final class ExternalReturnValue extends ExternalSettledResult {
 ///
 /// The attributes are sent as upstream sends a live host exception's: only
 /// a `json.JSONDecodeError`'s `msg`, `doc`, `pos`, `lineno` and `colno`
-/// reach the sandbox; any other type's stay here.
+/// reach the sandbox; any other type's stay here. All five must be there
+/// and of their kinds — `msg` and `doc` a `str` with a UTF-8 form, `pos`,
+/// `lineno` and `colno` an `int` from 0 to 2^64 - 1 — or the payload is
+/// dropped, leaving the exception its type and message alone; a `doc`
+/// over 64 KiB of UTF-8 is left out while the rest is kept.
 @immutable
 final class ExternalException extends ExternalSettledResult
     implements Exception {
@@ -156,7 +161,9 @@ final class ExternalException extends ExternalSettledResult
   final String? message;
 
   /// The exception's attributes by name, such as a `json.JSONDecodeError`'s
-  /// `pos`.
+  /// `pos`. Only that type's reach the sandbox, and only when all five are
+  /// there and of their kinds; a dropped payload leaves the exception its
+  /// type and message.
   final Map<String, MontyValue> attributes;
 
   @override
@@ -252,8 +259,10 @@ abstract interface class SnapshotDriver {
   /// not-handled default.
   Future<MontySnapshot> resumeNotHandled(FunctionSnapshot snapshot);
 
-  /// Answers [snapshot]'s call from the feed's host functions or OS
-  /// handler.
+  /// Answers [snapshot]'s call through the feed's host side: an OS call
+  /// through the feed's mounts first and then the OS handler, a method
+  /// call ([FunctionSnapshot.objectId]) through the host object registered
+  /// under its id, a plain call through the feed's host functions.
   Future<MontySnapshot> resumeCallAuto(FunctionSnapshot snapshot);
 
   /// Answers [snapshot]'s lookup with [value], or as undefined when null.
@@ -262,7 +271,9 @@ abstract interface class SnapshotDriver {
     MontyValue? value,
   );
 
-  /// Answers [snapshot]'s lookup from the feed's host functions.
+  /// Answers [snapshot]'s lookup from the feed's host functions, or, for a
+  /// lazy attribute ([NameLookupSnapshot.objectId]), through the host
+  /// object registered under its id.
   Future<MontySnapshot> resumeLookupAuto(NameLookupSnapshot snapshot);
 
   /// Settles some or all of [snapshot]'s pending futures with [results].
@@ -355,7 +366,11 @@ final class FunctionSnapshot extends SuspendedSnapshot {
   final bool allowEagerAwait;
 
   /// The receiver's id for a method call on a host object; null for a
-  /// plain call.
+  /// plain call. The name is the method's, and [resumeAuto] dispatches the
+  /// call to the host object the session registered under that id; [resume]
+  /// answers the call directly, whatever the id. A dump restored into a
+  /// fresh session registers nothing under it, so there [resumeAuto] raises
+  /// `RuntimeError` in the sandbox and only [resume] answers.
   final String? objectId;
 
   final List<MontyValue> Function() _arguments;
@@ -384,13 +399,15 @@ final class FunctionSnapshot extends SuspendedSnapshot {
   /// Answers an OS call with upstream's default for an unhandled call:
   /// `PermissionError` naming the path for a filesystem call,
   /// `RuntimeError` for the rest. Throws [StateError], leaving the snapshot
-  /// unused, for a host function call.
+  /// unused, for a host function call, a host object's method call included.
   Future<MontySnapshot> resumeNotHandled() => _driver.resumeNotHandled(this);
 
-  /// Answers the call from the feed's host functions or OS handler, with
-  /// the feed's mount table tried first, as `feedRun` tries it, and runs
-  /// on. A system sleep is not waited here as `feedRun` waits it: the two
-  /// calls, `system.sleep` and `system.async_sleep`, reach the mounts and
+  /// Answers the call through the feed's host side, as `feedRun` answers
+  /// it, and runs on: an OS call reaches the feed's mount table first and
+  /// then the `os` handler; a method call ([objectId] set) reaches the host
+  /// object the session registered under that id; a plain call reaches the
+  /// feed's host functions. A system sleep is not waited here as `feedRun`
+  /// waits it: `system.sleep` and `system.async_sleep` reach the mounts and
   /// the OS handler like any other call, for the host to wait, decline or
   /// raise.
   Future<MontySnapshot> resumeAuto() => _driver.resumeCallAuto(this);
@@ -412,7 +429,11 @@ final class NameLookupSnapshot extends SuspendedSnapshot {
   final String variableName;
 
   /// The receiver's id for a lazy attribute of a host object; null for a
-  /// plain name.
+  /// plain name. [resumeAuto] reads the attribute through the host object
+  /// the session registered under that id; [resume] binds the name
+  /// directly, whatever the id. A dump restored into a fresh session
+  /// registers nothing under it, so there [resumeAuto] leaves the attribute
+  /// undefined and only [resume] answers.
   final String? objectId;
 
   /// Binds the name to [value] and runs on (`MontyNone` binds Python

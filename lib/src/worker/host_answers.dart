@@ -94,7 +94,10 @@ typedef ProtoExternalFunction =
 /// A path argument is a [MontyPath]; the reads, writes and appends take a
 /// [MontyFileHandle] in its place once `open` answered one. A write or
 /// append answers the count written — characters for the text calls, bytes
-/// for the bytes calls — as upstream's own filesystem handler does.
+/// for the bytes calls — as upstream's own filesystem handler does. A
+/// `getenv`'s default is its second positional argument (`args[1]`, `None`
+/// without one): answer a missing key with it, as Python's `os.getenv`
+/// does — the worker does not apply the default itself.
 typedef OsHandler =
     FutureOr<MontyValue> Function(
       String name,

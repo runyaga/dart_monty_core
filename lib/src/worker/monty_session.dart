@@ -822,10 +822,13 @@ final class _FeedDrive implements SnapshotDriver {
     );
   }
 
-  /// Answers [snapshot] from the feed's host side. An OS call goes to
-  /// [HostAnswers.osCall] with `parentSleeps` false, so a system sleep
-  /// (`system.sleep`, `system.async_sleep`) reaches the mounts and the OS
-  /// handler instead of being waited here, as `feedRun` waits it.
+  /// Answers [snapshot] through the feed's host side, as `feedRun` answers
+  /// it. An OS call goes to [HostAnswers.osCall] with `parentSleeps`
+  /// false, so a system sleep (`system.sleep`, `system.async_sleep`)
+  /// reaches the mounts and the OS handler instead of being waited here,
+  /// as `feedRun` waits it; a method call ([FunctionSnapshot.objectId] set)
+  /// is dispatched to the host object registered under that id, and a
+  /// plain call to the feed's host functions.
   @override
   Future<MontySnapshot> resumeCallAuto(FunctionSnapshot snapshot) async {
     snapshot.spend();

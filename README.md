@@ -158,7 +158,10 @@ while (snapshot is! MontyComplete) {
     FunctionSnapshot s when s.functionName == 'double' =>
       await s.resume(ExternalReturnValue(MontyInt((s.args[0] as MontyInt).value * 2))),
     FunctionSnapshot s => await s.resumeAuto(),
-    NameLookupSnapshot s => await s.resume(),
+    // resume(value:) binds the name; the first arm answers the call.
+    NameLookupSnapshot s => await s.resume(
+      value: MontyHostFunction('double', (args, kwargs) => const MontyNone()),
+    ),
     FutureSnapshot s => await s.resumeAuto(),
     MontyComplete() => snapshot,
   };

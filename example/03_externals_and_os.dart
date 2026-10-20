@@ -13,7 +13,8 @@
 //  2. os — an OsHandler that answers the sandbox's OS calls: pathlib,
 //     os.getenv, os.environ and the like. Each call arrives with a dotted
 //     name such as "Path.read_text" or "os.getenv". Throwing
-//     OsCallNotHandledException declines the call, and throwing
+//     OsCallNotHandledException declines the call — synchronously only:
+//     a future it rejects raises TypeError instead — and throwing
 //     ExternalException raises a chosen Python exception.
 //
 // Covers: externalLookup, ExternalException, OsHandler, OsCallNotHandledException,
@@ -122,9 +123,11 @@ Future<void> _osCallsVirtualFs(MontySession session) async {
       case 'Path.exists':
         return MontyBool(vfs.containsKey(_text(args[0])));
       case 'os.getenv':
+        // args[1] is the default the call carried (`None` without one):
+        // answer a missing key with it, as Python's os.getenv does.
         final value = env[_text(args[0])];
 
-        return value == null ? const MontyNone() : MontyString(value);
+        return value == null ? args[1] : MontyString(value);
       default:
         // Decline: the sandbox raises the call's own default error.
         throw const OsCallNotHandledException();
@@ -151,6 +154,14 @@ Future<void> _osCallsVirtualFs(MontySession session) async {
   );
   print('APP_ENV = $appEnv');
   _check(appEnv == const MontyString('production'), 'getenv');
+
+  // A missing key answers with the call's default, not None.
+  final missing = await session.feedRun(
+    'import os\nos.getenv("MISSING", "unset")',
+    os: os,
+  );
+  print('MISSING default = $missing');
+  _check(missing == const MontyString('unset'), 'getenv default');
 
   // Path objects come back to Dart as MontyPath.
   final path = await session.feedRun('pathlib.Path("/data") / "hello.txt"');
@@ -195,6 +206,27 @@ result
   } on MontyRuntimeError catch (e) {
     print('no handler: $e');
     _check(e.exception.excType == 'PermissionError', 'declined');
+  }
+
+  // An async handler cannot decline: its throw rejects the future it
+  // returns, and a future that fails with OsCallNotHandledException
+  // raises TypeError in the sandbox instead of declining. One that
+  // declines some calls and answers the rest with futures stays a plain
+  // function, throwing its declines and returning futures for the rest.
+  Future<MontyValue> asyncDecliner(
+    String _,
+    List<MontyValue> _,
+    Map<String, MontyValue> _,
+  ) async {
+    throw const OsCallNotHandledException();
+  }
+
+  try {
+    await session.feedRun('import os\nos.getenv("APP_ENV")', os: asyncDecliner);
+    throw StateError('an async decline did not raise');
+  } on MontyRuntimeError catch (e) {
+    print('async decline: $e');
+    _check(e.exception.excType == 'TypeError', 'async decline');
   }
 }
 

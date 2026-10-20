@@ -936,6 +936,11 @@ pb.RaisedException raisedException(
   return raised;
 }
 
+/// The `json.JSONDecodeError` payload of [attributes]: `msg` and `doc` a
+/// `str` with a UTF-8 form, `pos`, `lineno` and `colno` an `int` from 0 to
+/// 2^64 - 1. All five must be there and of that kind; one missing or
+/// mistyped drops the payload (null), and a `doc` over [maxPayloadLength]
+/// of UTF-8 is left out while the rest is kept.
 pb.JsonErrorData? _jsonData(Map<String, MontyValue> attributes) {
   final msg = _pythonStr(attributes['msg']);
   final doc = _pythonStr(attributes['doc']);
