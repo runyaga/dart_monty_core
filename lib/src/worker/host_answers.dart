@@ -81,6 +81,28 @@ ProtoExternalFunction coroutine(ProtoExternalFunction function) {
   return marked;
 }
 
+/// Marks a parity [function] as a coroutine, as [coroutine] marks a
+/// [ProtoExternalFunction], for use with [MontyHostFunction.parity].
+FutureOr<Object?> Function(
+  List<MontyValue> args,
+  Map<String, MontyValue> kwargs,
+)
+parityCoroutine(
+  FutureOr<Object?> Function(
+    List<MontyValue> args,
+    Map<String, MontyValue> kwargs,
+  )
+  function,
+) {
+  FutureOr<Object?> marked(
+    List<MontyValue> args,
+    Map<String, MontyValue> kwargs,
+  ) => function(args, kwargs);
+  _coroutines[marked] = true;
+
+  return marked;
+}
+
 /// Whether [function] was marked by [coroutine].
 bool isCoroutine(ProtoExternalFunction function) =>
     _coroutines[function] ?? false;
@@ -419,25 +441,8 @@ final class HostAnswers {
         pb.ExtFunctionResult(error: _notCallable(entry)),
       );
     }
-    final function = entry.fn;
-    // Building the argument values is inside the guarded body too: a value
-    // this driver cannot carry fails the call in Python, and the worker,
-    // suspended on it, still gets its answer.
-    FutureOr<MontyValue> invoke() {
-      final args = [for (final a in call.args) reader[a]];
 
-      return function(args, _kwargs(reader, call.kwargs));
-    }
-
-    final recording = recorder;
-    final callback = recording == null
-        ? invoke
-        : () => _invoke(recording, invoke);
-    if (!isCoroutine(function)) {
-      return _resumeWith(call.callId, callback, objects);
-    }
-
-    return _coroutine(call.callId, call.allowEagerAwait, _started(callback));
+    return _functionCall(this, call, reader, entry);
   }
 
   /// Answers a lookup of [name]: with [objectId], a lazy attribute of that
@@ -616,9 +621,10 @@ final class HostAnswers {
   Future<pb.ParentRequest> _coroutine(
     int callId,
     bool eager,
-    Future<Object> work,
-  ) async {
-    final outcome = _Outcome.of(work);
+    Future<Object?> work, {
+    bool parity = false,
+  }) async {
+    final outcome = _Outcome.of(work, parity: parity);
     if (eager) {
       return futuresRequest([
         (callId, (await outcome).result),
@@ -663,6 +669,42 @@ final class HostAnswers {
     _wake = null;
     if (wake != null && !wake.isCompleted) wake.complete();
   }
+}
+
+/// Answers [call] with the resolved host function [entry]: run in place when
+/// synchronous, or as a coroutine when marked by [coroutine] or
+/// [parityCoroutine].
+Future<pb.ParentRequest> _functionCall(
+  HostAnswers host,
+  pb.FunctionCall call,
+  ArenaReader reader,
+  MontyHostFunction entry,
+) {
+  final rawFn = entry.parityFn ?? entry.fn;
+  // Building the argument values is inside the guarded body too: a value
+  // this driver cannot carry fails the call in Python, and the worker,
+  // suspended on it, still gets its answer.
+  FutureOr<Object?> invoke() {
+    final args = [for (final a in call.args) reader[a]];
+
+    return rawFn(args, _kwargs(reader, call.kwargs));
+  }
+
+  final recording = host.recorder;
+  final callback = recording == null
+      ? invoke
+      : () => _invoke(recording, invoke);
+  final parity = entry.isParity;
+  if (!(_coroutines[rawFn] ?? false)) {
+    return _resumeWith(call.callId, callback, host.objects, parity: parity);
+  }
+
+  return host._coroutine(
+    call.callId,
+    call.allowEagerAwait,
+    _started(callback),
+    parity: parity,
+  );
 }
 
 /// Answers a method call on the host object [call] names: refused for an
@@ -717,26 +759,33 @@ pb.ParentRequest _attribute(HostObjects objects, String id, String name) {
 
 /// A coroutine's outcome: a value or a throw.
 final class _Outcome {
-  const _Outcome.value(Object this.value) : error = null;
+  const _Outcome.value(this.value, {this.parity = false}) : error = null;
 
-  const _Outcome.error(Object this.error) : value = null;
+  const _Outcome.error(Object this.error, {this.parity = false}) : value = null;
 
   final Object? value;
   final Object? error;
+  final bool parity;
 
   ExternalAnswer get result {
-    final v = value;
+    if (error case final err?) {
+      return ExternalAnswer.error(raisedFrom(err), parity: parity);
+    }
 
-    return v == null
-        ? ExternalAnswer.error(raisedFrom(error ?? const MontyNone()))
-        : ExternalAnswer.value(v);
+    return ExternalAnswer.value(
+      parity && value == null ? const MontyNone() : value,
+      parity: parity,
+    );
   }
 
-  static Future<_Outcome> of(Future<Object> work) async {
+  static Future<_Outcome> of(
+    Future<Object?> work, {
+    bool parity = false,
+  }) async {
     try {
-      return _Outcome.value(await work);
+      return _Outcome.value(await work, parity: parity);
     } on Object catch (error) {
-      return _Outcome.error(error);
+      return _Outcome.error(error, parity: parity);
     }
   }
 }
@@ -744,10 +793,16 @@ final class _Outcome {
 /// A settled answer as the wire carries it: a value or a raised exception.
 final class ExternalAnswer {
   /// The call returned [value].
-  const ExternalAnswer.value(Object this.value) : error = null;
+  const ExternalAnswer.value(
+    this.value, {
+    this.parity = false,
+  }) : error = null;
 
   /// The call raised [error].
-  const ExternalAnswer.error(pb.RaisedException this.error) : value = null;
+  const ExternalAnswer.error(
+    pb.RaisedException this.error, {
+    this.parity = false,
+  }) : value = null;
 
   /// The value, when the call returned one: a [MontyValue], a host
   /// object's wrapper included.
@@ -755,6 +810,9 @@ final class ExternalAnswer {
 
   /// The exception, when the call raised one.
   final pb.RaisedException? error;
+
+  /// Whether [value] is serialized under Monty 1.1.0 parity rules.
+  final bool parity;
 }
 
 /// `ResumeFutures` settling each (call id, answer) of [results], their
@@ -788,16 +846,27 @@ pb.ExtFunctionResult _wire(
   ArenaWriter writer, {
   required bool strict,
 }) {
-  final value = answer.value;
+  if (answer.error case final error?) {
+    return pb.ExtFunctionResult(error: error);
+  }
+  final value = answer.parity && answer.value == null
+      ? const MontyNone()
+      : answer.value;
   if (value == null) {
     return pb.ExtFunctionResult(
-      error: answer.error ?? pb.RaisedException(excType: 'RuntimeError'),
+      error: pb.RaisedException(excType: 'RuntimeError'),
     );
   }
-  if (strict) return pb.ExtFunctionResult(returnValue: writer.add(value));
+  if (strict) {
+    return pb.ExtFunctionResult(
+      returnValue: writer.add(value, parity: answer.parity),
+    );
+  }
   try {
     // A refused value leaves no nodes behind in the shared arena.
-    return pb.ExtFunctionResult(returnValue: writer.tryAdd(value));
+    return pb.ExtFunctionResult(
+      returnValue: writer.tryAdd(value, parity: answer.parity),
+    );
   } on Object catch (error) {
     return pb.ExtFunctionResult(error: raisedFrom(error));
   }
@@ -835,18 +904,30 @@ List<MontyValue> callArgs(pb.FunctionCall call, {HostObjectLookup? hosts}) {
 
 Future<pb.ParentRequest> _resumeWith(
   int callId,
-  FutureOr<Object> Function() body,
-  HostObjects objects,
-) async {
+  FutureOr<Object?> Function() body,
+  HostObjects objects, {
+  bool parity = false,
+}) async {
+  final Object? value;
   try {
-    return resumeValue(callId, await body(), objects: objects);
+    value = await body();
+  } on Object catch (error) {
+    return _resume(callId, pb.ExtFunctionResult(error: raisedFrom(error)));
+  }
+  try {
+    return resumeValue(
+      callId,
+      parity && value == null ? const MontyNone() : value,
+      objects: objects,
+      parity: parity,
+    );
   } on Object catch (error) {
     return _resume(callId, pb.ExtFunctionResult(error: raisedFrom(error)));
   }
 }
 
 /// [invoke]'s result as a started future; a synchronous throw is its error.
-Future<MontyValue> _started(FutureOr<MontyValue> Function() invoke) =>
+Future<Object?> _started(FutureOr<Object?> Function() invoke) =>
     Future.sync(invoke);
 
 /// [answer]'s value; an [OsCallNotHandledException] it fails with is an
@@ -961,11 +1042,12 @@ pb.ParentRequest _failed(int callId, Object error) =>
 /// object's wrapper, registered in [objects].
 pb.ParentRequest resumeValue(
   int callId,
-  Object value, {
+  Object? value, {
   HostObjects? objects,
+  bool parity = false,
 }) {
   final writer = ArenaWriter(objects: objects);
-  final index = writer.add(value);
+  final index = writer.add(value, parity: parity);
 
   return _resume(
     callId,

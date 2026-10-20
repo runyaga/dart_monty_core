@@ -14,6 +14,8 @@ import 'package:collection/collection.dart';
 
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/platform/os_call_not_handled_exception.dart';
+import 'package:dart_monty_core/src/worker/host_answers.dart'
+    show coroutine, parityCoroutine;
 import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/monty_snapshot.dart';
 import 'package:dart_monty_core/src/worker/os_policy.dart';
@@ -22,6 +24,27 @@ import 'package:dart_monty_core/src/worker/proto_session.dart';
 import '_contract.dart';
 
 const MontyValue _none = MontyNone();
+
+const _parityOpaqueMessage =
+    'Cannot convert builtins.object to Monty value — wrap class instances in '
+    'pydantic_monty.ClassInstance(...)';
+
+const _legacyOpaqueMessage =
+    'Cannot convert Object to Monty value — wrap class instances in '
+    'ClassInstance(...)';
+
+const _caughtParityCode =
+    'try:\n'
+    '    x = f()\n'
+    'except TypeError as e:\n'
+    '    x = str(e)\n'
+    'x';
+
+const _mixedCoroutineBatchCode =
+    'a = fa()\nb = fb()\n'
+    'try:\n    await a\nexcept TypeError as e:\n    x = str(e)\n'
+    'try:\n    await b\nexcept TypeError as e:\n    y = str(e)\n'
+    '[x, y]';
 
 const _pendingFeed = 'feed called while a suspension is awaiting an answer';
 
@@ -138,7 +161,7 @@ final List<Scenario> scenarios = [
     ],
   ),
   Scenario(
-    'a call to a name missing from the external lookup',
+    'a call to a name missing from the external lookup (C-6)',
     feeds: ['f()'],
     script: (f) => f
       ..willCall('f')
@@ -1602,6 +1625,162 @@ final List<Scenario> scenarios = [
     ],
     answers: [
       '0 value MontyNone()',
+    ],
+  ),
+  Scenario(
+    'parity_opaque_return: parity opaque return uncaught (C-3)',
+    feeds: ['f()'],
+    script: (f) => f
+      ..willCall('f')
+      ..willReturn(_none),
+    run: (s) => s.run(
+      0,
+      externalLookup: {
+        'f': MontyHostFunction.parity('f', (_, _) {
+          s.trace.add('call f()');
+
+          return Object();
+        }),
+      },
+    ),
+    trace: [
+      'call f()',
+      'MontyRuntimeError TypeError: $_parityOpaqueMessage | TypeError: $_parityOpaqueMessage',
+    ],
+    answers: [
+      '0 raise TypeError: $_parityOpaqueMessage',
+    ],
+  ),
+  Scenario(
+    'parity_opaque_return_caught: parity opaque return caught by except TypeError (C-3)',
+    feeds: [_caughtParityCode],
+    script: (f) => f
+      ..willCall('f')
+      ..willCatch()
+      ..willReturn(_str(_parityOpaqueMessage)),
+    run: (s) => s.run(
+      0,
+      externalLookup: {
+        'f': MontyHostFunction.parity('f', (_, _) {
+          s.trace.add('call f()');
+
+          return Object();
+        }),
+      },
+    ),
+    trace: [
+      'call f()',
+      'value MontyString("$_parityOpaqueMessage")',
+    ],
+    answers: [
+      '0 raise TypeError: $_parityOpaqueMessage',
+    ],
+  ),
+  Scenario(
+    'parity_null_return: parity returning null gives None (C-3)',
+    feeds: ['f()'],
+    script: (f) => f
+      ..willCall('f')
+      ..willReturn(_none),
+    run: (s) => s.run(
+      0,
+      externalLookup: {
+        'f': MontyHostFunction.parity('f', (_, _) {
+          s.trace.add('call f()');
+
+          return null;
+        }),
+      },
+    ),
+    trace: [
+      'call f()',
+      'value MontyNone()',
+    ],
+    answers: [
+      '0 value MontyNone()',
+    ],
+  ),
+  Scenario(
+    'parity_coroutine_opaque_return: a parity coroutine returning an opaque value (C-3)',
+    feeds: ['await f()'],
+    script: (f) => f
+      ..willCall('f', eager: true)
+      ..willReturn(_none),
+    run: (s) => s.run(
+      0,
+      externalLookup: {
+        'f': MontyHostFunction.parity(
+          'f',
+          parityCoroutine((_, _) async {
+            s.trace.add('call f()');
+
+            return Object();
+          }),
+        ),
+      },
+    ),
+    trace: [
+      'call f()',
+      'MontyRuntimeError TypeError: $_parityOpaqueMessage | TypeError: $_parityOpaqueMessage',
+    ],
+    answers: [
+      '0/b0 raise TypeError: $_parityOpaqueMessage',
+    ],
+  ),
+  Scenario(
+    'parity_mixed_coroutine_batch: legacy and parity coroutines settle together (C-5)',
+    feeds: [_mixedCoroutineBatchCode],
+    script: (f) => f
+      ..willCall('fa')
+      ..willCall('fb')
+      ..willAwait([0])
+      ..willCatch()
+      ..willAwait([1])
+      ..willCatch()
+      ..willReturn(
+        MontyList([
+          _str(_legacyOpaqueMessage),
+          _str(_parityOpaqueMessage),
+        ]),
+      ),
+    run: (s) => s.run(
+      0,
+      externalLookup: {
+        'fa': MontyHostFunction(
+          'fa',
+          coroutine((_, _) {
+            s.trace.add('call fa()');
+
+            return ClassType(
+              const HostClass('C', attributes: {'x': Object.new}),
+              policies: const (
+                eagerAttrs: 'all',
+                lazyAttrs: null,
+                allowedMethods: null,
+              ),
+            );
+          }),
+        ),
+        'fb': MontyHostFunction.parity(
+          'fb',
+          parityCoroutine((_, _) {
+            s.trace.add('call fb()');
+
+            return Object();
+          }),
+        ),
+      },
+    ),
+    trace: [
+      'call fa()',
+      'call fb()',
+      'value MontyList[MontyString("$_legacyOpaqueMessage"), MontyString("$_parityOpaqueMessage")]',
+    ],
+    answers: [
+      '0 future',
+      '1 future',
+      '0/b0 raise TypeError: $_legacyOpaqueMessage',
+      '1/b0 raise TypeError: $_parityOpaqueMessage',
     ],
   ),
 ];

@@ -100,6 +100,33 @@ void main() {
       expect(error.display(), 'main.py:1:1: error[x] y');
     });
 
+    test(
+      'MontyError.display rejects an unknown format with ArgumentError and '
+      'upstream text (C-12)',
+      () {
+        const expected =
+            "Invalid display format: 'nope'. Expected 'traceback', "
+            "'type-msg', or 'msg'";
+        final runtime = _raised('ValueError', 'bad') as MontyRuntimeError;
+        final syntax = _raised('SyntaxError', 'bad') as MontySyntaxError;
+        for (final call in [
+          () => runtime.display('nope'),
+          () => syntax.display('nope'),
+        ]) {
+          expect(
+            call,
+            throwsA(
+              isA<ArgumentError>().having(
+                (e) => e.message,
+                'message',
+                expected,
+              ),
+            ),
+          );
+        }
+      },
+    );
+
     test('MontyCrashedError: what happened, framed as upstream frames it', () {
       expect(
         '${crashedError(CrashCause.fatal, detail: 'boom', exitCode: 3)}',

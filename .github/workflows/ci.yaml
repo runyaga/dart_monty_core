@@ -1087,7 +1087,7 @@ jobs:
         # to, and each skipped suite writes an empty hitmap.
         run: |
           set -o pipefail
-          dart test test/integration/worker -p vm --tags=worker \
+          dart test test/integration/worker test/contract/contract_worker_test.dart -p vm --tags=worker \
             --coverage=coverage-worker 2>&1 | tee /tmp/worker-test.log
           bash tool/assert_test_count.sh /tmp/worker-test.log 614 worker
       - name: Generate worker LCOV

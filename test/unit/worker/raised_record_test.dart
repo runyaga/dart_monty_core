@@ -53,7 +53,7 @@ void main() {
       expect(record.display('msg'), 'k');
     });
 
-    test('an unknown format is an ArgumentError with upstream text', () {
+    test('an unknown format is an ArgumentError with upstream text (C-12)', () {
       for (final format in ['nope', '', 'Traceback', 'type_msg']) {
         expect(
           () => record.display(format),

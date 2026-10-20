@@ -8,6 +8,7 @@ library;
 import 'dart:async';
 
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
+import 'package:dart_monty_core/src/worker/suppressed_failures.dart';
 
 /// A worker being started.
 abstract interface class SpawnHandle {
@@ -52,7 +53,7 @@ final class PendingSpawn implements SpawnHandle {
     if (_cancelled.isCompleted) return;
     _cancelled.complete();
     if (_ready.isCompleted) {
-      _channel?.kill();
+      _killSafely(_channel, 'pending_spawn.cancel.kill');
 
       return;
     }
@@ -70,16 +71,30 @@ final class PendingSpawn implements SpawnHandle {
     try {
       channel = await start(_cancelled.future);
     } on Object catch (error, stack) {
-      if (!_ready.isCompleted) _ready.completeError(error, stack);
+      if (_ready.isCompleted) {
+        SuppressedFailures.record(error, stack, 'pending_spawn.late_start');
+
+        return;
+      }
+      _ready.completeError(error, stack);
 
       return;
     }
     if (_cancelled.isCompleted) {
-      channel.kill();
+      _killSafely(channel, 'pending_spawn.late_kill');
 
       return;
     }
     _channel = channel;
     _ready.complete(channel);
+  }
+}
+
+void _killSafely(MontyChannel? channel, String stage) {
+  if (channel == null) return;
+  try {
+    channel.kill();
+  } on Object catch (error, stack) {
+    SuppressedFailures.record(error, stack, stage);
   }
 }

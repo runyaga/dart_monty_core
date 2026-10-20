@@ -95,7 +95,7 @@ void main() {
     expect(() => MontyFileHandle('/a\uD800', 'r'), throwsArgumentError);
   });
 
-  test('two handles with equal fields are equal (a kept divergence)', () {
+  test('two handles with equal fields are equal (a kept divergence, C-11)', () {
     final a = MontyFileHandle('/f', 'rt', position: BigInt.one);
     final b = MontyFileHandle('/f', 'r', position: BigInt.one);
     expect(a, b);

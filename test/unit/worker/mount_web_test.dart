@@ -9,7 +9,7 @@ import '_mount_cwd_cases.dart';
 import '_mount_sleep_cases.dart';
 
 void main() {
-  test('MountDir refuses host directories on web', () {
+  test('MountDir refuses host directories on web (C-1)', () {
     expect(
       () => MountDir(hostPath: '/host', virtualPath: '/d'),
       throwsA(

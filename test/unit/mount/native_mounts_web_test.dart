@@ -13,7 +13,7 @@ void main() {
     ),
   );
 
-  test('host-directory mounts are refused before validating inputs', () {
+  test('host-directory mounts are refused before validating inputs (C-1)', () {
     expect(
       () => NativeMountRoot(hostPath: '/host', virtualPath: '/m'),
       refusal,
@@ -29,23 +29,23 @@ void main() {
       refusal,
     );
   });
-  test('native lookup route is unavailable in browsers', () {
+  test('native lookup route is unavailable in browsers (C-1)', () {
     expect(() => nativeMountLookupRoute, refusal);
   });
-  test('root path getters and close refuse host access', () {
+  test('root path getters and close refuse host access (C-1)', () {
     const root = NativeMountRoot.unsupported();
     expect(() => root.hostPath, refusal);
     expect(() => root.virtualPath, refusal);
     expect(root.close, refusal);
   });
-  test('table construction refuses even an empty root list', () {
+  test('table construction refuses even an empty root list (C-1)', () {
     expect(() => NativeMountTable([]), refusal);
     expect(
       () => NativeMountTable([const NativeMountRoot.unsupported()]),
       refusal,
     );
   });
-  test('table calls and close refuse host access', () {
+  test('table calls and close refuse host access (C-1)', () {
     const table = NativeMountTable.unsupported();
     expect(() => table.call([]), refusal);
     expect(() => table.call([255]), refusal);

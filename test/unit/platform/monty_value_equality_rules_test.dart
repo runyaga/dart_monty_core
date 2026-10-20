@@ -123,7 +123,7 @@ void main() {
     for (final (what, a, b, dart, python) in rows) {
       final kept = dart != python;
       test('$what: Dart $dart, Python $python'
-          '${kept ? ' (kept divergence)' : ''}', () {
+          '${kept ? ' (kept divergence C-11)' : ''}', () {
         expect(eqBothPaths(a, b), dart);
         expect(eqBothPaths(b, a), dart);
         if (dart) expect(a.hashCode, b.hashCode, reason: 'equal, so hash');
@@ -178,13 +178,19 @@ void main() {
       );
     });
 
-    test('NaN equals NaN (so values can be map keys), -0.0 equals 0.0', () {
-      expect(
-        eqBothPaths(const MontyFloat(double.nan), const MontyFloat(double.nan)),
-        isTrue,
-      );
-      expect(eqBothPaths(const MontyFloat(-0), const MontyFloat(0)), isTrue);
-    });
+    test(
+      'NaN equals NaN (so values can be map keys), -0.0 equals 0.0 (C-10)',
+      () {
+        expect(
+          eqBothPaths(
+            const MontyFloat(double.nan),
+            const MontyFloat(double.nan),
+          ),
+          isTrue,
+        );
+        expect(eqBothPaths(const MontyFloat(-0), const MontyFloat(0)), isTrue);
+      },
+    );
   });
 
   group('a dict built with a repeated key compares as Python builds it', () {

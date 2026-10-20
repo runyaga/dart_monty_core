@@ -307,7 +307,7 @@ void main() {
   // Dart cannot make an object unhashable, so `==` and `hashCode` are
   // identity. Python's answers below are pydantic-monty 1.1.0's, run on the
   // same pairs.
-  group('recorded divergence host-wrapper-identity-eq', () {
+  group('recorded divergence host-wrapper-identity-eq (C-9)', () {
     final box = _Box(1);
     final typeId = _id(100);
     final instanceId = _id(1);
@@ -322,20 +322,23 @@ void main() {
       ('two class wrappers with equal fields', type == twinType, true),
     ];
     for (final (what, dart, python) in cases) {
-      test('$what: Dart $dart, Python $python', () {
+      test('$what: Dart $dart, Python $python (C-9)', () {
         expect(dart, isNot(python), reason: 'listed as a divergence');
         expect(dart, isFalse);
       });
     }
 
-    test('a wrapper equals itself, and its hash is its identity hash', () {
-      for (final w in <Object>[instance, type]) {
-        expect(w == w, isTrue);
-        expect(w.hashCode, identityHashCode(w));
-      }
-    });
+    test(
+      'a wrapper equals itself, and its hash is its identity hash (C-9)',
+      () {
+        for (final w in <Object>[instance, type]) {
+          expect(w == w, isTrue);
+          expect(w.hashCode, identityHashCode(w));
+        }
+      },
+    );
 
-    test('equal-field wrappers are two keys in a set', () {
+    test('equal-field wrappers are two keys in a set (C-9)', () {
       expect({instance, twin, type, twinType}, hasLength(4));
     });
   });

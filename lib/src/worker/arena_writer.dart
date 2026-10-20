@@ -97,11 +97,11 @@ final class ArenaWriter {
   /// [value] is a [MontyValue]; anything else is refused with Python's
   /// `TypeError`. A host-object wrapper's own throws (its eager attributes,
   /// its hook) propagate.
-  int add(Object value) {
+  int add(Object? value, {bool parity = false}) {
     // The containers and classes on the stack.
     final open = Set<Object>.identity();
     final stack = <_Frame>[];
-    var done = _step(value, open, stack);
+    var done = _step(value, open, stack, parity: parity);
     // `done` is null right after a frame was opened, so a frame is open.
     while (done == null || stack.isNotEmpty) {
       final frame = stack.removeLast();
@@ -109,7 +109,7 @@ final class ArenaWriter {
       final next = frame.next;
       if (next != null) {
         stack.add(frame);
-        done = _step(next, open, stack);
+        done = _step(next, open, stack, parity: parity);
       } else {
         done = _complete(frame, open);
       }
@@ -128,13 +128,13 @@ final class ArenaWriter {
 
   /// [add], leaving the arena as it was when [value] is refused, so the
   /// writer stays usable for other values.
-  int tryAdd(Object value) {
+  int tryAdd(Object? value, {bool parity = false}) {
     final nodes = arena.nodes;
     // Read before the add, used only if it fails.
     // ignore: move-variable-closer-to-its-usage
     final mark = nodes.length;
     try {
-      return add(value);
+      return add(value, parity: parity);
     } on Object {
       nodes.length = mark;
       arena.nodeCount = mark;
@@ -146,23 +146,41 @@ final class ArenaWriter {
 
   /// Emits a leaf, finds an emitted container, or opens a frame for a
   /// container and returns null.
-  int? _step(Object child, Set<Object> open, List<_Frame> stack) {
-    if (child is! MontyValue) return _hostStep(child, open, stack);
+  int? _step(
+    Object? child,
+    Set<Object> open,
+    List<_Frame> stack, {
+    required bool parity,
+  }) {
+    if (child is! MontyValue) {
+      return _hostStep(child, open, stack, parity: parity);
+    }
     // A class wrapper registers at each meeting, before its node is reused.
     if (child is ClassType<Object>) {
       return _enterHostClass(_HostClass.of(child), open, stack);
     }
     if (_containers[child] case final id?) return id;
-    final v = child;
-    switch (v) {
-      case final MontyClassTypeProxy type:
-        return _enterClass(type, open, stack, identity: true);
-      case final ClassInstance<Object> w:
-        return _enterInstance(w, open, stack);
-      case MontyHostFunction(:final name, :final docstring):
-        return _emit(functionNode(name, docstring: docstring));
-      default:
-    }
+
+    return switch (child) {
+      final MontyClassTypeProxy type => _enterClass(
+        type,
+        open,
+        stack,
+        identity: true,
+      ),
+      final ClassInstance<Object> w => _enterInstance(w, open, stack),
+      MontyHostFunction(:final name, :final docstring) => _emit(
+        functionNode(name, docstring: docstring),
+      ),
+      _ => _enterContainer(child, open, stack),
+    };
+  }
+
+  int? _enterContainer(
+    MontyValue v,
+    Set<Object> open,
+    List<_Frame> stack,
+  ) {
     final container = _container(v);
     if (container == null) return _emit(_leaf(v));
     final (children, build) = container;
@@ -183,21 +201,27 @@ final class ArenaWriter {
     return null;
   }
 
-  /// [_step] for what is not a [MontyValue]: a class proxy's metadata, a
-  /// host class an instance carries, or a method read from a wrapper;
+  /// [_step] for what is not a [MontyValue]: null, a class proxy's metadata,
+  /// a host class an instance carries, or a method read from a wrapper;
   /// anything else is refused.
-  int? _hostStep(Object child, Set<Object> open, List<_Frame> stack) =>
-      switch (child) {
-        _ProxyClass(:final type) => _enterClass(
-          type,
-          open,
-          stack,
-          identity: false,
-        ),
-        BoundMethod(:final name) => _emit(functionNode(name)),
-        final _HostClass type => _enterHostClass(type, open, stack),
-        _ => throw _unconvertible(child),
-      };
+  int? _hostStep(
+    Object? child,
+    Set<Object> open,
+    List<_Frame> stack, {
+    required bool parity,
+  }) => switch (child) {
+    null when parity => _emit(_leaf(const MontyNone())),
+    null => throw ArgumentError.notNull('value'),
+    _ProxyClass(:final type) => _enterClass(
+      type,
+      open,
+      stack,
+      identity: false,
+    ),
+    BoundMethod(:final name) => _emit(functionNode(name)),
+    final _HostClass type => _enterHostClass(type, open, stack),
+    _ => throw _unconvertible(child, parity: parity),
+  };
 
   /// A class proxy (upstream's `enter_class_type`): one node per id while
   /// it has no attributes, and, with an [identity] (sent as a value), one
@@ -383,25 +407,25 @@ final class ArenaWriter {
     return id;
   }
 
-  pb.MontyNode _classNode(MontyClassTypeProxy type, List<int> ids) {
-    _checkText(type, type.name, 'class name');
-    final node = pb.Type(
-      name: _nzs(type.name),
-      id: _uuid(type, type.id),
-      origin: type.hostDefined ? originHost : originSandbox,
-      isDataclass: type.isDataclass ? true : null,
-    );
-    if (ids.isNotEmpty) node.attrs = _pairs(ids);
-
-    return pb.MontyNode(type: node);
-  }
-
   int _emit(pb.MontyNode node) {
     arena.nodes.add(node);
     arena.nodeCount = arena.nodes.length;
 
     return arena.nodes.length - 1;
   }
+}
+
+pb.MontyNode _classNode(MontyClassTypeProxy type, List<int> ids) {
+  _checkText(type, type.name, 'class name');
+  final node = pb.Type(
+    name: _nzs(type.name),
+    id: _uuid(type, type.id),
+    origin: type.hostDefined ? originHost : originSandbox,
+    isDataclass: type.isDataclass ? true : null,
+  );
+  if (ids.isNotEmpty) node.attrs = _pairs(ids);
+
+  return pb.MontyNode(type: node);
 }
 
 /// A class's id as the uuid it names, whatever the hex digits' case.
@@ -458,13 +482,20 @@ T _raising<T>(Object holder, T Function() read) {
 
 /// Python's `TypeError` for a host object that is neither a value nor a
 /// wrapper (upstream: "Cannot convert ... to Monty value").
-PythonRefusal _unconvertible(Object value) => PythonRefusal(
-  value,
-  'is neither a MontyValue nor a host-object wrapper',
-  'TypeError',
-  'Cannot convert ${value.runtimeType} to Monty value — wrap class '
-      'instances in ClassInstance(...)',
-);
+PythonRefusal _unconvertible(Object value, {bool parity = false}) =>
+    PythonRefusal(
+      value,
+      'is neither a MontyValue nor a host-object wrapper',
+      'TypeError',
+      parity
+          ? 'Cannot convert ${_parityTypeName(value)} to Monty value — wrap '
+                'class instances in pydantic_monty.ClassInstance(...)'
+          : 'Cannot convert ${value.runtimeType} to Monty value — wrap class '
+                'instances in ClassInstance(...)',
+    );
+
+String _parityTypeName(Object value) =>
+    value.runtimeType == Object ? 'builtins.object' : '${value.runtimeType}';
 
 /// A container or class being emitted: its children, and the nodes of those
 /// emitted so far.

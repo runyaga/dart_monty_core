@@ -559,9 +559,9 @@ void sessionSurfacePoolTests(String label, WithPool withPool) {
     // decodes the proxy to the Python type and calls it on the host:
     // `p("42")` gives 42 there.
     test(
-      'divergence builtin-type-call-by-name: a builtin type called by name '
-      'from externalLookup raises TypeError (upstream runs the type on the '
-      'host); read first, it runs in the sandbox',
+      'divergence builtin-type-call-by-name (C-7): a builtin type called by '
+      'name from externalLookup raises TypeError (upstream runs the type on '
+      'the host); read first, it runs in the sandbox',
       () async {
         await withPool((pool) async {
           final s = await pool.checkout();

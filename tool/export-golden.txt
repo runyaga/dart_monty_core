@@ -20,6 +20,7 @@ ExternalResult
 ExternalReturnValue
 ExternalSettledResult
 Frame
+FrameTooLargeException
 FunctionSnapshot
 FutureSnapshot
 HostClass
@@ -76,6 +77,7 @@ StatResult
 TimeZone
 coroutine
 instrumentTelemetry
+parityCoroutine
 runMontyWorkerIfChild
 
 [dart_monty_core_testing.dart]
@@ -328,6 +330,7 @@ final class MontyHostFunction extends MontyValue
   MontyHostFunction.fn: final field FutureOr@dart:async<MontyValue> Function(List<MontyValue>, Map<String, MontyValue>)
   MontyHostFunction.name: final field String
   MontyHostFunction.new: const constructor(String name, FutureOr@dart:async<MontyValue> Function(List<MontyValue>, Map<String, MontyValue>) fn, {String? docstring})
+  MontyHostFunction.parity: constructor(String name, FutureOr@dart:async<Object?> Function(List<MontyValue>, Map<String, MontyValue>) fn, {String? docstring})
   MontyHostFunction.toString: method() -> String
 final class MontyInt extends MontyValue
   MontyInt.==: operator(Object other) -> bool
@@ -481,10 +484,23 @@ final class CollectString
   CollectString.output: getter -> String
   CollectString.toString: method() -> String
 
+[members: src/worker/frame_errors.dart]
+sealed class FrameException implements Exception
+  FrameException.new: const constructor()
+  FrameException: permits final class FrameDecodeException extends FrameException
+  FrameException: permits final class FrameTooLargeException extends FrameException
+  FrameException: permits final class FrameTruncatedException extends FrameException
+final class FrameTooLargeException extends FrameException
+  FrameTooLargeException.length: final field int
+  FrameTooLargeException.max: final field int
+  FrameTooLargeException.new: const constructor(int length, int max)
+  FrameTooLargeException.toString: method() -> String
+
 [members: src/worker/host_answers.dart]
 typedef OsHandler = FutureOr@dart:async<MontyValue> Function(String, List<MontyValue>, Map<String, MontyValue>)
 typedef ProtoExternalFunction = FutureOr@dart:async<MontyValue> Function(List<MontyValue>, Map<String, MontyValue>)
 coroutine: function(ProtoExternalFunction function) -> ProtoExternalFunction
+parityCoroutine: function(FutureOr@dart:async<Object?> Function(List<MontyValue>, Map<String, MontyValue>) function) -> FutureOr@dart:async<Object?> Function(List<MontyValue>, Map<String, MontyValue>)
 
 [members: src/worker/monty.dart]
 final class Monty
