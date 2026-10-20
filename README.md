@@ -169,9 +169,11 @@ Pass `os:`, an `OsHandler`, to answer them; without one they are declined.
 
 ```dart
 await session.feedRun(
-  'import os\nos.getenv("APP_MODE")',
+  'import os\nos.getenv("APP_MODE", "prod")',
   os: (name, args, kwargs) => switch (name) {
-    'os.getenv' => const MontyString('demo'),
+    'os.getenv' => (args[0] as MontyString).value == 'APP_MODE'
+        ? const MontyString('demo')
+        : args[1], // the default the call carried
     _ => throw const OsCallNotHandledException(),
   },
 );
@@ -179,7 +181,12 @@ await session.feedRun(
 
 The name is upstream's OS function name. Throwing `OsCallNotHandledException`
 synchronously declines the call, and the worker raises its default:
-`PermissionError` for a filesystem call, `RuntimeError` for the rest.
+`PermissionError` for a filesystem call, `RuntimeError` for the rest. The
+handler sees every argument: `os.getenv` receives the key and the default
+(`None` without one). The `OsHandler` API reference lists all 29 names with
+their argument shapes and answers; a write or append answers the count
+written — characters for `Path.write_text` and `Path.append_text`, bytes for
+the `bytes` forms.
 
 `OSAccess` provides an in-memory filesystem for the entire virtual namespace:
 
@@ -195,9 +202,23 @@ Files contain a `String` or `Uint8List`. Writes update caller-held file objects,
 and `os.files` also includes files created by Python. The handler owns its state
 across feeds; create a new handler for a fresh filesystem. Memory filesystem
 mount prefixes, read-only modes and byte budgets are no longer provided.
+`StatResult.fileStat` and `dirStat` build stat responses for custom handlers.
 Customize an operation by wrapping the callable `OSAccess` and forwarding the
-remaining calls. `StatResult.fileStat` and `dirStat` build stat responses for
-custom handlers.
+remaining calls:
+
+```dart
+final inner = OSAccess(
+  files: [MemoryFile('/data/config.json', '{"debug": true}')],
+  environ: {'APP_ENV': 'test'},
+);
+await session.feedRun(
+  "open('/data/config.json').read()",
+  os: (name, args, kwargs) => switch (name) {
+    'os.getenv' => const MontyString('demo'), // answer one call here
+    _ => inner(name, args, kwargs),           // OSAccess is callable
+  },
+);
+```
 
 The clock, time zone, sleeps and random seed a session sees are set by
 `checkout(osPolicy: OsPolicy(...))`.
@@ -224,9 +245,12 @@ snapshot needs `mount:` again and starts with a fresh overlay; dumps contain
 neither mounts nor overlay contents. `FunctionSnapshot.resumeAuto()` uses the
 captured mounts and handler, while `resume(result)` answers directly.
 
-`feedStart` surfaces both system sleep kinds for manual answering or dispatch
-through `resumeAuto()` and `os:`. `feedRun` handles system sleeps automatically.
-`FakeMontySession` uses the same host dispatch for its scripted calls.
+`feedStart` surfaces both system sleep calls, `system.sleep` and
+`system.async_sleep`, for manual answering or dispatch through `resumeAuto()`
+and `os:` — a `resumeAuto()` sends them to the mounts and the OS handler
+rather than waiting them. `feedRun` waits system sleeps itself, cut to the
+OS policy's maximum. `FakeMontySession` uses the same host dispatch for its
+scripted calls.
 
 The constructor throws `UnsupportedError` on the web. Native consumers need
 the mount library built with `build_worker: true`; repository tests use
@@ -242,6 +266,27 @@ on the host with full access to its filesystem and network; one that touches
 the real filesystem breaks the sandbox. Importing it is a security decision.
 The separation is a signal, not a boundary: `AbstractFile` is an open interface,
 so audit every `AbstractFile` that is not a `MemoryFile`.
+
+A `CallbackFile` seeds an `OSAccess` namespace like a `MemoryFile` does; the
+callbacks run on every read (and every `stat`, which sizes the content) and
+write, with nothing cached (native, reading a real log file):
+
+```dart
+import 'dart:io';
+
+import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:dart_monty_core/unsafe_callback_file.dart';
+
+final os = OSAccess(files: [
+  CallbackFile(
+    '/data/app.log',                                         // virtual
+    (path) => File('/var/log/app.log').readAsStringSync(),   // every read
+    (path, content) =>
+        File('/var/log/app.log').writeAsStringSync('$content'), // writes
+  ),
+]);
+await session.feedRun("open('/data/app.log').read()", os: os);
+```
 
 ### Resource limits and type checking
 

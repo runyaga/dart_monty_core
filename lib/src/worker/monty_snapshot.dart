@@ -132,6 +132,9 @@ final class ExternalReturnValue extends ExternalSettledResult {
 ///
 /// [excType] must be one of upstream's exception type names; a resume that
 /// carries another throws [ArgumentError] and leaves its snapshot unused.
+/// Thrown from live host code (a host function, an OS handler, a coroutine)
+/// instead, an unknown name raises plain Python `Exception` in the sandbox,
+/// carrying that [ArgumentError]'s text.
 ///
 /// The attributes are sent as upstream sends a live host exception's: only
 /// a `json.JSONDecodeError`'s `msg`, `doc`, `pos`, `lineno` and `colno`
@@ -384,8 +387,12 @@ final class FunctionSnapshot extends SuspendedSnapshot {
   /// unused, for a host function call.
   Future<MontySnapshot> resumeNotHandled() => _driver.resumeNotHandled(this);
 
-  /// Answers the call from the feed's host functions or OS handler, as
-  /// `feedRun` would, and runs on.
+  /// Answers the call from the feed's host functions or OS handler, with
+  /// the feed's mount table tried first, as `feedRun` tries it, and runs
+  /// on. A system sleep is not waited here as `feedRun` waits it: the two
+  /// calls, `system.sleep` and `system.async_sleep`, reach the mounts and
+  /// the OS handler like any other call, for the host to wait, decline or
+  /// raise.
   Future<MontySnapshot> resumeAuto() => _driver.resumeCallAuto(this);
 }
 

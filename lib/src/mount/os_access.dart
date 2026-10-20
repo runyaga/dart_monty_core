@@ -235,7 +235,17 @@ MontyValue _mkdir(
   existOk: _truthy(kwargs['exist_ok']),
 );
 
-// The old public open helper is now private and owns its filesystem effects.
+/// Resolves an `open` call: parses [mode] (one upstream refuses raises
+/// `ValueError` in the sandbox, [ExternalException]) and returns a handle
+/// for [path], leaving the tree as the mode asks.
+///
+/// A read mode (`r`, `rb`) requires an existing file: `FileNotFoundError`
+/// for a missing path, `IsADirectoryError` for a directory, and the content
+/// is untouched. A write mode (`w`, `wb`) truncates an existing file to
+/// empty and creates a missing one empty — a missing parent directory is
+/// `FileNotFoundError`, a directory at the path `IsADirectoryError`. An
+/// append mode (`a`, `ab`) keeps an existing file's content, creates a
+/// missing one empty, and raises `IsADirectoryError` for a directory.
 MontyFileHandle _resolveOpenCall(
   _OsAccessTree tree,
   List<AbstractFile> createdFiles,

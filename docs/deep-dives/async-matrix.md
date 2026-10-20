@@ -76,10 +76,12 @@ reported again. An `ExternalException` there raises inside Python at the
 ## Sleeps
 
 `feedRun` waits out system sleeps, cut to the OS policy's system-sleep maximum
-(10 s by default, set with `OsPolicy`). A snapshot resume routes a system sleep
-to the OS handler. An `asyncio.sleep` waits through the futures protocol, so
-sibling tasks run meanwhile. A session's total sleep is bounded by
-`ResourceLimits.maxTotalSleep`.
+(10 s by default, set with `OsPolicy`). The system-sleep calls are
+`system.sleep` and `system.async_sleep`; the async one waits through the
+futures protocol, so sibling tasks run meanwhile, as an `asyncio.sleep` does.
+A snapshot `resumeAuto()` does not wait them: it routes both, by those names,
+to the mounts and the OS handler to answer. A session's total sleep is
+bounded by `ResourceLimits.maxTotalSleep`.
 
 ## Where it is tested
 

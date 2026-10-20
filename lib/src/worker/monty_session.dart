@@ -123,10 +123,11 @@ abstract interface class MontySession {
   /// on. For a host function's answer the suspension stays pending: every
   /// later feed throws [StateError], and only [close] recovers the worker.
   ///
-  /// A `time.sleep` is waited by the session, cut to the OS policy's
-  /// system-sleep maximum (10 s by default). An `asyncio.sleep` is waited
-  /// the same way through the futures protocol, so sibling tasks run
-  /// meanwhile.
+  /// A system sleep is waited by the session, cut to the OS policy's
+  /// system-sleep maximum (10 s by default). The two system-sleep calls
+  /// are `system.sleep` and `system.async_sleep`; the async one is waited
+  /// through the futures protocol, so sibling tasks run meanwhile, as an
+  /// `asyncio.sleep` is.
   ///
   /// On a type-checking session a snippet the check rejects throws
   /// [MontyTypingError] without running; [skipTypeCheck] skips the check
@@ -155,7 +156,10 @@ abstract interface class MontySession {
   /// wait on pending futures is a [MontySnapshot] for the caller to answer
   /// (upstream's `feed_start`). The parameters are [feedRun]'s; [cwd] holds
   /// for the whole feed, and [externalLookup] and [os] are kept for the
-  /// snapshots' `resumeAuto`, never consulted otherwise.
+  /// snapshots' `resumeAuto`, never consulted otherwise. The feed's mount
+  /// table, overlay and budgets last across its resumes too, and unlike
+  /// [feedRun] a `resumeAuto` does not wait a system sleep itself but sends
+  /// it to the mounts and `os`, named `system.sleep` or `system.async_sleep`.
   ///
   /// While a suspension is unanswered the session refuses a new feed with
   /// [StateError] ("feed called while a suspension is awaiting an
@@ -812,6 +816,10 @@ final class _FeedDrive implements SnapshotDriver {
     );
   }
 
+  /// Answers [snapshot] from the feed's host side. An OS call goes to
+  /// [HostAnswers.osCall] with `parentSleeps` false, so a system sleep
+  /// (`system.sleep`, `system.async_sleep`) reaches the mounts and the OS
+  /// handler instead of being waited here, as `feedRun` waits it.
   @override
   Future<MontySnapshot> resumeCallAuto(FunctionSnapshot snapshot) async {
     snapshot.spend();

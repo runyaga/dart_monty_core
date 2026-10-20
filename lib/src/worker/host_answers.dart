@@ -47,12 +47,53 @@ typedef ProtoExternalFunction =
 /// `RuntimeError` for the rest. Only a synchronous throw declines, as only a
 /// synchronously returned `NOT_HANDLED` does upstream; a returned [Future]
 /// that fails with it raises `TypeError` ([AsyncDecline]) for every call,
-/// sleeps included, so an `async` handler cannot decline. Throw
+/// sleeps included, so an `async` handler cannot decline: one that declines
+/// some calls and answers the rest with futures must stay a plain function,
+/// throwing its declines and returning futures for the rest. Throw
 /// [ExternalException] to raise a chosen exception; any other throw raises
-/// `Exception` with its text
-/// ([raisedFrom]). For `asyncio.sleep` a returned [Future] is the call's
-/// coroutine, which the sandbox awaits. For every other call it is awaited
+/// `Exception` with its text ([raisedFrom]). For `asyncio.sleep` and
+/// `system.async_sleep` a returned [Future] is the call's coroutine, which
+/// the sandbox awaits, its value ignored; for every other call it is awaited
 /// and its value is the answer.
+///
+/// The 29 calls, their arguments, and the answer each returns:
+///
+/// | name | arguments | answer |
+/// | --- | --- | --- |
+/// | `open` | path, mode `str` | a [MontyFileHandle] |
+/// | `Path.exists` | path | `bool` |
+/// | `Path.is_file` | path | `bool` |
+/// | `Path.is_dir` | path | `bool` |
+/// | `Path.is_symlink` | path (ignored) | `bool` |
+/// | `Path.read_text` | path or handle | `str` |
+/// | `Path.read_bytes` | path or handle | `bytes` |
+/// | `Path.write_text` | path or handle, `str` | `int`: chars written |
+/// | `Path.append_text` | path or handle, `str` | `int`: chars appended |
+/// | `Path.write_bytes` | path or handle, `bytes` | `int`: bytes written |
+/// | `Path.append_bytes` | path or handle, `bytes` | `int`: bytes appended |
+/// | `Path.stat` | path | the stat tuple |
+/// | `Path.iterdir` | path | list of paths |
+/// | `Path.resolve` | path | resolved path, `str` |
+/// | `Path.absolute` | path | absolute path, `str` |
+/// | `Path.mkdir` | path; `parents`, `exist_ok` | `None` |
+/// | `Path.unlink` | path | `None` |
+/// | `Path.rmdir` | path | `None` |
+/// | `Path.rename` | src path, dst path | `None` |
+/// | `os.environ` | — | dict of `str` to `str` |
+/// | `os.getenv` | key `str`, default | value, default, or `None` |
+/// | `os.urandom` | size `int` | `bytes` |
+/// | `date.today` | — | a date |
+/// | `datetime.now` | `timezone` or `None` | a `datetime` |
+/// | `time.time` | caller `str` | `float` seconds |
+/// | `time.sleep` | seconds `float` | `None` |
+/// | `system.sleep` | seconds `float` | `None` |
+/// | `asyncio.sleep` | delay `float` | `None` |
+/// | `system.async_sleep` | delay `float` | `None` |
+///
+/// A path argument is a [MontyPath]; the reads, writes and appends take a
+/// [MontyFileHandle] in its place once `open` answered one. A write or
+/// append answers the count written — characters for the text calls, bytes
+/// for the bytes calls — as upstream's own filesystem handler does.
 typedef OsHandler =
     FutureOr<MontyValue> Function(
       String name,
@@ -109,8 +150,8 @@ bool isCoroutine(ProtoExternalFunction function) =>
 
 final Expando<bool> _coroutines = Expando('coroutine');
 
-/// Whether an OS call named [name] may be answered with a future: only
-/// `asyncio.sleep`, in either sleep mode (upstream
+/// Whether an OS call named [name] may be answered with a future: only the
+/// two async sleeps, `asyncio.sleep` and `system.async_sleep` (upstream
 /// `OsFunctionCall::accepts_future`).
 bool acceptsFuture(String name) =>
     name == 'asyncio.sleep' || name == 'system.async_sleep';
@@ -1086,9 +1127,11 @@ pb.ParentRequest _resume(
 ///   when it has none: upstream reads a raised exception's argument as
 ///   `str(exc)` when it has no single `str` one (`exception_arg`), so
 ///   `ValueError()` arrives as `ValueError('')`.
-/// - An [ExternalException] whose type upstream does not know is the
-///   [ArgumentError] a manual resume throws for it ([unknownExcType]), and
-///   is raised as any other throw is.
+/// - An [ExternalException] must name one of the exception types upstream
+///   knows ([exceptionTypeNames], every name its `ExcType::from_str`
+///   accepts). Live host code that throws another name raises plain
+///   `Exception` carrying the [ArgumentError] ([unknownExcType]) a manual
+///   resume throws to its caller instead, leaving its snapshot unused.
 /// - Any other throw raises `Exception` with its `toString()`: upstream
 ///   raises a host exception as its nearest built-in class, and a Dart
 ///   object has no Python class, so it takes the fallback a class of the

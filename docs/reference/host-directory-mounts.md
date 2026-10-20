@@ -68,8 +68,9 @@ These rules are enforced by upstream `monty-fs`, not a Dart path-security port.
 `feedStart` retains the table across suspensions. `FunctionSnapshot.resumeAuto()`
 consults it and the captured `os:` handler; `resume(result)` supplies the answer
 directly, and `resumeNotHandled()` invokes the worker default. `feedStart`
-surfaces both system sleep kinds, so `resumeAuto()` can route them through
-`os:`. `feedRun` keeps automatic system sleep handling.
+surfaces both system sleep calls, `system.sleep` and `system.async_sleep`;
+`resumeAuto()` routes them through the mounts and `os:` instead of waiting
+them, which `feedRun` does itself, cut to the OS policy's maximum.
 
 Dumps contain no mounts or overlay data. `loadSnapshot(state, mount: [data])`
 starts a fresh table and overlay while preserving the saved cwd. Restoring
