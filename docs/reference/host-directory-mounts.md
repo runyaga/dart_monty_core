@@ -13,11 +13,56 @@ final data = MountDir(
   memoryUsageLimit: 100000000,
 );
 try {
-  await session.feedRun("open('input.txt').read()", mount: [data]);
+  await session.feedRun("open('/data/input.txt').read()", mount: [data]);
 } finally {
   data.close();
 }
 ```
+
+## A complete example
+
+A real host directory, mounted and read through the sandbox, with an OS
+handler composed beside the mount. Construction needs the native mount
+library (see [Platforms and discovery](#platforms-and-discovery)); without
+it, and on the web, the constructor throws `UnsupportedError`.
+
+```dart
+import 'dart:io';
+
+import 'package:dart_monty_core/dart_monty_core.dart';
+
+Future<void> main() async {
+  final host = await Directory.systemTemp.createTemp('monty-mount');
+  final note = File('${host.path}/note.txt');
+  await note.writeAsString('from the host disk');
+
+  final data = MountDir(
+    hostPath: host.path,
+    virtualPath: '/data',
+    mode: 'overlay',
+    writeBytesLimit: 1000000,
+  );
+  try {
+    await Monty.withPool((monty) => monty.withSession((session) async {
+      // Filesystem calls reach the mount; OSAccess answers the rest.
+      final os = OSAccess(environ: {'APP_ENV': 'test'});
+      final result = await session.feedRun(
+        "import os\n(open('/data/note.txt').read(), os.getenv('APP_ENV'))",
+        mount: [data],
+        os: os,
+      ) as MontyTuple;
+      print(result.items); // [MontyString(from the host disk), MontyString(test)]
+    }));
+  } finally {
+    data.close();
+    await host.delete(recursive: true);
+  }
+}
+```
+
+Overlay writes vanish when their feed ends, so the host file keeps its
+original content; `example/12_mount_dir.dart` runs this composition, including
+the overlay discard and the host file's contents afterwards.
 
 ## Construction and lifetime
 
@@ -25,7 +70,9 @@ Construction opens the directory immediately. `hostPath` reports its canonical
 path; `virtualPath` is normalized and must be absolute. The capability follows
 the opened directory even if the host renames it. `close()` is idempotent and
 keeps the fields readable. A native finalizer releases abandoned capabilities;
-explicit close provides deterministic cleanup.
+explicit close provides deterministic cleanup. A mount belongs to the isolate
+that constructed it: its capability is used only there, so pass it to feeds
+from that isolate.
 
 The modes are the strings `'overlay'` (default), `'read-only'`, and
 `'read-write'`. Overlay changes live in one feed and disappear when it ends.
@@ -82,7 +129,11 @@ Until cwd is established, an omitted cwd chooses the first mount's virtual
 path, or `/` without mounts. A sent feed establishes it unless type checking
 rejects that feed. Sent syntax/runtime errors establish it; typing rejection
 and pre-send validation errors do not. Once established, omitted cwd preserves
-the worker's current directory. Explicit cwd validation happens before
+the worker's current directory. A relative path in fed code resolves against
+that directory: the first mount supplies it only while cwd is unestablished,
+and an earlier feed, an explicit `cwd:`, `os.chdir` or a restored dump can
+leave it elsewhere. Use the absolute virtual path, `open('/data/input.txt')`,
+or pass `cwd:` explicitly. Explicit cwd validation happens before
 mount-table construction, so invalid cwd wins over overlap, sends no Feed,
 and preserves default eligibility. `FakeMontySession` shares this host-side
 state machine and mount dispatch for scripted events; it does not evaluate
@@ -95,8 +146,10 @@ mount on dart2js or dart2wasm throws `UnsupportedError`: browsers provide no
 host directory capability. `OSAccess` remains available on those backends.
 
 On native, library lookup first uses the code asset emitted by the opt-in
-build hook (`build_worker: true`), then the cdylib beside the located worker
-executable. `tool/build_worker.sh` builds both for repository tests. If neither
+build hook (`build_worker: true`), then the cdylib beside the package's own
+worker executable, in `lib/src/bin/<os>-<arch>/`. Neither the worker named by
+`workerLocation` nor the published worker cache is searched for the library.
+`tool/build_worker.sh` builds both there for repository tests. If neither
 route supplies the library, construction throws `UnsupportedError` with the
 `build_worker: true` instruction. It never substitutes an in-memory mount.
 

@@ -8,13 +8,24 @@ import 'package:dart_monty_core/src/mount/native_mount_service.dart';
 /// Overlay writes and budgets belong to each feed. Closing this mount
 /// prevents new feeds from using it; feeds already running keep their root.
 /// Dropping the mount releases its root through the native finalizer.
-/// Construction on the web throws [UnsupportedError].
+///
+/// Construction needs the native mount service: the code asset the build
+/// hook emits for `build_worker: true`, or the library beside the package's
+/// worker executable in `lib/src/bin/<os>-<arch>/`. Without it, and on the
+/// web, construction throws [UnsupportedError]; a bad path or mode throws
+/// [ArgumentError], and a negative limit [RangeError]. The capability
+/// belongs to the creating isolate: use it from there.
 final class MountDir {
   /// Opens [hostPath] immediately and normalises [virtualPath].
   ///
   /// [mode] is 'overlay', 'read-only', or 'read-write'. [writeBytesLimit]
   /// limits each feed's writes; [memoryUsageLimit] bounds retained overlay
   /// data and transient filesystem results in every mode.
+  ///
+  /// Throws [UnsupportedError] without the native mount service and on the
+  /// web; [ArgumentError] when the service rejects a path or [mode];
+  /// [RangeError] for a negative [writeBytesLimit] or [memoryUsageLimit].
+  /// The opened capability belongs to this isolate.
   MountDir({
     required String hostPath,
     required String virtualPath,

@@ -248,11 +248,15 @@ The clock, time zone, sleeps and random seed a session sees are set by
 ```dart
 final mount = MountDir(hostPath: '/host/data', virtualPath: '/data');
 try {
-  await session.feedRun("open('config.json').read()", mount: [mount]);
+  await session.feedRun("open('/data/config.json').read()", mount: [mount]);
 } finally {
   mount.close();
 }
 ```
+
+Use the mount's absolute virtual path in fed code: a relative one resolves
+against the session's working directory, which the first mount supplies only
+before that directory is established. Pass `cwd:` to set it explicitly.
 
 The default `mode: 'overlay'` discards writes at feed completion. Choose
 `'read-only'` to reject writes or `'read-write'` to persist them on the host.
@@ -269,9 +273,13 @@ rather than waiting them. `feedRun` waits system sleeps itself, cut to the
 OS policy's maximum. `FakeMontySession` uses the same host dispatch for its
 scripted calls.
 
-The constructor throws `UnsupportedError` on the web. Native consumers need
-the mount library built with `build_worker: true`; repository tests use
-`tool/build_worker.sh`, which builds it beside the worker executable.
+The constructor throws `UnsupportedError` on the web, and on native without
+the mount library. Lookup uses the code asset built with `build_worker: true`,
+then the cdylib beside the package's own worker executable in
+`lib/src/bin/<os>-<arch>/`; the worker named by `workerLocation` and the
+published worker cache are not searched. A bad path or mode throws
+`ArgumentError`, a negative limit `RangeError`. Repository tests use
+`tool/build_worker.sh`, which builds the library there.
 See [host directory mounts](docs/reference/host-directory-mounts.md) for
 lifetime, error, budget, discovery and routing details.
 
