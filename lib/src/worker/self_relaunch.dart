@@ -54,6 +54,9 @@ typedef SelfRelaunchDiagnosis =
 
 /// Diagnoses whether this executable can serve a self-relaunched worker.
 ///
+/// Arming is isolate-local, so [SelfRelaunchNotArmed] reports the isolate
+/// the diagnosis runs in, not the process.
+///
 /// The worker library lives beside an AOT executable in `../lib`. The optional
 /// arguments replace host operations in tests.
 SelfRelaunchStatus diagnoseSelfRelaunch({
@@ -90,6 +93,12 @@ SelfRelaunchStatus diagnoseSelfRelaunch({
 }
 
 /// Describes how to make a failed self-relaunch diagnosis usable.
+///
+/// The not-armed remedy names the diagnostic cause: arming is
+/// isolate-local, so it fires for a pool located in an isolate that has
+/// not armed itself, `main`'s own call notwithstanding. Set up every
+/// isolate that locates a worker: call [runMontyWorkerIfChild] there, as
+/// the first statement of its entry point, before the pool starts.
 String selfRelaunchRemedy(SelfRelaunchStatus status) => switch (status) {
   SelfRelaunchReady() => '',
   SelfRelaunchNotArmed() =>

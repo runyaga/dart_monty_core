@@ -69,6 +69,25 @@ to the next. A live worker keeps the Dart process running, so a pool from
 `requestTimeout` bounds each protocol turn; a turn past it kills the worker
 and the call fails with `MontyCrashedError` (`timedOut` is true).
 
+`Monty.start` spawns `minProcesses` workers at once and fails if any of them
+cannot be located, spawned, or readied within 30 seconds — a
+`MontyCrashedError` that names the cause. Sizing has a domain:
+`minProcesses` is 0 or more, `maxProcesses` is 1 or more and at least
+`minProcesses`, and `maxCheckoutsPerWorker` spans 0 (retire at first
+release) to 2^32 - 1; every duration must be non-negative. When
+`maxProcesses` is null it is the platform's default — the processor count on
+native, the browser's hardware concurrency on the web — which can sit below
+`minProcesses` (a small machine, a browser that reports little), making the
+pool impossible; set `maxProcesses` explicitly there.
+
+A checkout's deadlines are separate: `checkoutTimeout` bounds only the wait
+for a free worker (forever when null); starting a new worker is bounded by the
+30-second startup deadline, and the session's configure turn by
+`requestTimeout` (unbounded when null). So a checkout that waits, spawns and
+configures can take up to all three, and `checkoutTimeout` never cuts short a
+spawn or a configure. `feedDurationLimitGrace` and `turnDurationLimitGrace`
+run one second by default; null leaves that limit unguarded by the parent.
+
 ### `MontySession`: one interpreter
 
 | | |

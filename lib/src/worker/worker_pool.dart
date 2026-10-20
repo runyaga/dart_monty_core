@@ -84,7 +84,17 @@ final class WorkerPool {
   ///
   /// Throws [ArgumentError] before any worker starts for a setting
   /// upstream's constructor refuses, in its order and with its message
-  /// ([PoolOptions.validate]), then for an impossible size.
+  /// ([PoolOptions.validate]), then for an impossible size: a
+  /// [PoolOptions.minProcesses] below 0, an effective
+  /// [PoolOptions.maxProcesses] below 1, or a minimum above it. The
+  /// effective maximum is the setting or the platform's default, which can
+  /// sit below [PoolOptions.minProcesses]: the processor count on native,
+  /// the browser's reported hardware concurrency on the web, 4 where the
+  /// browser reports none. Set [PoolOptions.maxProcesses] there.
+  ///
+  /// A worker that cannot be located or spawned ([CrashCause.spawn]), or is
+  /// not ready within [startupTimeout] ([CrashCause.killed]), fails the
+  /// call as [MontyCrashedError], after the cleanup above.
   ///
   /// [open] replaces the platform's channel factory in tests.
   static Future<WorkerPool> start([
@@ -123,6 +133,11 @@ final class WorkerPool {
   /// [PoolOptions.checkoutTimeout], [StateError] if the pool is closed when
   /// it is called, and whatever the start of a new worker throws
   /// ([MontyCrashedError] when it is not ready within [startupTimeout]).
+  ///
+  /// [PoolOptions.checkoutTimeout] bounds only the wait for a slot: a new
+  /// worker's spawn is bounded by [startupTimeout] and the session
+  /// configured on the lease by [PoolOptions.requestTimeout], each a
+  /// deadline of its own, so a checkout can take all three.
   ///
   /// A call made before [close] runs to its end, as upstream's acquisition
   /// holds its pool: it waits, spawns and is served as before.
@@ -232,7 +247,9 @@ final class WorkerPool {
   );
 
   /// Waits for a release, or throws [TimeoutException] once [waited] passes
-  /// the checkout timeout.
+  /// the checkout timeout. The wait for a slot is all that deadline
+  /// covers: spawn and configure turns have deadlines of their own
+  /// ([startupTimeout], [PoolOptions.requestTimeout]).
   Future<void> _waitForSlot(Stopwatch waited) async {
     final waiter = Completer<void>();
     _waiters.add(waiter);
@@ -298,36 +315,50 @@ final class PoolOptions {
     this.workerLocation,
   });
 
-  /// Upstream's `DEFAULT_DURATION_LIMIT_GRACE`.
+  /// Upstream's `DEFAULT_DURATION_LIMIT_GRACE`: one second, the default of
+  /// [feedDurationLimitGrace] and [turnDurationLimitGrace].
   static const Duration defaultDurationLimitGrace = Duration(seconds: 1);
 
-  /// Workers [WorkerPool.start] spawns eagerly.
+  /// Workers [WorkerPool.start] spawns eagerly; 0 or more, and at most the
+  /// effective maximum ([WorkerPool.start] refuses the rest).
   final int minProcesses;
 
   /// The most workers alive at once, idle and checked out; null for the
-  /// platform's default ([chf.defaultMaxProcesses]).
+  /// platform's default ([chf.defaultMaxProcesses]): the processor count
+  /// on native, the browser's reported hardware concurrency on the web, 4
+  /// where the browser reports none. Must be 1 or more and at least
+  /// [minProcesses]; a platform default below [minProcesses] is refused,
+  /// so set this there.
   final int? maxProcesses;
 
-  /// How long [WorkerPool.acquire] waits for a free slot; forever when null.
+  /// How long [WorkerPool.acquire] waits for a free slot; forever when
+  /// null. Bounds only that wait: a new worker's spawn is bounded by
+  /// [WorkerPool.startupTimeout] and the session's configure turn by
+  /// [requestTimeout], each its own deadline. Must not be negative.
   final Duration? checkoutTimeout;
 
-  /// How long a lease's `Reset` turn may take before its worker is killed;
-  /// unbounded when null.
+  /// How long any one protocol turn may take before its worker is killed;
+  /// unbounded when null. A lease's `Reset` turn and a session's configure
+  /// turn are turns. Must not be negative.
   final Duration? requestTimeout;
 
   /// Checkouts a worker serves before it is retired; unbounded when null.
-  /// 0 retires each worker at its first release. Upstream's is a `u32`.
+  /// 0 retires each worker at its first release. Upstream's is a `u32`: 0
+  /// to 2^32 - 1, and [validate] refuses the rest.
   final int? maxCheckoutsPerWorker;
 
   /// How far past what a session's `maxFeedDuration` has left the parent
   /// lets an execution turn run before it kills the worker; null leaves the
   /// feed budget unguarded by the parent (upstream
-  /// `feed_duration_limit_grace`).
+  /// `feed_duration_limit_grace`). One second by default
+  /// ([defaultDurationLimitGrace]); must not be negative.
   final Duration? feedDurationLimitGrace;
 
   /// How far past a session's `maxTurnDuration` the parent lets an
   /// execution turn run before it kills the worker; null leaves the turn
   /// budget unguarded by the parent (upstream `turn_duration_limit_grace`).
+  /// One second by default ([defaultDurationLimitGrace]); must not be
+  /// negative.
   final Duration? turnDurationLimitGrace;
 
   /// Where the worker is found: an executable on native, an asset base URL

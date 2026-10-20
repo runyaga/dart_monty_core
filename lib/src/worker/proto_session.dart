@@ -83,7 +83,11 @@ final class ProtoSession {
   ///
   /// Throws [ArgumentError] for a setting upstream refuses, before anything
   /// is sent. A refusal from the worker is raised as any error is (a
-  /// [MontyRuntimeError], say), and the worker is killed.
+  /// [MontyRuntimeError], say), and the worker is killed. The configure
+  /// turn is a turn: a worker that dies, or answers against the protocol,
+  /// throws [MontyCrashedError], and an error event throws the [MontyError]
+  /// it carries — [MontySyntaxError] or [MontyRuntimeError], or
+  /// [MontyCrashedError] for an exception that fails upstream's checks.
   static Future<ProtoSession> open(
     MontyChannel channel, [
     SessionConfig config = const SessionConfig(),
@@ -260,6 +264,9 @@ final class ProtoSession {
     return event;
   }
 
+  /// Sends the session's `Configure` and requires `Ok`; anything else —
+  /// an error reply, a reply out of protocol, a dead worker — throws and
+  /// ends the worker ([ProtoSession.open] lists the errors).
   Future<void> _configure() async {
     final request = pb.ParentRequest(configure: _config._toProto());
     final event = await _channel.turn(request);

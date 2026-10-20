@@ -54,12 +54,14 @@ final class Monty {
   /// native, an asset base URL on the web; null searches the usual places.
   ///
   /// [minProcesses] is 1 by default and must not be negative;
-  /// [maxProcesses] must be at least 1 and at least [minProcesses];
-  /// [maxCheckoutsPerWorker] must fit an unsigned 32-bit integer; and a
-  /// duration must not be negative. A value outside its domain throws
-  /// [ArgumentError] with upstream's message, before any worker starts; so
-  /// does an impossible pool size. A worker that is not ready within 30
-  /// seconds fails the call with a `MontyCrashedError`.
+  /// [maxProcesses] must be at least 1 and at least [minProcesses] — a
+  /// platform default below [minProcesses] is an impossible size, so set
+  /// [maxProcesses] there; [maxCheckoutsPerWorker] must fit an unsigned
+  /// 32-bit integer; and a duration must not be negative. A value outside
+  /// its domain throws [ArgumentError] with upstream's message, before any
+  /// worker starts; so does an impossible pool size. A worker that cannot
+  /// be located or spawned, or is not ready within 30 seconds, fails the
+  /// call with a `MontyCrashedError`.
   static Future<Monty> start({
     int minProcesses = 1,
     int? maxProcesses,
@@ -138,8 +140,14 @@ final class Monty {
   /// Throws [ArgumentError] for a setting upstream refuses, with upstream's
   /// message, before any worker is taken, an unknown IANA zone name
   /// included. Waits for a free worker up to the pool's `checkoutTimeout`,
-  /// then throws [TimeoutException]. Throws [StateError] once the pool is
-  /// closed; a checkout already waiting then still completes.
+  /// then throws [TimeoutException]. That wait is all `checkoutTimeout`
+  /// covers: starting a new worker is bounded by the pool's 30-second
+  /// startup deadline, and configuring the session by `requestTimeout`,
+  /// each separately. A worker that cannot be located, spawned or readied
+  /// throws `MontyCrashedError`, and so does one that dies while
+  /// configuring; a configure refusal from the worker throws the error it
+  /// raised (a `MontyRuntimeError`, say). Throws [StateError] once the pool
+  /// is closed; a checkout already waiting then still completes.
   Future<MontySession> checkout({
     String scriptName = 'main.py',
     ResourceLimits? limits,

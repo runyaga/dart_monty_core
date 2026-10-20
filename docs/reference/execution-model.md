@@ -80,7 +80,8 @@ What limits cannot cover, the worker boundary does:
   `timedOut` is true.
 - `feedDurationLimitGrace` and `turnDurationLimitGrace` are how far past a
   session's own duration limits the parent lets a turn run before it kills
-  the worker, for a worker that stops answering.
+  the worker, for a worker that stops answering. Each is one second by
+  default; null leaves its limit unguarded by the parent.
 - `MontySession.close()` during a turn kills the worker.
 - A worker whose allocator refuses an allocation over its hard limit exits;
   the call fails with `MontyRuntimeError` carrying `MemoryError` and the
@@ -142,7 +143,10 @@ combine them in one allocator domain.
 
 - Each session holds one worker for its life. `maxProcesses` bounds the
   workers alive at once, and a `checkout` beyond it waits, forever unless
-  `checkoutTimeout` is set.
+  `checkoutTimeout` is set. That wait is all `checkoutTimeout` covers:
+  starting a new worker is bounded by a 30-second startup deadline, and the
+  session's configure turn by `requestTimeout` — three separate deadlines,
+  so a checkout that waits, spawns and configures can take all three.
 - Values cross the boundary encoded, so every input, host function call and
   result is copied.
 - Native consumers need a worker executable, or the build-hook opt-in and
