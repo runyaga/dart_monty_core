@@ -1,8 +1,9 @@
 /// Self-relaunch: an AOT app (`dart build cli`) runs a copy of itself as its
 /// worker process, so it ships no separate worker executable.
 ///
-/// The parent spawns its own executable with [SelfRelaunch.flag] (see
-/// [SelfRelaunch]). In that child, [runMontyWorkerIfChild] hands the
+/// The parent relaunches its own executable with the flag
+/// `--dart-monty-core-worker` as its only argument. In that child,
+/// [runMontyWorkerIfChild] hands the
 /// process to `dart_monty_worker_main` in the worker library, which serves
 /// monty-proto on stdin and stdout until EOF or `Shutdown`, then exits with
 /// its code.
@@ -132,7 +133,14 @@ String? workerChildFailureLine(SelfRelaunchStatus status) => switch (status) {
 };
 
 /// Serves as the worker and exits when this process was relaunched as one;
-/// otherwise returns at once and enables [SelfRelaunch] for this process.
+/// otherwise returns at once and arms self-relaunch for this process.
+///
+/// The relaunch flag is `--dart-monty-core-worker`, the only argument the
+/// parent relaunches this executable with. A call whose arguments are
+/// exactly that serves monty-proto on stdin and stdout until EOF or
+/// `Shutdown`, then exits the process with the worker's exit code — with
+/// 78, after a one-line diagnostic on stderr, when the bundled worker
+/// library is missing or cannot be loaded.
 ///
 /// Call it as the first statement of `main`, with `main`'s arguments: the
 /// child's stdout carries the protocol, so nothing may be written to it

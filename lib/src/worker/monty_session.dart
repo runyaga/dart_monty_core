@@ -284,12 +284,15 @@ abstract interface class MontySession {
   /// With no protocol turn in flight (idle, or a host callback running) it
   /// sends `Reset` and returns the worker to the pool, waiting for the
   /// reply up to the pool's `requestTimeout` — without one, as long as the
-  /// worker takes. A call waiting on a host callback fails as finished at
-  /// once; the callback is not interrupted, and its result is dropped when
-  /// it comes. With a turn in flight — a dump made from host code
-  /// included — it kills the worker, and that call fails with a
-  /// [MontyCrashedError] whose message is 'monty worker killed: the
-  /// session was closed during a turn'. Never throws. Idempotent.
+  /// worker takes. A closed pool keeps no idle worker: with no checkout
+  /// waiting, the worker is killed at once, without a `Reset`; with one
+  /// waiting, it is reset and handed to that checkout. A call waiting on a
+  /// host callback fails as finished at once; the callback is not
+  /// interrupted, and its result is dropped when it comes. With a turn in
+  /// flight — a dump made from host code included — it kills the worker,
+  /// and that call fails with a [MontyCrashedError] whose message is
+  /// 'monty worker killed: the session was closed during a turn'. Never
+  /// throws. Idempotent.
   ///
   /// A session collected without a close has its worker killed and its
   /// slot freed by a finalizer. That is a backstop only: a finalizer may

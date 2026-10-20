@@ -15,6 +15,9 @@ import 'package:dart_monty_core/src/worker/resource_limits.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
 
 /// A pool of Python workers, each dedicated to one session at a time.
+/// Sessions held at once run in parallel, each on a worker of its own; the
+/// pool starts `minProcesses` workers and grows lazily to `maxProcesses`
+/// as concurrent checkouts need more.
 ///
 /// [withPool] and [withSession] are the way to use it: they close what they
 /// open on every exit path. A live worker keeps the Dart process from
@@ -91,6 +94,10 @@ final class Monty {
   /// Runs [body] with a pool started as [start] does with the same
   /// settings, and closes the pool however [body] ends: the form of
   /// upstream's `async with AsyncMonty()`.
+  ///
+  /// The cleanup closes the pool only: a session the body checked out is
+  /// not closed by it — the body owns that session and must close it
+  /// (`withSession` does that for its own session).
   ///
   /// The settings are [start]'s, with the same defaults and the same
   /// domains: an [ArgumentError] for a setting upstream refuses comes
@@ -210,8 +217,10 @@ final class Monty {
   );
 
   /// Refuses new checkouts and ends the idle workers. Sessions still open,
-  /// and checkouts already waiting, run on; each one's close then kills its
-  /// worker. Idempotent.
+  /// and checkouts already waiting, run on; this neither closes nor awaits
+  /// those sessions. A session that closes thereafter hands its worker,
+  /// reset, to a checkout still waiting for one, and otherwise has it
+  /// killed. Idempotent.
   Future<void> close() => _pool.close();
 }
 

@@ -54,6 +54,13 @@ afterwards. A session keeps its globals, functions and imports from one feed
 to the next. A live worker keeps the Dart process running, so a pool from
 `Monty.start` and a session from `checkout` must each be closed.
 
+`withPool`'s cleanup closes the pool only: it neither closes nor waits for
+sessions checked out in the body, which the body then owns — `withSession`
+does that closing for its own. Pool `close()` is the same: sessions still
+open, and checkouts already waiting, run on, each holding its worker until
+its own `close()`. Close every session you checked out, before or after
+closing the pool.
+
 ## API
 
 ### `Monty`: the pool
@@ -64,7 +71,7 @@ to the next. A live worker keeps the Dart process running, so a pool from
 | `Monty.withPool(body, {…})` | The same, closed when `body` ends |
 | `checkout({scriptName, limits, typeCheck, typeCheckStubs, typeCheckFormat, typeCheckColor, assertMessageAnnotations, printFlushInterval, osPolicy})` | A session on its own worker |
 | `withSession(body, {…})` | The same, closed when `body` ends |
-| `close()` | Refuse new checkouts and end the idle workers |
+| `close()` | Refuse new checkouts and end the idle workers; open sessions run on |
 
 `requestTimeout` bounds each protocol turn; a turn past it kills the worker
 and the call fails with `MontyCrashedError` (`timedOut` is true). An

@@ -25,6 +25,10 @@ typedef OpenChannel = SpawnHandle Function();
 
 /// A pool of workers, each dedicated to one checkout at a time.
 ///
+/// Only [PoolOptions.minProcesses] workers start with the pool; it grows
+/// lazily to [PoolOptions.maxProcesses] as concurrent checkouts need more,
+/// and checkouts held at once run in parallel, each on a worker of its own.
+///
 /// Acquiring reuses an idle worker, discards one that died while idle, and
 /// reserves a slot before spawning; with every slot taken it waits, up to
 /// `checkoutTimeout`, for a release. Releasing sends `Reset` and returns the
@@ -129,6 +133,22 @@ final class WorkerPool {
 
   /// Dedicates a worker to the caller until its lease is released.
   ///
+  /// The pool grows lazily here: an idle worker is reused, a new one is
+  /// spawned while fewer than [PoolOptions.maxProcesses] are alive, and the
+  /// wait for a release begins only once every slot is taken. Leases held
+  /// at once run in parallel, each on a worker of its own:
+  ///
+  /// ```dart
+  /// final pool = await WorkerPool.start(
+  ///   const PoolOptions(minProcesses: 1, maxProcesses: 4),
+  /// );
+  /// final first = await pool.acquire(); // the warm worker
+  /// final second = await pool.acquire(); // a second, spawned for it
+  /// // ... two leases at once, one worker each ...
+  /// await first.release();
+  /// await second.release();
+  /// ```
+  ///
   /// Throws [TimeoutException] if no worker becomes free within
   /// [PoolOptions.checkoutTimeout], [StateError] if the pool is closed when
   /// it is called, and whatever the start of a new worker throws
@@ -138,6 +158,10 @@ final class WorkerPool {
   /// worker's spawn is bounded by [startupTimeout] and the session
   /// configured on the lease by [PoolOptions.requestTimeout], each a
   /// deadline of its own, so a checkout can take all three.
+  ///
+  /// Telemetry, when used, must be installed before the first checkout: a
+  /// lease taken first records no session duration, and its session records
+  /// nothing.
   ///
   /// A call made before [close] runs to its end, as upstream's acquisition
   /// holds its pool: it waits, spawns and is served as before.

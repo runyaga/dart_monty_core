@@ -50,6 +50,12 @@ Arming is isolate-local: a pool started in another isolate, such as one
 running under `Isolate.run`, cannot relaunch unless that isolate calls
 `runMontyWorkerIfChild` before it locates a worker.
 
+The parent relaunches its own executable with `--dart-monty-core-worker` as
+the only argument. That child serves monty-proto on stdin and stdout until
+EOF or `Shutdown`, then exits with the worker's exit code; a missing or
+unloadable bundled worker library exits 78 after a one-line diagnostic on
+stderr.
+
 Source: `lib/src/worker/self_relaunch.dart`, `test/integration/worker/self_relaunch_test.dart`
 
 ## Worker cache and integrity

@@ -98,6 +98,38 @@ What limits cannot cover, the worker boundary does:
   the call fails with `MontyRuntimeError` carrying `MemoryError` and the
   session ends.
 
+## The pool: sizing, growth, reuse
+
+One pool owns the workers; `Monty.start` spawns `minProcesses` of them at
+once (one by default) and fails if any cannot start. Growth from there is
+lazy: a checkout reuses an idle worker, spawns a new one while fewer than
+`maxProcesses` are alive, and waits for a release only once every slot is
+taken — that wait is all `checkoutTimeout` bounds. A null `maxProcesses`
+is the platform's default: the processor count on native, the browser's
+hardware concurrency on the web, 4 where the browser reports none.
+
+Each checkout holds one worker for its session's life, so sessions held at
+the same time run in parallel, one worker each; the turns of one session
+are serialized on the worker it owns. Releasing sends `Reset` and returns
+the worker to the idle list for the next checkout — unless
+`maxCheckoutsPerWorker` retires it first — and an idle worker that died
+while waiting is discarded at the next checkout, which starts another.
+
+Size the pool for the workload: `minProcesses` for the workers you want
+warm, `maxProcesses` for the most sessions held at once. Nested checkouts
+call for care: a session that waits on a second checkout of the same pool —
+from a host callback, say — holds its worker while it waits, so a pool
+whose every worker is held by such waiters makes the second checkout wait
+forever under the default `checkoutTimeout` of null. Size `maxProcesses`
+above the nesting depth, or set a `checkoutTimeout`, before nesting.
+
+Closing the pool — `close()`, or the end of a `withPool` body — ends the
+idle workers only. It neither closes nor awaits sessions still open, which
+run on and must each be closed by their owner; a checkout already waiting
+completes, served by a worker released to it or a new one. A session closed
+after the pool hands its worker, reset, to a checkout still waiting for
+one, and otherwise has it killed.
+
 ## Feeds, protocol turns, callbacks, printing and close
 
 A **feed** is one execution of code: `feedRun` runs it to its end;
@@ -131,7 +163,9 @@ waits.
 - **Close** with no turn in flight — the session idle, or only a host
   callback running — sends `Reset` and returns the worker to the pool,
   waiting for the reply up to the pool's `requestTimeout` (as long as the
-  worker takes without one). With a turn in flight — a dump made from
+  worker takes without one). A closed pool keeps no idle worker: with no
+  checkout waiting, the worker is killed at once; with one waiting, it is
+  reset and handed over. With a turn in flight — a dump made from
   host code included — it kills the worker without a `Reset`, and the
   call in flight fails with `MontyCrashedError`. Close never throws and is
   idempotent.

@@ -1,6 +1,12 @@
 /// The browser channel factory: a Web Worker per channel, all sharing one
 /// compiled module per asset base.
 ///
+/// The module cache lives for the page and is keyed by asset base: every
+/// Web Worker the page starts, from any pool, reuses the one module a base
+/// compiled. Module and Worker lifetimes are separate — a Worker is made
+/// per channel and dies with it, while the compiled module stays cached
+/// for the next start.
+///
 /// Internal to the package; nothing here is exported.
 library;
 
@@ -16,6 +22,11 @@ Future<String>? _found;
 
 /// Starts a Web Worker from the assets under [workerLocation], or under the
 /// base [resolveAssetBase] finds (once per page) when it is null.
+///
+/// Each call starts a Worker of its own; the compiled module is the page
+/// cache's for that base — [workerLocation] given, or the base found — so
+/// Workers started later, from any pool, reuse it, and a Worker that dies
+/// or is killed leaves the module cached for the next start.
 ///
 /// Cancelling before the Worker greets terminates it.
 SpawnHandle openChannel({String? workerLocation}) =>

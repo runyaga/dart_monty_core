@@ -6,6 +6,11 @@
 /// a host gives ([ExternalResult], [ExternalReturnValue],
 /// [ExternalSettledResult], [ExternalFuture]), [ExternalException] and
 /// [SourceRange]; the rest of this library is internal.
+///
+/// `SuspendedSnapshot`, the sealed supertype of the three suspension kinds,
+/// stays unexported by design: its members — `position`, `scriptName`,
+/// `dump` and `traceContext` — are reached through the exported kinds, and
+/// code that must name a suspension names the kind it answers.
 library;
 
 import 'dart:typed_data';
@@ -321,7 +326,7 @@ sealed class SuspendedSnapshot extends MontySnapshot {
   Object? _capturedTraceContext;
 
   /// Context captured at feed/load entry, with the suspension's span current.
-  /// Returns null without an installed telemetry adapter (D-087).
+  /// Returns null without an installed telemetry adapter.
   /// Throws [StateError] after this snapshot has been resumed.
   Object? traceContext() {
     if (_isSpent) throw StateError('snapshot has already been resumed');

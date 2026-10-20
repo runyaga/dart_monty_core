@@ -22,9 +22,10 @@ final class _Telemetry {
 /// Installs [telemetry] for this isolate's lifetime: every pool and session
 /// in this isolate reports through it. Cannot be undone.
 ///
-/// A second call throws [StateError]. With no adapter, no records are made
-/// and snapshot trace contexts are null (D-087). Browser sessions record
-/// the same signals as native sessions (D-090).
+/// Install it before the first checkout: a session checked out beforehand
+/// never reports. A second call throws [StateError]. With no adapter, no
+/// records are made and snapshot trace contexts are null. Browser sessions
+/// record the same signals as native sessions.
 ///
 /// An adapter that throws disables the signal it failed in — spans, logs or
 /// metrics — for the rest of the isolate, and the failure is reported once
