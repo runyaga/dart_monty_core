@@ -11,6 +11,10 @@ This index lists every documentation page of the package.
 
 - [Host functions and async](deep-dives/async-matrix.md): Gives the behaviour of each host-function answer and `await` combination.
 
+## Testing
+
+- [The fake session](reference/fake-session.md): States how `FakeMontySession` scripts a feed, the OS calls it knows, the answers it records and its limits.
+
 ## OS and files
 
 - [Host directory mounts](reference/host-directory-mounts.md): States how `MountDir` maps a host directory into the sandbox, with its modes, budgets, routing and platform limits.

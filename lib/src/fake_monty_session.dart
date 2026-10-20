@@ -40,6 +40,11 @@ abstract class _FakeScripting {
   /// Python awaits the call at once with nothing else to run. Returns the
   /// call's id, for [willAwait].
   ///
+  /// The host answers the call as it answers any: a plain function with its
+  /// value, a function marked with `coroutine(...)` with a future. A value
+  /// is not awaitable, so [willAwait] on such a call ends the feed with a
+  /// `TypeError`; a future is awaited, and [willAwait] waits for it.
+  ///
   /// Throws [ArgumentError] for a value a worker could not send.
   int willCall(
     String name, {
@@ -73,6 +78,21 @@ abstract class _FakeScripting {
   /// [args] and [kwargs] as the session receives them (`os.getenv('A')` is
   /// `('A', None)`). Returns the call's id.
   ///
+  /// [name] is one of the calls the fake knows: `Path.exists`,
+  /// `Path.is_file`, `Path.is_dir`, `Path.is_symlink`, `Path.read_text`,
+  /// `Path.read_bytes`, `Path.stat`, `Path.iterdir`, `Path.resolve`,
+  /// `Path.absolute`, `Path.unlink`, `Path.rmdir`, `Path.write_text`,
+  /// `Path.append_text`, `Path.write_bytes`, `Path.append_bytes`, `open`,
+  /// `Path.mkdir`, `Path.rename`, `os.getenv`, `os.environ`, `date.today`,
+  /// `datetime.now`, `os.urandom`, `time.time`, `time.sleep`,
+  /// `system.sleep`, `asyncio.sleep` and `system.async_sleep`. Their
+  /// arguments and the values they yield are tabulated in
+  /// `docs/reference/fake-session.md`.
+  ///
+  /// A path is a [MontyPath] or a [MontyString]; `Path.mkdir` reads
+  /// `parents` and `exist_ok` as boolean keyword arguments, and the other
+  /// calls read none.
+  ///
   /// Throws [ArgumentError] for a name or arguments a worker could not
   /// send.
   int willCallOs(
@@ -96,6 +116,19 @@ abstract class _FakeScripting {
   /// Scripts Python awaiting the host futures [callIds], ids this feed's
   /// calls returned; [gathered] for an `asyncio.gather`. Futures already
   /// settled are awaited in place; the session waits for the rest.
+  ///
+  /// Only a call answered with a future is awaitable: a host function
+  /// marked with `coroutine(...)`, or a snapshot resumed with
+  /// [ExternalFuture]. A call answered with a plain value is not, and
+  /// awaiting it ends the feed with a `TypeError` (`'int' object can't be
+  /// awaited`, or `An asyncio.Future, a coroutine or an awaitable is
+  /// required` under a gather). An OS call to `asyncio.sleep` or
+  /// `system.async_sleep` is the one exception: upstream wraps its value in
+  /// a settled future, so awaiting it is in place.
+  ///
+  /// A call scripted with `eager: true` is awaited by Python at once, with
+  /// nothing else to run; when the answer is a future the fake waits for
+  /// it itself, and [willAwait] is not needed for it.
   ///
   /// Throws [ArgumentError] for an id the segment has not scripted.
   void willAwait(List<int> callIds, {bool gathered = false}) {
@@ -131,6 +164,15 @@ abstract class _FakeScripting {
   /// [attributes]. With [line], the error has one traceback frame at
   /// [line] and [column] (1 by default), named as the worker names the
   /// feed's source.
+  ///
+  /// [attributes] carry the structured data of the types that have one: a
+  /// `json.JSONDecodeError` takes `msg` and `doc` (strings) and `pos`,
+  /// `lineno` and `colno` (integers), a `UnicodeDecodeError` or a
+  /// `UnicodeEncodeError` takes `encoding` and `reason` (strings), `object`
+  /// (bytes or a string) and `start` and `end` (integers). An attribute
+  /// that is missing or of another type drops the payload: the exception
+  /// keeps its type and message, and the error carries a plain `ValueError`
+  /// as its exception.
   ///
   /// Throws [ArgumentError] for a type that is not upstream's, or for an
   /// attribute value a worker could not send.
@@ -178,10 +220,25 @@ abstract class _FakeScripting {
   /// The code of each feed the session ran, in order.
   List<String> get feeds => List.unmodifiable(_worker.feeds);
 
-  /// The host's answers, one per suspension, in order: each with its call
-  /// id (none for a name lookup), the number of the futures batch it went
-  /// out in (only for a settled future) and the answer, null where the
-  /// host answered `not_found`, `not_handled` or an undefined name.
+  /// The host's answers, in the order the host sent them: one for each
+  /// answered call, each answered name lookup, and each future settled in a
+  /// batch.
+  ///
+  /// Each answer is a record with three fields:
+  ///
+  /// - `callId`: the call it answers, null for a name lookup;
+  /// - `batch`: the number of the futures batch it went out in, null for a
+  ///   call or a lookup; the numbering restarts with each feed;
+  /// - `answer`: the answer itself, an [ExternalReturnValue], an
+  ///   [ExternalException] or an [ExternalFuture], and null where the host
+  ///   answered `not_found`, `not_handled` or an undefined name.
+  ///
+  /// A futures batch answers once per settled future, and those answers
+  /// share the batch's number.
+  ///
+  /// The record's type is not exported by name: read the fields
+  /// (`answers.first.callId`) or destructure the record; the shape above is
+  /// the contract.
   List<FakeAnswer> get answers => List.unmodifiable(_worker.log.answers);
 }
 
@@ -254,6 +311,9 @@ class _ScriptedLink {
 /// the host futures it started. Under `feedStart` each suspension is
 /// returned as a snapshot to resume by hand.
 ///
+/// The scripting API, the OS calls the fake knows, the answers it records
+/// and its limits are described in `docs/reference/fake-session.md`.
+///
 /// An answer that raises in the sandbox (a host function's exception, a
 /// name not in `externalLookup`, a declined OS call, a refused value, a failed
 /// future Python awaits) ends the feed with that error, as uncaught Python
@@ -265,14 +325,20 @@ class _ScriptedLink {
 /// that finds no complete segment throws [StateError]. Call ids count from
 /// 0 within a segment, as a worker numbers them within a feed.
 ///
-/// What it does not do: run Python, type-check, take `ResourceLimits`, or
-/// keep a working directory (`cwd` is checked as a session checks it, and no
-/// Python reads it). [installDependencies] answers as the pure-Monty worker
-/// does: an empty list succeeds, any other is refused. [dump],
-/// [loadSession], [loadSnapshot] and a snapshot's `dump` throw
-/// [UnsupportedError]. [workerPid] is null. It enforces the session driver's
-/// budget of 1000 suspensions, and a feed that exceeds it fails with
-/// `RuntimeError: suspension limit 1000 exceeded`.
+/// What it does not do: run Python, type-check (no snippet is ever
+/// checked, so `skipTypeCheck` changes nothing and no `MontyTypingError` is
+/// raised), take `ResourceLimits`, or keep a working directory (`cwd` is
+/// checked as a session checks it, and no Python reads it).
+/// [installDependencies] answers as the pure-Monty worker does: an empty
+/// list succeeds, any other is refused. [dump], [loadSession],
+/// [loadSnapshot] and a snapshot's `dump` throw [UnsupportedError].
+/// [workerPid] is null. It enforces the session driver's budget of 1000
+/// suspensions, and a feed that exceeds it fails with `RuntimeError:
+/// suspension limit 1000 exceeded`.
+///
+/// It cannot send a host object: a `ClassInstance` or `ClassType` wrapper
+/// registers in the session's own registry, which the fake has not, so the
+/// writer refuses it with an `ArgumentError`.
 final class FakeMontySession extends _FakeScripting implements MontySession {
   /// A session with nothing scripted.
   FakeMontySession() : this._(FakeScript());
@@ -371,7 +437,8 @@ final class FakeMontySession extends _FakeScripting implements MontySession {
 /// The exception the worker sends for a sandbox-raised [excType]: the
 /// host-answer form, plus a Unicode error's payload from [attributes]
 /// (`encoding`, `object`, `start`, `end`, `reason`), which only the worker
-/// sends.
+/// sends. An attribute that is missing or of another type leaves the
+/// exception without a payload.
 pb.RaisedException _sandboxException(
   String excType,
   String? message,
@@ -508,7 +575,8 @@ final class _OsArgs {
 }
 
 /// The worker's fields for each OS function name (`osCallParts` read
-/// backwards).
+/// backwards): the names the fake scripts, one arm each. A name outside
+/// this map is not an OS call a worker sends.
 final Map<String, pb.OsCall Function(_OsArgs a)> _osCalls = {
   'Path.exists': (a) => pb.OsCall(exists: a.path()),
   'Path.is_file': (a) => pb.OsCall(isFile: a.path()),

@@ -326,6 +326,25 @@ dataclass. A function or a type comes back as `MontyStdTypeProxy`, whose
 `FakeMontySession`, a `MontySession` with scripted answers that needs no
 worker.
 
+```dart
+final session = FakeMontySession()..willReturn(const MontyInt(42));
+expect(await session.feedRun('1 + 1'), const MontyInt(42));
+expect(session.feeds, ['1 + 1']);
+```
+
+A test queues what each feed's Python does: the host calls (`willCall`),
+OS calls (`willCallOs`), name lookups (`willLookUp`), the futures it
+awaits (`willAwait`), its prints, and how the feed ends (`willReturn`,
+`willRaise`, `willCrash`). The session answers each suspension as a
+worker-backed session does, and records the host's answers in `answers`: a
+record of the call's id, the futures batch it went out in and the answer
+itself.
+
+The fake does not run Python and does not type-check, so it never raises a
+`MontyTypingError`, and it cannot send a host object. See
+[the fake session](docs/reference/fake-session.md) for the scripting API,
+the OS calls it knows with their arguments, and its limits.
+
 ## Platforms
 
 | | Worker | Needs |

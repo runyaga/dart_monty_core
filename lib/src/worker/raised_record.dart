@@ -404,6 +404,11 @@ const int maxPayloadLength = 64 * 1024;
 /// a `str`), when a JSON error's `lineno` or `colno` is 0, or when its `pos`
 /// is past its document. Never a rejection: the exception keeps its type and
 /// message.
+///
+/// A dropped payload is what makes the error fall back: an error built
+/// from an exception without a payload of the right kind carries a plain
+/// `ValueError` as its exception, since a Unicode or JSON decode error has
+/// no class to build without its payload.
 ExcPayload? payloadOf(pb.ExcData data) => switch (data.whichKind()) {
   pb.ExcData_Kind.unicode => _unicodePayload(data.unicode),
   pb.ExcData_Kind.json => _jsonPayload(data.json),

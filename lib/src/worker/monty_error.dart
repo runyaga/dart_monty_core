@@ -240,6 +240,12 @@ MontyError raisedError(pb.RaisedException raised) {
 
 /// The error [record] is, unchecked: for an exception the parent made
 /// itself, such as a memory-limit exit's `MemoryError`.
+///
+/// A `SyntaxError` is a [MontySyntaxError], every other type a
+/// [MontyRuntimeError]. The exception the error carries is rebuilt from the
+/// record's payload: a `UnicodeDecodeError`, a `UnicodeEncodeError` or a
+/// `json.JSONDecodeError` keeps its attributes when the payload is there and
+/// of the right kind, and is a plain `ValueError` without one.
 MontyError recordError(RaisedRecord record) => record.excType == 'SyntaxError'
     ? MontySyntaxError._(record)
     : MontyRuntimeError._(record);
@@ -277,7 +283,8 @@ T encodingInput<T>(T Function() encode) {
   }
 }
 
-/// The error a `TypingError` event's [diagnostics] are.
+/// The error a `TypingError` event's [diagnostics] are. A fake session
+/// never raises one: it does not type-check a snippet.
 MontyTypingError typingError(String diagnostics) =>
     MontyTypingError._(diagnostics);
 
@@ -399,6 +406,10 @@ String _summary(RaisedRecord record) {
 /// payload, with the payload's attributes; without one of the right kind it
 /// is a plain `ValueError`, as upstream's fallback is. Its rendering still
 /// names the original type.
+///
+/// The kind is the type's own: a `UnicodeDecodeError` takes a `bytes`
+/// object, a `UnicodeEncodeError` a `str`, so a payload of the other kind
+/// is no payload at all.
 MontyExceptionValue _exceptionOf(RaisedRecord record) {
   final message = record.message ?? '';
   final type = record.excType;

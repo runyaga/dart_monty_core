@@ -14,6 +14,10 @@ import 'package:dart_monty_core/src/worker/raised_record.dart';
 /// `ResolveFutures` answer it went out in (only for a settled future), and
 /// the answer, or null where the host answered `not_found`, `not_handled` or
 /// an undefined name.
+///
+/// The type stays internal to the package; the three fields above are the
+/// public contract of the answers a fake session records, which a test reads
+/// by field or by destructuring the record.
 typedef FakeAnswer = ({int? callId, int? batch, ExternalResult? answer});
 
 /// The answers in the requests a session sends, in order.

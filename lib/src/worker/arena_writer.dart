@@ -70,7 +70,9 @@ pb.MontyNode functionNode(String name, {String? docstring}) => pb.MontyNode(
 /// Builds one arena from host values.
 final class ArenaWriter {
   /// A writer whose host objects register in [objects]; without it a
-  /// host-object wrapper is refused.
+  /// host-object wrapper is refused. A host object belongs to the session
+  /// that sent it, so only a writer bound to a session's registry can carry
+  /// one.
   ArenaWriter({HostObjects? objects}) : _objects = objects;
 
   /// The arena built so far; put it in the message that carries the roots.
@@ -257,7 +259,8 @@ final class ArenaWriter {
   }
 
   /// The session registry a wrapper registers in; a writer without one
-  /// refuses it.
+  /// refuses it, as a host object cannot cross without the session that
+  /// owns it.
   HostObjects _host(Object wrapper) =>
       _objects ??
       (throw ArgumentError.value(
@@ -906,10 +909,15 @@ final class PythonRefusal extends ArgumentError {
 /// The `RaisedException` a host's answered exception is, as upstream's
 /// `exc_py_to_monty` converts a live one: only a `json.JSONDecodeError`
 /// keeps structured data, from its `msg`, `doc` (`str`), `pos`, `lineno` and
-/// `colno` (non-negative `int`) attributes. A missing or mistyped one drops
-/// the payload, and a `doc` over 64 KiB of UTF-8 is left out while the rest
-/// is kept (`JsonErrorData::MAX_DOC_LEN`). Every other type's attributes
-/// stay with the host. The message is read as [exceptionArg] reads it.
+/// `colno` (non-negative `int`) attributes. All five must be there and of
+/// that type; a missing or mistyped one drops the payload, and a `doc` over
+/// 64 KiB of UTF-8 is left out while the rest is kept
+/// (`JsonErrorData::MAX_DOC_LEN`). Every other type's attributes stay with
+/// the host. The message is read as [exceptionArg] reads it.
+///
+/// A dropped payload never rejects the exception: it keeps its type and
+/// message, and the error carrying it falls back to a plain `ValueError` as
+/// its exception.
 pb.RaisedException raisedException(
   String excType,
   String? message,
