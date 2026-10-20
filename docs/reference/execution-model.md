@@ -18,7 +18,9 @@ for the next checkout.
 
 A worker that exits because its allocator refused an allocation over the hard
 limit fails the call with `MontyRuntimeError` carrying `MemoryError`, and the
-session ends.
+session ends. That ends the session where a `maxMemory` `MemoryError` does
+not: raised inside the sandbox, it arrives as any Python exception does, and
+the session survives (see below).
 
 ## Why a worker
 
@@ -59,6 +61,10 @@ final session = await monty.checkout(
 `maxFeedDuration` stops a non-terminating loop with `TimeoutError`,
 `maxRecursionDepth` turns runaway recursion into `RecursionError`, and
 `maxMemory` raises `MemoryError`; each arrives as `MontyRuntimeError`.
+A `maxMemory` `MemoryError` is the sandbox's own — Python's message,
+traceback included — and the session survives it; the allocator's is the
+parent's record, the fixed message `the worker exceeded its memory limit
+and was terminated` with no traceback, and it ends the session.
 On dart2js and dart2wasm, a session that keeps the allocation which exhausted
 `maxMemory` raises `MemoryError` on every later feed until a feed drops it.
 

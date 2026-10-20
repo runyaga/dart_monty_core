@@ -208,6 +208,11 @@ print(snapshot.output); // MontyInt(42)
 ```
 
 `resumeAuto()` answers from the `externalLookup` and `os` given to `feedStart`.
+A manual `resume` checks its answer before spending the snapshot (a refused
+answer leaves it resumable; an oversized one is refused only at the send,
+after it is spent), while `resumeAuto()` spends it before the host side
+runs: what the host side rethrows finishes the session, while a host throw
+is raised in the sandbox.
 A suspended snapshot's `dump()` can be restored later, in another worker,
 with `loadSnapshot`.
 
@@ -376,7 +381,11 @@ across every feed and resume — 1000 suspensions by default, no sleep budget
 unless set — and their aborts (`RuntimeError`, `TimeoutError`) cannot be
 caught by sandbox code. A worker that exits
 after its allocator refused an allocation over the hard limit raises
-`MontyRuntimeError` carrying `MemoryError` and ends the session. On dart2js
+`MontyRuntimeError` carrying `MemoryError` and ends the session. The two
+`MemoryError`s are told apart by text and traceback: the allocator's says
+`the worker exceeded its memory limit and was terminated` and carries no
+traceback; a `maxMemory` one is the sandbox's own, traceback included, and
+the session survives it. On dart2js
 and dart2wasm, a session that keeps the allocation which exhausted `maxMemory`
 raises `MemoryError` on every later feed until a feed drops that allocation.
 With `typeCheck: true` each snippet is type-checked first; one the check
@@ -395,6 +404,13 @@ All four extend the sealed `MontyError`. `toString()` is upstream's `str()`;
 `exception` is the inner Python exception as a `MontyExceptionValue`;
 `MontySyntaxError` and `MontyRuntimeError` carry `traceback` (`List<Frame>`)
 and `display(format)`.
+
+A frame failure maps by direction. A request too large to frame (over
+256 MiB) is refused before it is sent: the call throws `MontyRuntimeError`
+(`RuntimeError`) with the session as it was — a refused resume leaves its
+suspension pending. A reply that cannot be framed or decoded — over the
+limit, truncated, malformed — throws `MontyCrashedError` and ends the
+session.
 
 ### `MontyValue`: typed Python values
 

@@ -18,14 +18,25 @@ import 'package:meta/meta.dart';
 /// suspension the host answers by resuming it (upstream's `AsyncSnapshot`).
 ///
 /// A suspension is resumed at most once: a second resume throws
-/// [StateError]. A resume's answer is checked before the snapshot is spent,
-/// so a refused answer — an [ArgumentError] for a value Python cannot
-/// build or an exception type upstream does not know, a `MontyRuntimeError`
-/// for one Python refuses — leaves it resumable. An answer whose request
-/// frame is over the limit (256 MiB) is refused only at the send, after the
-/// snapshot is spent: the resume throws `MontyRuntimeError`, the suspension
-/// stays pending, every later feed throws [StateError], and only closing
-/// the session recovers the worker. While a suspension is unanswered the
+/// [StateError]. The manual and automatic paths part on when it is spent.
+///
+/// A manual `resume` checks its answer first: a refused answer — an
+/// [ArgumentError] for a value Python cannot build or an exception type
+/// upstream does not know, a `MontyRuntimeError` for one Python refuses —
+/// leaves the snapshot resumable. The send comes after the spend: an
+/// answer whose request frame is over the limit (256 MiB) is refused only
+/// there, so the resume throws `MontyRuntimeError` with the snapshot spent
+/// and the suspension still pending — every later feed throws [StateError],
+/// and only closing the session recovers the worker.
+///
+/// A `resumeAuto` spends the snapshot before the host side runs, and a
+/// failure there finds it spent. What the host side rethrows — a payload
+/// its checks reject (`MontyCrashedError`), a value the writer refuses on
+/// a plain-name lookup (`MontyRuntimeError`), a [FutureSnapshot] with
+/// nothing pending (its [StateError]) — finishes the session: the worker
+/// is discarded and every later call throws [StateError]. A host
+/// function's or OS handler's throw is not a failure: it is raised in the
+/// sandbox and the session runs on. While a suspension is unanswered the
 /// session refuses a new feed.
 sealed class MontySnapshot {
   const MontySnapshot();

@@ -51,16 +51,30 @@ import 'package:fixnum/fixnum.dart';
 /// and the session stays usable. A dead worker throws [MontyCrashedError];
 /// so does a turn that outlives the pool's `requestTimeout` or a duration
 /// backstop, whose worker is killed (`timedOut`), and a worker that answers
-/// against the protocol, which is discarded. A worker that exceeds its
-/// memory limit throws [MontyRuntimeError] with a `MemoryError`. After any
-/// of the last four the session is finished: its slot is free, and every
-/// later call throws [StateError].
+/// against the protocol, which is discarded. A worker whose allocator
+/// refuses an allocation over its hard limit exits with upstream's
+/// `OOM_EXIT_CODE` (65), and the call throws [MontyRuntimeError] with a
+/// `MemoryError`. After any of the last four the session is finished: its
+/// slot is free, and every later call throws [StateError].
 ///
-/// A request too large to frame (over 256 MiB) never reaches the worker:
-/// it is refused before it is sent and the call throws [MontyRuntimeError]
-/// (`RuntimeError`). A reply that cannot be framed or decoded — over the
-/// limit, truncated, malformed — is a worker that cannot be trusted, and
-/// ends the session as a crash does.
+/// Two limits end in that `MemoryError`, and only the allocator's ends the
+/// session. The interpreter's heap limit ([ResourceLimits.maxMemory])
+/// raises `MemoryError` in the sandbox, as any Python exception does: the
+/// error carries the sandbox's traceback and message, and the session
+/// stays usable. The allocator's `MemoryError` is the parent's own record:
+/// the fixed message `the worker exceeded its memory limit and was
+/// terminated`, no traceback, the session finished. (A print collector's
+/// overflow is a third `MemoryError`, no traceback either; [feedRun] says
+/// when the session runs on.)
+///
+/// A frame failure maps by direction. A request too large to frame (over
+/// 256 MiB) never reaches the worker: it is refused before it is sent and
+/// the call throws [MontyRuntimeError] (`RuntimeError`), the session as it
+/// was — a resume it refuses leaves its suspension pending
+/// ([MontySnapshot]). A reply that cannot be framed or decoded — over the
+/// limit, truncated, malformed — is a worker that cannot be trusted: the
+/// call throws [MontyCrashedError] and the session is finished, as any
+/// dead worker's is.
 ///
 /// A feed's `externalLookup` resolves the names the code leaves undefined,
 /// lazily, when the code reads one (upstream's `external_lookup`); a name in
@@ -841,6 +855,11 @@ final class _FeedDrive implements SnapshotDriver {
   /// as `feedRun` waits it; a method call ([FunctionSnapshot.objectId] set)
   /// is dispatched to the host object registered under that id, and a
   /// plain call to the feed's host functions.
+  ///
+  /// The snapshot is spent before the host side runs: what the host side
+  /// rethrows finishes the session (the worker is discarded), while a host
+  /// throw is raised in the sandbox and the session runs on
+  /// ([MontySnapshot]).
   @override
   Future<MontySnapshot> resumeCallAuto(FunctionSnapshot snapshot) async {
     snapshot.spend();
