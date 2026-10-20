@@ -258,7 +258,12 @@ final session = await monty.checkout(
 
 Each limit is optional. Null means upstream's default. A limit hit raises a
 Python exception (`MemoryError`, `RecursionError`, `TimeoutError`) that
-arrives as `MontyRuntimeError`, and the session survives. A worker that exits
+arrives as `MontyRuntimeError`, and the session survives. Two of them,
+`maxSuspensions` and `maxTotalSleep`, are enforced by the parent, not the
+interpreter: suspensions and system sleep add up over the whole checkout,
+across every feed and resume — 1000 suspensions by default, no sleep budget
+unless set — and their aborts (`RuntimeError`, `TimeoutError`) cannot be
+caught by sandbox code. A worker that exits
 after its allocator refused an allocation over the hard limit raises
 `MontyRuntimeError` carrying `MemoryError` and ends the session. On dart2js
 and dart2wasm, a session that keeps the allocation which exhausted `maxMemory`
@@ -353,6 +358,10 @@ The worker executable is not shipped on pub.dev. Either:
     // ...
   }
   ```
+
+  Arming is isolate-local: a pool started in another isolate, such as one
+  running under `Isolate.run`, cannot relaunch unless that isolate calls
+  `runMontyWorkerIfChild` before it locates a worker.
 
   Distribute the whole `dart build cli` bundle directory. `tool/aot_worker/`
   in this repository is such a consumer.

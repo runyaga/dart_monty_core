@@ -46,6 +46,10 @@ void main(List<String> args) {
 }
 ```
 
+Arming is isolate-local: a pool started in another isolate, such as one
+running under `Isolate.run`, cannot relaunch unless that isolate calls
+`runMontyWorkerIfChild` before it locates a worker.
+
 Source: `lib/src/worker/self_relaunch.dart`, `test/integration/worker/self_relaunch_test.dart`
 
 ## Worker cache and integrity

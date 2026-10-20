@@ -33,13 +33,16 @@ import 'package:fixnum/fixnum.dart';
 
 /// A Python session on a worker dedicated to it until [close].
 ///
-/// Every call is async. Protocol turns are serialized, as upstream's are: a
-/// [feedRun] made while another feed's turn is in flight waits for that
-/// turn, then runs if the other feed has finished, or throws [StateError]
-/// if it is suspended on a host call (upstream's "feed called while a
-/// suspension is awaiting an answer"), or if the session closed meanwhile.
-/// A [feedRun] made from inside one of its own session's print callbacks
-/// throws [StateError] at once: that callback runs inside the turn.
+/// Every call is async. Protocol turns are serialized, as upstream's are;
+/// whole feeds are not: a feed that suspends and is resumed spans several
+/// turns, and while a host call is answered it holds no turn. A
+/// [feedRun] made while another feed's turn is in flight waits
+/// for that turn, then runs only if the other feed has finished: once
+/// that feed suspends on a host call it throws [StateError] instead
+/// (upstream's "feed called while a suspension is awaiting an answer"),
+/// as it does if the session closed meanwhile. A [feedRun] made from
+/// inside one of its own session's print callbacks throws [StateError]
+/// at once: that callback runs inside the turn.
 ///
 /// A Python exception throws [MontyRuntimeError] (or [MontySyntaxError])
 /// and the session stays usable. A dead worker throws [MontyCrashedError];
@@ -125,7 +128,11 @@ abstract interface class MontySession {
   /// `maxSuspensions` host calls the feed is aborted with an in-sandbox
   /// `RuntimeError`; a system sleep, either kind, that would take the
   /// session's sleeps past `maxTotalSleep` aborts it with an in-sandbox
-  /// `TimeoutError`.
+  /// `TimeoutError`. The parent counts both budgets, cumulatively over
+  /// the whole checkout — every feed and resume included, never per feed
+  /// — with 1000 suspensions by default and no sleep budget unless one is
+  /// set. Neither abort is catchable in the sandbox; each arrives as
+  /// [MontyRuntimeError], and the session runs on.
   Future<MontyValue> feedRun(
     String code, {
     Map<String, MontyValue>? inputs,
@@ -161,8 +168,11 @@ abstract interface class MontySession {
 
   /// Restores [state], a dump taken between feeds, into this session
   /// (upstream's `load_session`). The dump brings its own globals, script
-  /// name, limits, type check and working directory; this session's
-  /// settings for them no longer apply.
+  /// name, type check and working directory; this session's settings for
+  /// them no longer apply. Of its limits, the feed and turn durations
+  /// replace this checkout's, while this checkout's `maxSuspensions` and
+  /// `maxTotalSleep` stay as ceilings the dump's own limits only tighten;
+  /// both budgets restart from zero.
   ///
   /// Only for a fresh session: once it has been fed or loaded, a load
   /// throws [StateError]. A dump taken mid-feed throws [StateError] too, and

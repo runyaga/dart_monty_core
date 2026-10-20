@@ -4,7 +4,7 @@ This index lists every documentation page of the package.
 
 ## Concepts
 
-- [Execution model](reference/execution-model.md): States where sessions run, what the worker boundary protects and what it costs.
+- [Execution model](reference/execution-model.md): States where sessions run, what the worker boundary protects and what it costs, and how feeds, protocol turns, callbacks, printing and close behave.
 - [Upstream divergences](reference/upstream-divergences.md): Lists every known place where dart_monty_core behaves differently from pydantic-monty 1.1.0, and why.
 
 ## Running code

@@ -62,6 +62,17 @@ final session = await monty.checkout(
 On dart2js and dart2wasm, a session that keeps the allocation which exhausted
 `maxMemory` raises `MemoryError` on every later feed until a feed drops it.
 
+`maxSuspensions` and `maxTotalSleep` are the exception: the parent counts
+them, not the interpreter. Every suspension is counted as the parent
+receives it, and every system sleep — `time.sleep` and `asyncio.sleep`
+alike — is charged, cut to the OS policy's system-sleep maximum, before it
+is waited. Both add up over the whole checkout, across every feed and
+resume, never per feed: `maxSuspensions` defaults to 1000 and cannot be
+turned off, and `maxTotalSleep` is off unless set. The one that would pass
+a budget aborts the feed with an in-sandbox `RuntimeError` or
+`TimeoutError` that sandbox code cannot catch and Dart sees as
+`MontyRuntimeError`; the session runs on.
+
 What limits cannot cover, the worker boundary does:
 
 - `requestTimeout` on `Monty.start` bounds each protocol turn. Past it the
@@ -74,6 +85,38 @@ What limits cannot cover, the worker boundary does:
 - A worker whose allocator refuses an allocation over its hard limit exits;
   the call fails with `MontyRuntimeError` carrying `MemoryError` and the
   session ends.
+
+## Feeds, protocol turns, callbacks, printing and close
+
+A **feed** is one execution of code: `feedRun` runs it to its end;
+`feedStart` runs it to its first suspension and each resume runs it to the
+next. A **protocol turn** is one request the parent sends the worker — a
+feed, a resume, a dump, a load, an install — and the one event that
+answers it. Turns are serialized per session, as upstream's checkout lock
+serializes them; feeds are not. A feed that suspends and resumes spans
+several turns, and while its host call is answered the turn is free. A
+new feed waits only for the turn in flight: it runs when the earlier feed
+has finished, and is refused with `StateError` once that feed suspends. A
+dump is no call's turn: it runs between turns, so a host function may
+dump its own session while its call waits.
+
+- **Host callbacks** run outside every turn: `externalLookup` entries,
+  host-function calls, `os:` handlers and the host work behind `resumeAuto`
+  execute in the Dart process between turns. They may take as long as they
+  like; `requestTimeout` and the duration backstops do not count them. A
+  `close` while one runs fails the call waiting on it at once, as finished;
+  the callback is not interrupted, and its answer is dropped when it comes.
+- **Printing** runs inside the turn. Each print delivery is awaited before
+  the next event is read, the turn's deadline covers it, and a print
+  callback that calls its own session throws `StateError`: it would wait
+  on the turn it runs in. A callback that never completes is ended by
+  `requestTimeout` or `close`, as any turn is. Without a callback, printed
+  text goes to the process's stdout and stderr on native and to the console
+  on the web.
+- **Close** with no turn in flight — the session idle, or only a host
+  callback running — sends `Reset` and returns the worker to the pool.
+  With a turn in flight it kills the worker, and the call in flight fails
+  with `MontyCrashedError`. Close never throws and is idempotent.
 
 ## Host filesystem service
 

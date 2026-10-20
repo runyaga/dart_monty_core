@@ -36,6 +36,10 @@ part 'self_relaunch_status.dart';
 @Native<Int32 Function()>(symbol: 'dart_monty_worker_main')
 external int _workerMain();
 
+/// Whether [runMontyWorkerIfChild] ran in this isolate. Arming is
+/// isolate-local, so a worker located in a secondary isolate — a pool
+/// started under `Isolate.run` — finds it unarmed unless that isolate
+/// armed it too.
 bool _armed = false;
 
 /// The child exit status for a missing or unloadable bundled worker library.
@@ -123,6 +127,10 @@ String? workerChildFailureLine(SelfRelaunchStatus status) => switch (status) {
 /// Call it as the first statement of `main`, with `main`'s arguments: the
 /// child's stdout carries the protocol, so nothing may be written to it
 /// before the worker starts.
+///
+/// Arming is isolate-local: a pool started in another isolate, under
+/// `Isolate.run`, finds this isolate unarmed and cannot relaunch. Call it
+/// in every isolate that will locate a worker, before the pool starts.
 void runMontyWorkerIfChild(List<String> args) {
   _runMontyWorkerIfChild(
     args,

@@ -19,6 +19,16 @@ import 'package:meta/meta.dart';
 ///
 /// A null limit is off, except [maxRecursionDepth] and [maxSuspensions],
 /// which cannot be turned off: null keeps upstream's default of 1000.
+///
+/// [maxSuspensions] and [maxTotalSleep] are counted by the parent, not
+/// the interpreter, and add up over the whole checkout, every feed and
+/// resume included: 1000 suspensions by default, no sleep budget unless
+/// one is set.
+///
+/// A restored dump does not loosen them: `loadSession` and `loadSnapshot`
+/// keep the receiving checkout's [maxSuspensions] and [maxTotalSleep] as
+/// ceilings, which the dump's own limits only tighten, so a checkout that
+/// restores a dump must set both itself, at least as loose as the dump's.
 @immutable
 final class ResourceLimits {
   /// The limits; see each field.
