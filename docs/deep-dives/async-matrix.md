@@ -73,6 +73,29 @@ print(done.output); // MontyList: ['v-a', 'v-b']
 reported again. An `ExternalException` there raises inside Python at the
 `await`, where `try`/`except` catches it like any other exception.
 
+## The eager await
+
+A coroutine call the sandbox awaits with nothing else to run — a lone
+`await fn(x)`, no sibling task — is marked by the sandbox, and the
+`FunctionSnapshot` reports it: `allowEagerAwait` is true. The host may then
+await the Dart future in place and deliver the settled result at once,
+through the same futures answer that settles pending ones. `resumeAuto()`
+does so, and `feedRun` answers through the same code, so the call costs one
+suspension and no `FutureSnapshot` follows for it: the direct-await
+optimization.
+
+Any other coroutine call — under `asyncio.gather`, or with sibling tasks
+still running — is answered with a pending future instead
+(`resume(ExternalFuture())` on the manual path): Python receives the future,
+and its result is delivered once every task is blocked, through a
+`FutureSnapshot`. That is what lets `asyncio.gather` run several host
+coroutines at once.
+
+Of the OS calls only the two async sleeps, `asyncio.sleep` and
+`system.async_sleep`, accept a future answer; the eager mark on any other
+OS call is dropped. `feedRun` waits `system.async_sleep` itself, capped by
+the OS policy, and delivers it eagerly when the sandbox awaits it alone.
+
 ## Sleeps
 
 `feedRun` waits out system sleeps, cut to the OS policy's system-sleep maximum

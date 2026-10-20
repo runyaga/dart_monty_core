@@ -69,6 +69,9 @@ import 'package:fixnum/fixnum.dart';
 /// call to that name runs the entry, outside the turn: it may take as long as
 /// it likes, and `requestTimeout` does not count it. A read of a value converts
 /// it then and binds it as a global, so later feeds see it without the lookup.
+/// The lookup and the call are two steps, each its own suspension under
+/// `feedStart` (a [NameLookupSnapshot], then a [FunctionSnapshot]): the read
+/// binds the name, and only the call runs the entry.
 /// A call to a name whose entry is a value raises `TypeError` ("'int' object is
 /// not callable"), and an absent name raises `NameError`. A value the converter
 /// refuses (a cyclic list, an unpaired surrogate) is not answered: the feed

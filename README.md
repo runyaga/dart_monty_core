@@ -106,12 +106,18 @@ their members.
 `externalLookup` resolves the names the code leaves undefined, when the code
 reads one (upstream's `external_lookup`). Every entry is a `MontyValue`: a
 host function (`MontyHostFunction`), or any other value, a host object
-included, converted when the name is read and then bound as a global. A host
-function's `fn` takes `(List<MontyValue> args, Map<String, MontyValue> kwargs)`
+included, converted when the name is read and then bound as a global, so
+later feeds see it without the lookup. Reading the name and calling it are
+two steps, each its own suspension under `feedStart` (a `NameLookupSnapshot`,
+then a `FunctionSnapshot`): the read binds the name, and the call runs the
+entry. A host function's `fn` takes `(List<MontyValue> args,
+Map<String, MontyValue> kwargs)`
 and returns a `MontyValue`, directly or as a future, which is awaited before
 Python resumes; wrap `fn` in `coroutine(...)` to make it an `async def`
-function, whose
-calls Python awaits (`asyncio.gather` runs them at once). Throw
+function, whose calls Python awaits: one the sandbox awaits with nothing
+else to run is awaited in place (a `FunctionSnapshot`'s `allowEagerAwait`
+says so); any other gets a pending future, delivered once every task is
+blocked, so `asyncio.gather` runs several at once. Throw
 `ExternalException('ValueError', 'bad key')` to raise a chosen Python
 exception; any other throw raises `Exception` with its text. `HostClass`
 describes a Dart class to `ClassInstance` and `ClassType`.
