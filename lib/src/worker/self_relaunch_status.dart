@@ -12,9 +12,7 @@ final class SelfRelaunchReady extends SelfRelaunchStatus {
   const SelfRelaunchReady();
 }
 
-/// Reports that this isolate did not arm self-relaunch before a worker was
-/// located. Arming is isolate-local: `main`'s call arms only its own
-/// isolate, so a pool in another isolate still finds this one unarmed.
+/// Reports an isolate with self-relaunch unarmed.
 final class SelfRelaunchNotArmed extends SelfRelaunchStatus {
   /// Creates an unarmed self-relaunch diagnosis.
   const SelfRelaunchNotArmed();

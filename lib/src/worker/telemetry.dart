@@ -1,10 +1,4 @@
-/// Host telemetry bridge. Installation and failures are isolate-wide.
-///
-/// The host installs an adapter with [instrumentTelemetry]; every pool and
-/// session in the isolate then reports through it. The adapter's contract
-/// is [MontyTelemetry]: the context and span tokens it hands back, the
-/// spans it opens and ends, the logs it emits, the measurements it records
-/// and the context it runs a host callback in.
+/// Host telemetry bridge with isolate-wide installation and failures.
 library;
 
 import 'dart:async';
@@ -19,17 +13,13 @@ final class _Telemetry {
   TelemetryBridge? bridge;
 }
 
-/// Installs [telemetry] for this isolate's lifetime: every pool and session
-/// in this isolate reports through it. Cannot be undone.
+/// Installs the telemetry adapter for this isolate's lifetime.
 ///
-/// Install it before the first checkout: a session checked out beforehand
-/// never reports. A second call throws [StateError]. With no adapter, no
-/// records are made and snapshot trace contexts are null. Browser sessions
-/// record the same signals as native sessions.
-///
-/// An adapter that throws disables the signal it failed in — spans, logs or
-/// metrics — for the rest of the isolate, and the failure is reported once
-/// through the zone [instrumentTelemetry] was called in.
+/// This must run before the first checkout because existing sessions never
+/// report. A second call throws [StateError]. A throwing signal stops for the
+/// rest of the isolate while the other signals continue, and its first failure
+/// is reported through the installation zone. Browser and native sessions
+/// record the same signals.
 void instrumentTelemetry(MontyTelemetry telemetry) {
   if (_installation.bridge != null) {
     throw StateError('Monty telemetry is already configured');

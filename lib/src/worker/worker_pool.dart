@@ -23,28 +23,12 @@ import 'package:meta/meta.dart';
 /// Starts one worker.
 typedef OpenChannel = SpawnHandle Function();
 
-/// A pool of workers, each dedicated to one checkout at a time.
+/// Owns workers and dedicates one to each active checkout.
 ///
-/// Only [PoolOptions.minProcesses] workers start with the pool; it grows
-/// lazily to [PoolOptions.maxProcesses] as concurrent checkouts need more,
-/// and checkouts held at once run in parallel, each on a worker of its own.
-///
-/// Acquiring reuses an idle worker, discards one that died while idle, and
-/// reserves a slot before spawning; with every slot taken it waits, up to
-/// `checkoutTimeout`, for a release. Releasing sends `Reset` and returns the
-/// worker to the idle list, or retires it after `maxCheckoutsPerWorker`
-/// checkouts (upstream `pool.rs`, `checkout.rs`).
-///
-/// [close] refuses new checkouts and reaps idle workers. Checked-out
-/// workers run on, and an [acquire] already started completes, as upstream's
-/// do. A worker released after close goes, reset, to an [acquire] still
-/// waiting, as upstream's does; with none waiting it is killed, as a closed
-/// pool has no later reaping to hand it to (D-045).
-///
-/// A busy native worker outlives a parent that dies without closing it,
-/// until the worker's own duration limit ends the run; an idle one exits
-/// when its stdin reaches end-of-file. There is no watchdog, as upstream
-/// has none.
+/// The pool reuses idle workers, removes workers that fail while idle, and
+/// grows lazily to [PoolOptions.maxProcesses]. [close] refuses new work but
+/// lets existing acquisitions and leases continue. A released worker serves
+/// an existing waiter after close and is killed when no waiter remains.
 final class WorkerPool {
   WorkerPool._(
     this.options,
@@ -82,25 +66,10 @@ final class WorkerPool {
   /// Slots taken now: idle, checked-out and starting workers.
   int get liveWorkers => _liveWorkers;
 
-  /// Starts [PoolOptions.minProcesses] workers, failing fast if any cannot
-  /// start: the others still starting are cancelled and those already
-  /// ready are closed before the error is rethrown.
+  /// Starts a worker pool from validated options.
   ///
-  /// Throws [ArgumentError] before any worker starts for a setting
-  /// upstream's constructor refuses, in its order and with its message
-  /// ([PoolOptions.validate]), then for an impossible size: a
-  /// [PoolOptions.minProcesses] below 0, an effective
-  /// [PoolOptions.maxProcesses] below 1, or a minimum above it. The
-  /// effective maximum is the setting or the platform's default, which can
-  /// sit below [PoolOptions.minProcesses]: the processor count on native,
-  /// the browser's reported hardware concurrency on the web, 4 where the
-  /// browser reports none. Set [PoolOptions.maxProcesses] there.
-  ///
-  /// A worker that cannot be located or spawned ([CrashCause.spawn]), or is
-  /// not ready within [startupTimeout] ([CrashCause.killed]), fails the
-  /// call as [MontyCrashedError], after the cleanup above.
-  ///
-  /// [open] replaces the platform's channel factory in tests.
+  /// If one initial worker fails, this call cancels pending starts and closes
+  /// workers already ready before rethrowing the first failure.
   static Future<WorkerPool> start([
     PoolOptions options = const PoolOptions(),
     @visibleForTesting OpenChannel? open,
@@ -133,38 +102,9 @@ final class WorkerPool {
 
   /// Dedicates a worker to the caller until its lease is released.
   ///
-  /// The pool grows lazily here: an idle worker is reused, a new one is
-  /// spawned while fewer than [PoolOptions.maxProcesses] are alive, and the
-  /// wait for a release begins only once every slot is taken. Leases held
-  /// at once run in parallel, each on a worker of its own:
-  ///
-  /// ```dart
-  /// final pool = await WorkerPool.start(
-  ///   const PoolOptions(minProcesses: 1, maxProcesses: 4),
-  /// );
-  /// final first = await pool.acquire(); // the warm worker
-  /// final second = await pool.acquire(); // a second, spawned for it
-  /// // ... two leases at once, one worker each ...
-  /// await first.release();
-  /// await second.release();
-  /// ```
-  ///
-  /// Throws [TimeoutException] if no worker becomes free within
-  /// [PoolOptions.checkoutTimeout], [StateError] if the pool is closed when
-  /// it is called, and whatever the start of a new worker throws
-  /// ([MontyCrashedError] when it is not ready within [startupTimeout]).
-  ///
-  /// [PoolOptions.checkoutTimeout] bounds only the wait for a slot: a new
-  /// worker's spawn is bounded by [startupTimeout] and the session
-  /// configured on the lease by [PoolOptions.requestTimeout], each a
-  /// deadline of its own, so a checkout can take all three.
-  ///
-  /// Telemetry, when used, must be installed before the first checkout: a
-  /// lease taken first records no session duration, and its session records
-  /// nothing.
-  ///
-  /// A call made before [close] runs to its end, as upstream's acquisition
-  /// holds its pool: it waits, spawns and is served as before.
+  /// Throws [TimeoutException] when no slot becomes available before
+  /// [PoolOptions.checkoutTimeout], [StateError] after [close], and
+  /// [MontyCrashedError] when a new worker misses [startupTimeout].
   Future<WorkerLease> acquire() async {
     final waited = Stopwatch()..start();
     try {
@@ -270,10 +210,7 @@ final class WorkerPool {
     },
   );
 
-  /// Waits for a release, or throws [TimeoutException] once [waited] passes
-  /// the checkout timeout. The wait for a slot is all that deadline
-  /// covers: spawn and configure turns have deadlines of their own
-  /// ([startupTimeout], [PoolOptions.requestTimeout]).
+  /// Waits for a worker slot or the checkout deadline.
   Future<void> _waitForSlot(Stopwatch waited) async {
     final waiter = Completer<void>();
     _waiters.add(waiter);
@@ -339,54 +276,50 @@ final class PoolOptions {
     this.workerLocation,
   });
 
-  /// Upstream's `DEFAULT_DURATION_LIMIT_GRACE`: one second, the default of
-  /// [feedDurationLimitGrace] and [turnDurationLimitGrace].
+  /// The default parent-side grace for duration limits.
   static const Duration defaultDurationLimitGrace = Duration(seconds: 1);
 
-  /// Workers [WorkerPool.start] spawns eagerly; 0 or more, and at most the
-  /// effective maximum ([WorkerPool.start] refuses the rest).
+  /// Workers started eagerly, with a minimum of zero.
   final int minProcesses;
 
-  /// The most workers alive at once, idle and checked out; null for the
-  /// platform's default ([chf.defaultMaxProcesses]): the processor count
-  /// on native, the browser's reported hardware concurrency on the web, 4
-  /// where the browser reports none. Must be 1 or more and at least
-  /// [minProcesses]; a platform default below [minProcesses] is refused,
-  /// so set this there.
+  /// The maximum number of live workers.
+  ///
+  /// Null selects the platform default. A value must be at least one and at
+  /// least [minProcesses]. Native uses processor count. Web uses reported
+  /// hardware concurrency and falls back to four. That default can be smaller
+  /// than the minimum, so callers must set this field explicitly on such a
+  /// host.
   final int? maxProcesses;
 
-  /// How long [WorkerPool.acquire] waits for a free slot; forever when
-  /// null. Bounds only that wait: a new worker's spawn is bounded by
-  /// [WorkerPool.startupTimeout] and the session's configure turn by
-  /// [requestTimeout], each its own deadline. Must not be negative.
+  /// The wait for a worker slot.
+  ///
+  /// Null waits forever, and a set duration must be non-negative.
   final Duration? checkoutTimeout;
 
-  /// How long any one protocol turn may take before its worker is killed;
-  /// unbounded when null. A lease's `Reset` turn and a session's configure
-  /// turn are turns. Must not be negative.
+  /// How long one protocol turn may take.
+  ///
+  /// Null is unbounded. The duration must be non-negative and also applies to
+  /// Configure and Reset turns.
   final Duration? requestTimeout;
 
-  /// Checkouts a worker serves before it is retired; unbounded when null.
-  /// 0 retires each worker at its first release. Upstream's is a `u32`: 0
-  /// to 2^32 - 1, and [validate] refuses the rest.
+  /// Checkouts served before retirement, from 0 through 2^32 - 1.
+  ///
+  /// Zero retires a worker on its first release. Null never retires by count.
   final int? maxCheckoutsPerWorker;
 
-  /// How far past what a session's `maxFeedDuration` has left the parent
-  /// lets an execution turn run before it kills the worker; null leaves the
-  /// feed budget unguarded by the parent (upstream
-  /// `feed_duration_limit_grace`). One second by default
-  /// ([defaultDurationLimitGrace]); must not be negative.
+  /// Parent-side grace for the remaining feed duration.
+  ///
+  /// The default is one second. Null removes the parent's guard for the feed
+  /// limit, and a set duration must be non-negative.
   final Duration? feedDurationLimitGrace;
 
-  /// How far past a session's `maxTurnDuration` the parent lets an
-  /// execution turn run before it kills the worker; null leaves the turn
-  /// budget unguarded by the parent (upstream `turn_duration_limit_grace`).
-  /// One second by default ([defaultDurationLimitGrace]); must not be
-  /// negative.
+  /// Parent-side grace for the turn duration.
+  ///
+  /// The default is one second. Null removes the parent's guard for the turn
+  /// limit, and a set duration must be non-negative.
   final Duration? turnDurationLimitGrace;
 
-  /// Where the worker is found: an executable on native, an asset base URL
-  /// on the web; null to search the usual places.
+  /// The worker executable path or web asset base.
   final String? workerLocation;
 
   /// Throws [ArgumentError] for a setting upstream's constructor refuses,
@@ -534,14 +467,12 @@ final class WorkerLease {
   /// Whether the slot has been given back.
   bool get isReleased => _isReleased;
 
-  /// Sends `Reset` and, on `Ok`, gives the worker back to the pool;
-  /// otherwise kills it and rethrows the failure (a reply other than `Ok`
-  /// is a [StateError]). The `Reset` turn is bounded by the pool's
-  /// `requestTimeout`, and waits for the worker as long as it takes
-  /// without one. Once the pool is closed it kills the worker at once,
-  /// without a `Reset`, unless an [WorkerPool.acquire] is waiting for it.
+  /// Resets and returns the worker to the pool, or kills it on failure.
   ///
-  /// Completes normally if [kill] ends the lease first. Idempotent.
+  /// Reset uses [PoolOptions.requestTimeout] and waits without a bound when
+  /// that setting is null. A prior [kill] makes this call complete normally.
+  /// Repeated calls share one result. A closed pool skips Reset and kills the
+  /// worker unless an acquisition is waiting.
   Future<void> release() => _releasing ??= _release();
 
   /// Kills the worker now and gives its slot back, unless the lease already

@@ -30,6 +30,6 @@ upstream's `Checkout::discard_worker`.
 
 Metric attributes contain only protocol-defined values. Sandbox function
 names and paths never become attributes; OS calls carry their fixed protocol
-function name on the host-call duration. Every measurement goes through the
-R-2 bridge with `context: null`, even under an ambient host span. Adapter
-exceptions disable metrics only, across later sessions too.
+function name on the host-call duration. [`MontyTelemetry.recordMetric`](../../lib/src/worker/monty_telemetry.dart)
+and [`instrumentTelemetry`](../../lib/src/worker/telemetry.dart) define context
+and adapter failure behavior.

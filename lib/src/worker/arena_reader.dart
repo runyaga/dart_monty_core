@@ -19,19 +19,14 @@
 ///    names and lengths, timedeltas within 999999999 days
 ///    (`python_rules.dart`, `python_keys.dart`).
 ///
-/// A failure in any stage is a [FormatException], remembered and thrown
-/// again by every later read. Values are built lazily — a session hands out
-/// a completion's output and a call's arguments before building any — so a
-/// stage-3 failure escapes the first read, not the turn that carried the
-/// frame. A [StateError] from a read is an internal inconsistency of this
-/// package, not a verdict on the worker's bytes.
+/// A [FormatException] from any stage is stored and thrown by every later
+/// read. Values are built lazily, so a stage-3 failure escapes the first read
+/// instead of the originating turn. A [StateError] indicates an
+/// internal package inconsistency.
 ///
-/// Every kind upstream emits decodes to the [MontyValue] class of the same
-/// meaning, mapped as upstream's Python host maps it: `repr`, `cycle` and an
-/// output `function` become [MontyString]; a builtin type or function
-/// becomes [MontyStdTypeProxy]; a path is normalized as `PurePosixPath`; a
-/// payload-less `UnicodeDecodeError`, `UnicodeEncodeError` or
-/// `json.JSONDecodeError` value becomes a `ValueError`.
+/// Every upstream kind decodes to the matching [MontyValue] representation.
+/// The decoder preserves upstream's value conversions, path normalization,
+/// builtin proxies, and payload-less exception fallback.
 ///
 /// A class `type` node decodes to the [ClassType] the session registered
 /// under its id, else to a [MontyClassTypeProxy]; a class instance node to

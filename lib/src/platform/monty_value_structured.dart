@@ -75,39 +75,16 @@ final class MontyPath extends MontyValue {
 // FileHandle
 // ---------------------------------------------------------------------------
 
-/// Represents an open file object (`_io.TextIOWrapper` / `BufferedReader` /
-/// …) produced by Python's `open()`: upstream's `MontyFileHandle`.
-///
-/// The interpreter never holds a live OS handle: an `open` OS-call returns
-/// one of these (carrying the virtual [path], canonical open() [mode], and
-/// byte/char [position]), and the engine drives subsequent reads/writes
-/// through `Path.read_text`/`write_text`/… OS-calls. An `OsHandler`
-/// servicing `open` returns a [MontyFileHandle] to satisfy the call.
-///
-/// The lifecycle, end to end: Python's `open(path, mode)` reaches the host
-/// as an `open` OS call, its arguments the path and the mode string; the
-/// handler answers with a handle; every later read, write or append on
-/// that file reaches the handler as a `Path.read_text`, `Path.read_bytes`,
-/// `Path.write_text`, `Path.write_bytes`, `Path.append_text` or
-/// `Path.append_bytes` OS call whose first argument is the handle itself,
-/// served from the handler's store as any path call is (`OSAccess` takes
-/// the handle's [path] there).
-///
-/// Two handles are equal when their fields are (Python compares file
-/// objects by identity, which a detached copy cannot carry: a recorded
-/// divergence).
+/// A virtual file handle returned by the host for Python's `open()`.
 @immutable
 final class MontyFileHandle extends MontyValue {
-  /// A handle for [path] opened in [mode] at [position] (zero when null).
+  /// Creates a virtual file handle with canonicalized mode and position.
   ///
-  /// As upstream's constructor: [mode] is parsed and stored in its canonical
-  /// form (`rt` is `r`); a mode upstream refuses, a [path] with an unpaired
-  /// UTF-16 surrogate (no Python `str` holds one), and a [position] outside
-  /// 0..2^64-1 throw [ArgumentError]. The accepted grammar is exactly one of
-  /// `r`, `w` or `a` plus at most one of `b` or `t`, in any order (`rt` is
-  /// `r`, `br` is `rb`, and the canonical forms are `r`, `rb`, `w`, `wb`,
-  /// `a`, `ab`); `x` (exclusive creation) and `+` (update) are refused, as
-  /// upstream refuses them.
+  /// [mode] accepts one of `r`, `w`, or `a` with at most one `b` or `t` in
+  /// either order. It rejects `x` and `+`, canonicalizes `rt` to `r` and `br`
+  /// to `rb`, and produces `r`, `rb`, `w`, `wb`, `a`, or `ab`. A null
+  /// [position] is zero. An unpaired surrogate in [path] or a [position]
+  /// outside 0 through 2^64 - 1 throws [ArgumentError].
   MontyFileHandle(this.path, String mode, {BigInt? position})
     : mode = _canonicalMode(mode),
       position = _checkedPosition(position ?? BigInt.zero) {
@@ -144,6 +121,7 @@ final class MontyFileHandle extends MontyValue {
   Map<String, Object?> get dartValue => _markDartValue(_toJson(), 'filehandle');
 
   @override
+  /// Compares path, mode, and position by value, unlike Python file identity.
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is MontyFileHandle &&

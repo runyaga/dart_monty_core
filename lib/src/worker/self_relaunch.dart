@@ -17,9 +17,6 @@
 ///     dart_monty_core:
 ///       build_worker: true
 /// ```
-///
-/// The package exports [runMontyWorkerIfChild]; the rest of this library is
-/// internal.
 library;
 
 import 'dart:ffi';
@@ -38,10 +35,7 @@ part 'self_relaunch_status.dart';
 @Native<Int32 Function()>(symbol: 'dart_monty_worker_main')
 external int _workerMain();
 
-/// Whether [runMontyWorkerIfChild] ran in this isolate. Arming is
-/// isolate-local, so a worker located in a secondary isolate — a pool
-/// started under `Isolate.run` — finds it unarmed unless that isolate
-/// armed it too.
+/// Whether self-relaunch is armed in this isolate.
 bool _armed = false;
 
 /// The child exit status for a missing or unloadable bundled worker library.
@@ -55,11 +49,7 @@ typedef SelfRelaunchDiagnosis =
 
 /// Diagnoses whether this executable can serve a self-relaunched worker.
 ///
-/// Arming is isolate-local, so [SelfRelaunchNotArmed] reports the isolate
-/// the diagnosis runs in, not the process.
-///
-/// The worker library lives beside an AOT executable in `../lib`. The optional
-/// arguments replace host operations in tests.
+/// An AOT executable finds its worker library in `../lib` beside itself.
 SelfRelaunchStatus diagnoseSelfRelaunch({
   @visibleForTesting void Function()? resolveWorker,
   @visibleForTesting String? executablePath,
@@ -94,12 +84,6 @@ SelfRelaunchStatus diagnoseSelfRelaunch({
 }
 
 /// Describes how to make a failed self-relaunch diagnosis usable.
-///
-/// The not-armed remedy names the diagnostic cause: arming is
-/// isolate-local, so it fires for a pool located in an isolate that has
-/// not armed itself, `main`'s own call notwithstanding. Set up every
-/// isolate that locates a worker: call [runMontyWorkerIfChild] there, as
-/// the first statement of its entry point, before the pool starts.
 String selfRelaunchRemedy(SelfRelaunchStatus status) => switch (status) {
   SelfRelaunchReady() => '',
   SelfRelaunchNotArmed() =>
@@ -132,23 +116,19 @@ String? workerChildFailureLine(SelfRelaunchStatus status) => switch (status) {
   SelfRelaunchReady() || SelfRelaunchNotArmed() => null,
 };
 
-/// Serves as the worker and exits when this process was relaunched as one;
-/// otherwise returns at once and arms self-relaunch for this process.
+/// Serves a worker child or arms self-relaunch in the current isolate.
 ///
-/// The relaunch flag is `--dart-monty-core-worker`, the only argument the
-/// parent relaunches this executable with. A call whose arguments are
-/// exactly that serves monty-proto on stdin and stdout until EOF or
-/// `Shutdown`, then exits the process with the worker's exit code — with
-/// 78, after a one-line diagnostic on stderr, when the bundled worker
-/// library is missing or cannot be loaded.
+/// The parent uses `--dart-monty-core-worker` as the child's only argument.
+/// Such a child serves the binary protocol on standard input and output until
+/// EOF or Shutdown, then exits with the worker status. A missing or unloadable
+/// worker library writes one diagnostic line to standard error and exits with
+/// status 78.
 ///
-/// Call it as the first statement of `main`, with `main`'s arguments: the
-/// child's stdout carries the protocol, so nothing may be written to it
-/// before the worker starts.
-///
-/// Arming is isolate-local: a pool started in another isolate, under
-/// `Isolate.run`, finds this isolate unarmed and cannot relaunch. Call it
-/// in every isolate that will locate a worker, before the pool starts.
+/// Call this as the first statement of `main`, before any output, because a
+/// child reserves standard output for the protocol. The armed state is
+/// isolate-local.
+/// Every secondary isolate that locates a worker, including one entered by
+/// `Isolate.run`, must call this before it starts a pool.
 void runMontyWorkerIfChild(List<String> args) {
   _runMontyWorkerIfChild(
     args,

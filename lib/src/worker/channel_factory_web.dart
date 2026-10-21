@@ -1,13 +1,12 @@
 /// The browser channel factory: a Web Worker per channel, all sharing one
 /// compiled module per asset base.
 ///
-/// The module cache lives for the page and is keyed by asset base: every
-/// Web Worker the page starts, from any pool, reuses the one module a base
-/// compiled. Module and Worker lifetimes are separate — a Worker is made
-/// per channel and dies with it, while the compiled module stays cached
-/// for the next start.
+/// The module cache lives for the page and is keyed by asset base. Every Web
+/// Worker uses the cached module for its base, including Workers from other
+/// pools. Module and Worker lifetimes are separate. Each channel owns one
+/// Worker, while the module remains cached for the next start.
 ///
-/// Internal to the package; nothing here is exported.
+/// Nothing in this library is exported from the package.
 library;
 
 import 'dart:js_interop';
@@ -20,15 +19,11 @@ import 'package:dart_monty_core/src/worker/worker_channel.dart';
 final _caches = <String, WasmModuleCache>{};
 Future<String>? _found;
 
-/// Starts a Web Worker from the assets under [workerLocation], or under the
-/// base [resolveAssetBase] finds (once per page) when it is null.
+/// Starts a Web Worker from the selected asset base.
 ///
-/// Each call starts a Worker of its own; the compiled module is the page
-/// cache's for that base — [workerLocation] given, or the base found — so
-/// Workers started later, from any pool, reuse it, and a Worker that dies
-/// or is killed leaves the module cached for the next start.
-///
-/// Cancelling before the Worker greets terminates it.
+/// A null [workerLocation] resolves the asset base once per page. If a caller
+/// cancels before the Worker greeting, that Worker terminates. A closed
+/// channel leaves its compiled module in the page cache.
 SpawnHandle openChannel({String? workerLocation}) =>
     PendingSpawn((cancelled) async {
       final base = workerLocation ?? await (_found ??= _findBase());

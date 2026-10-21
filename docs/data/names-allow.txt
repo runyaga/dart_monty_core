@@ -43,3 +43,7 @@ TEMP
 TMP
 USERPROFILE
 XDG_CACHE_HOME
+# docs/native-worker.md: Windows platform probe.
+Zone.Identifier
+# docs/native-worker.md: worker-cache integrity section.
+WorkerFingerprint

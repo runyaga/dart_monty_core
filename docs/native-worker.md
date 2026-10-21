@@ -8,16 +8,10 @@ Only macOS, Linux, and Windows reach the build hook's native worker handling, an
 
 Source: `hook/build.dart`, `lib/src/worker/worker_manifest.dart`, `test/hook/worker_hook_opt_in_test.dart`
 
-## Choosing the worker
+## Worker selection
 
-`locateWorker` selects a native worker in this order:
-
-1. An explicit `workerLocation`, if given.
-2. In an AOT executable, self-relaunch when `runMontyWorkerIfChild(args)` runs first in `main` and the bundled worker library resolves. Otherwise, selection throws.
-3. Under JIT execution through `dart run` or `dart test`, a verified per-user cache entry for the host ABI when the bundled manifest publishes one.
-4. Under JIT, the package-relative executable for the host ABI when the cache entry is absent or the manifest has no host artifact, resolved through `Isolate.resolvePackageUri`. An invalid or inaccessible cache entry throws.
-
-Source: `lib/src/worker/worker_locator.dart`, `test/integration/worker/worker_locator_test.dart`
+[`locateWorker`](../lib/src/worker/worker_locator.dart) selects the native
+worker.
 
 ## Build hook
 
@@ -36,43 +30,54 @@ Source: `hook/build.dart`, `lib/src/worker/worker_install.dart`, `test/hook/work
 
 ## Self-relaunch
 
-An AOT executable serves as its worker when `runMontyWorkerIfChild(args)` is the first statement of `main` and the bundled worker library resolves.
-
-```dart
-import 'package:dart_monty_core/dart_monty_core.dart';
-
-void main(List<String> args) {
-  runMontyWorkerIfChild(args);
-}
-```
-
-Arming is isolate-local: a pool started in another isolate, such as one
-running under `Isolate.run`, cannot relaunch unless that isolate calls
-`runMontyWorkerIfChild` before it locates a worker.
-
-The parent relaunches its own executable with `--dart-monty-core-worker` as
-the only argument. That child serves monty-proto on stdin and stdout until
-EOF or `Shutdown`, then exits with the worker's exit code; a missing or
-unloadable bundled worker library exits 78 after a one-line diagnostic on
-stderr.
+Self-relaunch connects AOT worker selection to the worker library bundled by
+the build hook. The
+[`runMontyWorkerIfChild`](../lib/src/worker/self_relaunch.dart) declaration
+defines call ordering, child protocol behavior, failure status, and isolate
+scope. The diagnosis APIs in that file distinguish application setup from a
+missing or unloadable library.
 
 Source: `lib/src/worker/self_relaunch.dart`, `test/integration/worker/self_relaunch_test.dart`
 
 ## Worker cache and integrity
 
-The per-user cache root is `~/Library/Caches/dart_monty` on macOS, `~/.cache/dart_monty` on Linux, and `%LOCALAPPDATA%\dart_monty\Cache` on Windows. `HOME` on macOS and Linux and `LOCALAPPDATA` on Windows must be absolute paths. `XDG_CACHE_HOME` is ignored. An artifact path under the root is `worker-<sha256>/<filename>`.
+[`workerCacheRoot`](../lib/src/worker/worker_cache.dart) defines cache
+placement. [`WorkerFingerprint`](../lib/src/worker/worker_fingerprint.dart)
+defines the fingerprint.
 
-Installation verifies the complete worker file against the manifest SHA-256 and makes a best-effort fingerprint record containing its size, modification time, change time, and manifest-entry key. After a successful verification for the same path and entry key, cache lookup skips verification for the rest of that isolate's lifetime. Otherwise, it requests SHA-256 verification when the current fingerprint is unavailable, its size differs from the manifest, or the stored and current fingerprints differ. A missing or non-file worker, or a size mismatch, fails before SHA-256 hashing. Only a regular file with the expected size reaches SHA-256 hashing. macOS and Linux use metadata change time in the fingerprint. Windows records file creation time in that field, so a same-size modification with a restored modification time reaches SHA-256 verification only when another condition requires it. On other hosts a cache entry must also be executable. The fingerprint detects ordinary changes and does not authenticate the file: a modified worker with a matching forged fingerprint file skips hashing. An explicit `workerLocation` and the package-relative executable are not verified against the manifest.
+## Downloaded workers
 
-Source: `lib/src/worker/worker_cache.dart`, `lib/src/worker/worker_fingerprint.dart`, `lib/src/worker/worker_install.dart`, `lib/src/worker/worker_locator.dart`, `test/unit/worker/worker_cache_test.dart`, `test/unit/worker/worker_fingerprint_test.dart`, `test/integration/worker/worker_locator_test.dart`
+Published workers have no developer signature or notarization. The macOS
+linker supplies only an ad hoc signature. SHA-256 verification provides the
+integrity check.
 
-## Installing a published worker
+Platform probes establish the following behavior:
+
+- A worker written by Dart `HttpClient` on macOS has no
+  `com.apple.quarantine` attribute and starts normally. `spctl --assess`
+  rejects its ad hoc signature. `Process.run` also starts a worker after a
+  quarantine attribute is added manually. The probe has no desktop session,
+  so it does not cover Finder launch dialogs.
+- A worker written by Dart `HttpClient` on Windows has no `Zone.Identifier`
+  stream. Browser downloads carry that Mark of the Web. `Process.run` starts
+  a copy with `ZoneId=3`, while `Start-Process` can reject it until
+  `Unblock-File` removes the mark. The package uses `Process.start`, which
+  calls CreateProcess as `Process.run` does.
+- A downloaded Linux worker starts normally. The probe identifies no
+  quarantine mechanism.
+
+The build hook receives `HOME` and `PATH` on macOS and Linux. On Windows it
+also receives `LOCALAPPDATA`, `USERPROFILE`, `SYSTEMROOT`, `TEMP`, and `TMP`.
+
+Source: `tool/consumers/native/`
+
+## The build hook installs published workers
 
 The build hook installs a published worker archive selected by a manifest target into the per-user cache. A bundled manifest with an empty `targets` map publishes no prebuilt worker, and the hook installs none.
 
 Source: `hook/build.dart`, `lib/src/worker/worker_install.dart`, `lib/src/worker/worker_manifest_data.dart`, `test/unit/worker/worker_install_test.dart`
 
-## Building in this repository
+## Repository builds write native workers
 
 `bash tool/build_worker.sh` builds the worker executable and worker library and writes them to `lib/src/bin/<os>-<arch>/`, using `dart_monty_worker` with the `.exe` suffix on Windows.
 

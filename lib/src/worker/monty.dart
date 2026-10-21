@@ -14,61 +14,24 @@ import 'package:dart_monty_core/src/worker/proto_session.dart';
 import 'package:dart_monty_core/src/worker/resource_limits.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
 
-/// A pool of Python workers, each dedicated to one session at a time.
-/// Sessions held at once run in parallel, each on a worker of its own; the
-/// pool starts `minProcesses` workers and grows lazily to `maxProcesses`
-/// as concurrent checkouts need more.
+/// Owns Python workers and dedicates one to each checked-out session.
 ///
-/// [withPool] and [withSession] are the way to use it: they close what they
-/// open on every exit path. A live worker keeps the Dart process from
-/// exiting, so a pool from [start] and a session from [checkout] must each
-/// be closed. (A session collected unclosed has its worker killed by a
-/// finalizer, but only if the collector runs it, which nothing guarantees.)
-///
-/// With [start]'s default `checkoutTimeout` of null a [checkout] waits for
-/// a free worker forever, as upstream's does: a pool whose every worker is
-/// held by a session that waits on another checkout hangs. Code that nests
-/// checkouts sets a `checkoutTimeout` or sizes `maxProcesses` for them.
-///
-/// A busy native worker outlives a parent that dies without closing it,
-/// until the worker's own duration limit ends the run; an idle one exits
-/// when its stdin reaches end-of-file.
+/// Live workers keep the Dart process alive, and finalizers are not
+/// guaranteed. Every pool and session therefore needs an explicit close. A
+/// busy native worker can survive an unclosed parent until its duration limit,
+/// while an idle worker exits at standard-input EOF. A null checkout timeout
+/// can deadlock nested checkouts when every worker is already held.
 final class Monty {
   const Monty._(this._pool);
 
   final WorkerPool _pool;
 
-  /// Starts a pool with [minProcesses] workers ready, failing if any of them
-  /// cannot start (upstream `AsyncMonty`). A setting upstream refuses is an
-  /// [ArgumentError] before any worker starts.
+  /// Starts a worker pool with [minProcesses] workers ready.
   ///
-  /// [maxProcesses] bounds the workers alive at once (the platform's default
-  /// when null: the number of processors on native, the browser's hardware
-  /// concurrency on the web, 4 where the browser does not say).
-  /// [checkoutTimeout] bounds how long [checkout]
-  /// waits for a free worker (forever when null); [requestTimeout] bounds
-  /// each request turn (unbounded when null). [maxCheckoutsPerWorker]
-  /// retires a worker after that many checkouts (never when null; 0 retires
-  /// each worker at its first release). [feedDurationLimitGrace] and
-  /// [turnDurationLimitGrace] are how far past a session's duration limits
-  /// the parent lets a turn run before it kills the worker (one second by
-  /// default); null leaves that limit unguarded by the parent. Each
-  /// execution turn — a feed, or a resume after a suspension — runs under
-  /// the earliest of three deadlines: `requestTimeout`, what the session's
-  /// `maxFeedDuration` has left plus `feedDurationLimitGrace`, and
-  /// `maxTurnDuration` plus `turnDurationLimitGrace`.
-  /// [workerLocation] is where the worker is found: an executable on
-  /// native, an asset base URL on the web; null searches the usual places.
-  ///
-  /// [minProcesses] is 1 by default and must not be negative;
-  /// [maxProcesses] must be at least 1 and at least [minProcesses] — a
-  /// platform default below [minProcesses] is an impossible size, so set
-  /// [maxProcesses] there; [maxCheckoutsPerWorker] must fit an unsigned
-  /// 32-bit integer; and a duration must not be negative. A value outside
-  /// its domain throws [ArgumentError] with upstream's message, before any
-  /// worker starts; so does an impossible pool size. A worker that cannot
-  /// be located or spawned, or is not ready within 30 seconds, fails the
-  /// call with a `MontyCrashedError`.
+  /// Invalid settings fail with [ArgumentError] before any worker starts. If
+  /// an initial worker cannot be located, spawned, or readied within 30
+  /// seconds, the pool cancels the other spawns, closes ready workers, and
+  /// throws `MontyCrashedError` with the cause.
   static Future<Monty> start({
     int minProcesses = 1,
     int? maxProcesses,
@@ -91,17 +54,10 @@ final class Monty {
     ),
   );
 
-  /// Runs [body] with a pool started as [start] does with the same
-  /// settings, and closes the pool however [body] ends: the form of
-  /// upstream's `async with AsyncMonty()`.
+  /// Runs a body with a pool and closes the pool afterward.
   ///
-  /// The cleanup closes the pool only: a session the body checked out is
-  /// not closed by it — the body owns that session and must close it
-  /// (`withSession` does that for its own session).
-  ///
-  /// The settings are [start]'s, with the same defaults and the same
-  /// domains: an [ArgumentError] for a setting upstream refuses comes
-  /// before the pool starts.
+  /// The helper closes only the pool. The body still owns every checked-out
+  /// session and must close it.
   static Future<T> withPool<T>(
     Future<T> Function(Monty monty) body, {
     int minProcesses = 1,
@@ -126,39 +82,25 @@ final class Monty {
     ),
   );
 
-  /// Dedicates a worker to a new session (upstream `checkout`): [scriptName]
-  /// is the file name tracebacks report (`main.py` by default), [limits] the
-  /// resource limits (null leaves every one off, the recursion depth and
-  /// the suspension count at upstream's 1000), [typeCheck] whether each
-  /// snippet is type-checked first (false by default, with
-  /// [typeCheckStubs], [typeCheckFormat] and [typeCheckColor]); the check runs
-  /// in the worker under the limits' feed duration, so set one when the source
-  /// is untrusted,
-  /// [assertMessageAnnotations] how many bytes of each operand an `assert`
-  /// message shows (null keeps the worker's default of 120 bytes, 0 turns
-  /// the annotations off), [printFlushInterval] how long the worker may hold
-  /// printed text (null keeps the worker's default, zero sends each line as
-  /// it ends), and [osPolicy] the clock, zone, sleep and randomness the
-  /// session gets (null is upstream's default policy). A null setting keeps
-  /// upstream's default.
+  /// Dedicates one worker to a new session.
   ///
-  /// [typeCheckFormat] is one of `full`, `concise`, `azure`, `json`,
-  /// `jsonlines` (also `json-lines`), `rdjson`, `pylint`, `gitlab` or
-  /// `github`, ASCII case ignored, and `full` by default.
-  /// [assertMessageAnnotations] must fit an unsigned 32-bit integer, and
-  /// [printFlushInterval] must not be negative.
+  /// `checkoutTimeout` from pool startup bounds only the wait for a slot. A
+  /// new worker has a separate 30-second startup deadline, and the Configure
+  /// turn uses `requestTimeout`, with no bound when that setting is null. A
+  /// checkout timeout throws [TimeoutException]. This pool throws [StateError]
+  /// after [close]. An unknown IANA zone throws [ArgumentError] before a
+  /// worker is taken. The worker type checks under `maxFeedDuration`, so
+  /// untrusted source needs a feed duration limit. A worker that dies during
+  /// Configure produces `MontyCrashedError`, while a Configure refusal retains
+  /// its worker error.
   ///
-  /// Throws [ArgumentError] for a setting upstream refuses, with upstream's
-  /// message, before any worker is taken, an unknown IANA zone name
-  /// included. Waits for a free worker up to the pool's `checkoutTimeout`,
-  /// then throws [TimeoutException]. That wait is all `checkoutTimeout`
-  /// covers: starting a new worker is bounded by the pool's 30-second
-  /// startup deadline, and configuring the session by `requestTimeout`,
-  /// each separately. A worker that cannot be located, spawned or readied
-  /// throws `MontyCrashedError`, and so does one that dies while
-  /// configuring; a configure refusal from the worker throws the error it
-  /// raised (a `MontyRuntimeError`, say). Throws [StateError] once the pool
-  /// is closed; a checkout already waiting then still completes.
+  /// [assertMessageAnnotations] limits each assertion operand to that many
+  /// bytes, defaults to 120 when null, and fits an unsigned 32-bit integer.
+  /// [printFlushInterval] holds printed text before delivery, defaults in the
+  /// worker when null, and sends complete lines at once when zero. It must not
+  /// be negative. [typeCheckFormat] defaults to `full` and accepts `full`,
+  /// `concise`, `azure`, `json`, `jsonlines`, `json-lines`, `rdjson`, `pylint`,
+  /// `gitlab`, or `github`, ignoring ASCII case.
   Future<MontySession> checkout({
     String scriptName = 'main.py',
     ResourceLimits? limits,
@@ -183,13 +125,7 @@ final class Monty {
     ),
   );
 
-  /// Runs [body] with a session from [checkout] with the same settings, and
-  /// closes the session however [body] ends: the form of upstream's
-  /// `async with pool.checkout()`.
-  ///
-  /// The settings are [checkout]'s, with the same defaults and the same
-  /// domains: an [ArgumentError] for a setting upstream refuses comes
-  /// before a worker is taken.
+  /// Runs a body with a checked-out session and closes the session afterward.
   Future<T> withSession<T>(
     Future<T> Function(MontySession session) body, {
     String scriptName = 'main.py',
@@ -216,11 +152,11 @@ final class Monty {
     ),
   );
 
-  /// Refuses new checkouts and ends the idle workers. Sessions still open,
-  /// and checkouts already waiting, run on; this neither closes nor awaits
-  /// those sessions. A session that closes thereafter hands its worker,
-  /// reset, to a checkout still waiting for one, and otherwise has it
-  /// killed. Idempotent.
+  /// Refuses new checkouts and closes idle workers.
+  ///
+  /// Open sessions and checkouts already waiting continue, and this call does
+  /// not await or close them. A later session close resets its worker for an
+  /// existing waiter or kills it when no waiter remains.
   Future<void> close() => _pool.close();
 }
 
