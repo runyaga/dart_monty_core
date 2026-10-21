@@ -1,9 +1,10 @@
-/// `runMontyWorkerIfChild` where there is no `dart:ffi`: a browser never
-/// relaunches itself as a worker, so the call returns at once.
+/// Provides the self-relaunch entry point on platforms without `dart:ffi`.
 library;
 
-/// Returns at once: on the web the worker is a Web Worker, never a
-/// relaunch of this program, so [args] never name the worker's flag.
+/// Returns immediately because browsers use Web Workers.
+///
+/// Cross-platform programs still call this as the first statement of `main`
+/// with its arguments, matching the native entry-point contract.
 void runMontyWorkerIfChild(List<String> args) {
   if (args.isEmpty) return;
 }

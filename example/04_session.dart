@@ -41,7 +41,10 @@ a + b
     final call = snapshot;
     final key = (call.args.single as MontyString).value;
     final scale = call.kwargs['scale'];
-    calls.add('${call.functionName}($key) at line ${call.position.start}');
+    calls.add(
+      '${call.functionName}($key) at bytes '
+      '${call.position.start}-${call.position.end}',
+    );
     final value = key.length * (scale is MontyInt ? scale.value : 1);
     snapshot = await call.resume(ExternalReturnValue(MontyInt(value)));
   }

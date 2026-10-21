@@ -14,6 +14,9 @@
 /// );
 /// print(value); // MontyInt(43)
 /// ```
+///
+/// `OsHandler` is the named OS callback type. Host functions and print
+/// callbacks use function shapes directly and have no exported typedefs.
 library;
 
 // Every export line names what it exports, so a name added to a file under

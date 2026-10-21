@@ -6,13 +6,18 @@ abstract final class FrameErrors {}
 
 /// A failure that leaves the byte stream unusable: the next byte can no longer
 /// be trusted to start a frame.
+///
+/// An oversized, truncated, or malformed worker reply becomes
+/// `MontyCrashedError` and finishes the session.
 sealed class FrameException implements Exception {
   const FrameException();
 }
 
 /// A length prefix, or a body about to be sent, exceeds the maximum.
 ///
-/// Upstream's `FrameError::FrameTooLarge`.
+/// Public session calls map this exception to their documented errors. An
+/// oversized reply desynchronizes the stream, throws `MontyCrashedError`, and
+/// ends the session.
 final class FrameTooLargeException extends FrameException {
   /// Creates the error for a frame of [length] bytes against [max].
   const FrameTooLargeException(this.length, this.max);

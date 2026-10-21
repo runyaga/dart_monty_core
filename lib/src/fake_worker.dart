@@ -336,9 +336,11 @@ final class _Feed {
     }
   }
 
-  /// Plays [wait]: futures already settled are observed in place (observe.md),
-  /// a plain value raises `TypeError` (awaitable.md), and the rest are
-  /// waited on. Null when the script runs on.
+  /// Plays a scripted future wait and returns its next worker event.
+  ///
+  /// A plain value ends the feed with `TypeError`. A future waits normally.
+  /// Values from `asyncio.sleep` and `system.async_sleep` count as settled
+  /// futures because the worker wraps them before awaiting.
   pb.ChildEvent? _await(FakeAwait wait) {
     // A gather checks every argument is awaitable before it awaits any.
     if (wait.gathered) {

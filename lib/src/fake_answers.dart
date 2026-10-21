@@ -10,10 +10,13 @@ import 'package:dart_monty_core/src/worker/monty_snapshot.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/raised_record.dart';
 
-/// One answer: the call it answers (none for a name lookup), the
-/// `ResolveFutures` answer it went out in (only for a settled future), and
-/// the answer, or null where the host answered `not_found`, `not_handled` or
-/// an undefined name.
+/// One host answer recorded by a fake session.
+///
+/// `callId` is null for a lookup. `batch` is null for a call or lookup,
+/// restarts at zero for each feed, and is shared by futures settled in the
+/// same batch. `answer` is null for `not_found`, `not_handled`, or an
+/// undefined name. The type stays internal, but these fields are the public
+/// testing contract.
 typedef FakeAnswer = ({int? callId, int? batch, ExternalResult? answer});
 
 /// The answers in the requests a session sends, in order.

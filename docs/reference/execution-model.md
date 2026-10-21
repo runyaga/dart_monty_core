@@ -12,18 +12,17 @@ in the browser. This page says what that boundary protects and what it costs.
 | **Web** (dart2js, dart2wasm) | Web Worker | yes | yes: `terminate()` |
 
 A memory fault inside sandboxed Python (a stack-overflow abort, a wasm trap)
-ends that worker, not your app. The call in flight fails
-with `MontyCrashedError` and the session with it; the pool starts a new worker
-for the next checkout.
+ends that worker, not your app. [`MontySession`](../../lib/src/worker/monty_session.dart)
+defines its session outcome, and [`Monty`](../../lib/src/worker/monty.dart)
+defines worker replacement.
 
-A worker that exits because its allocator refused an allocation over the hard
-limit fails the call with `MontyRuntimeError` carrying `MemoryError`, and the
-session ends.
+[`MontySession`](../../lib/src/worker/monty_session.dart) defines the distinct
+failure paths for worker allocation and interpreter resource limits.
 
-## Why a worker
+## Workers isolate interpreter faults
 
-A Rust process cannot be made crash-proof against memory errors; those aborts
-cannot be caught. Upstream's answer is to run the interpreter only in worker
+A Rust process cannot catch every memory abort. Upstream runs the interpreter
+only in worker
 subprocesses:
 
 > Monty executes untrusted Python, and a Monty process can never be made fully
@@ -32,7 +31,7 @@ subprocesses:
 > subprocesses** […] a crashed worker kills only itself, the pool detects the
 > death and replaces the worker, and the parent process is never at risk.
 >
-> — upstream `crates/monty-pool/README.md`
+> Upstream `crates/monty-pool/README.md`
 
 `dart_monty_core` follows the same rule. `native/worker/` mirrors upstream's
 `monty subprocess` worker, and `Monty` is the pool upstream's `AsyncMonty` is.
@@ -41,52 +40,54 @@ Dart isolates would not do: they have separate heaps but share one OS
 process, so a native abort takes down every isolate with the host, and an
 isolate blocked in a native call cannot be killed until it returns.
 
-## Limits, deadlines and the kill
+## Limits and deadlines use different failure paths
 
-Resource limits (`ResourceLimits`, passed to `checkout`) are enforced by the
-interpreter at cooperative points, and the session survives them:
+[`ResourceLimits`](../../lib/src/worker/resource_limits.dart) governs failures
+raised cooperatively inside the interpreter. The worker's allocator provides a
+separate hard boundary outside that interpreter. The two paths differ in
+session survival and traceback availability, as defined by
+[`MontySession`](../../lib/src/worker/monty_session.dart).
 
-```dart
-final session = await monty.checkout(
-  limits: const ResourceLimits(
-    maxMemory: 32 << 20,
-    maxRecursionDepth: 200,
-    maxFeedDuration: Duration(seconds: 5),
-  ),
-);
-```
+The parent adds a wall-clock backstop around worker turns.
+[`Monty.start`](../../lib/src/worker/monty.dart) and
+[`MontySession`](../../lib/src/worker/monty_session.dart) define its deadlines,
+grace, and kill behavior. Host callbacks run between worker turns, so this
+backstop can kill the worker but cannot preempt host code.
 
-`maxFeedDuration` stops a non-terminating loop with `TimeoutError`,
-`maxRecursionDepth` turns runaway recursion into `RecursionError`, and
-`maxMemory` raises `MemoryError`; each arrives as `MontyRuntimeError`.
-On dart2js and dart2wasm, a session that keeps the allocation which exhausted
-`maxMemory` raises `MemoryError` on every later feed until a feed drops it.
+## Pools allocate and reuse workers
 
-What limits cannot cover, the worker boundary does:
+One pool owns the workers, grows as concurrent checkouts need capacity, and
+dedicates one worker to each session. Sessions can therefore run in parallel,
+while one session serializes its turns on its worker. The pool reuses or retires
+a worker after session close.
 
-- `requestTimeout` on `Monty.start` bounds each protocol turn. Past it the
-  parent kills the worker, and the call fails with `MontyCrashedError` whose
-  `timedOut` is true.
-- `feedDurationLimitGrace` and `turnDurationLimitGrace` are how far past a
-  session's own duration limits the parent lets a turn run before it kills
-  the worker, for a worker that stops answering.
-- `MontySession.close()` during a turn kills the worker.
-- A worker whose allocator refuses an allocation over its hard limit exits;
-  the call fails with `MontyRuntimeError` carrying `MemoryError` and the
-  session ends.
+[`Monty`](../../lib/src/worker/monty.dart) defines pool ownership, checkout,
+cleanup, and the nested-checkout hazard. The
+[`Monty.start`](../../lib/src/worker/monty.dart) defines sizing, waiting,
+startup, request, and recycling limits.
+
+## Feeds and protocol turns have different boundaries
+
+A **feed** is one execution of code. A **protocol turn** is one request and its
+answer. A feed can span several turns because host interaction suspends it.
+This distinction determines queueing, deadlines, callback timing, dumps, and
+close behavior.
+
+[`MontySession`](../../lib/src/worker/monty_session.dart) defines the complete
+turn and close contract. [`MontySnapshot`](../../lib/src/worker/monty_snapshot.dart)
+defines manual and automatic suspension handling.
 
 ## Host filesystem service
 
 `MountDir` serves filesystem calls through upstream `monty-fs` in the Dart
-host process. The interpreter still runs only in the worker; Python sees
+host process. The interpreter still runs only in the worker. Python sees
 virtual paths, while the mount service owns the host directory capabilities.
 Mount calls are synchronous FFI calls and can block the calling Dart isolate.
-Killing a worker does not preempt a host filesystem call already in progress.
+A worker kill does not preempt a host filesystem call already in progress.
 
-`MountDir.memoryUsageLimit` accounts for retained overlay data and transient
-filesystem results. It is separate from the worker interpreter's
-`ResourceLimits.maxMemory`. `writeBytesLimit` is cumulative within each feed
-and resets at the next feed. See [host directory mounts](host-directory-mounts.md).
+Mount memory remains separate from worker interpreter memory. See
+[host directory mounts](host-directory-mounts.md) for the cross-component
+routing and lifetime.
 
 The worker cdylib also contains the mount service. Its allocator is separate
 from each worker process's allocator in this process-only architecture.
@@ -97,10 +98,7 @@ combine them in one allocator domain.
 
 ## Costs
 
-- Each session holds one worker for its life. `maxProcesses` bounds the
-  workers alive at once, and a `checkout` beyond it waits, forever unless
-  `checkoutTimeout` is set.
-- Values cross the boundary encoded, so every input, host function call and
-  result is copied.
-- Native consumers need a worker executable, or the build-hook opt-in and
-  `runMontyWorkerIfChild` (see the README's Platforms section).
+Each session holds one worker for its life, and every value crossing the worker
+boundary is encoded and copied. Native consumers also need a worker executable
+or the build-hook opt-in described in the README's platform section. Pool
+capacity and deadlines belong to the linked declarations above.

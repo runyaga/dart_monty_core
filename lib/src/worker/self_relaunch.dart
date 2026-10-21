@@ -1,8 +1,9 @@
 /// Self-relaunch: an AOT app (`dart build cli`) runs a copy of itself as its
 /// worker process, so it ships no separate worker executable.
 ///
-/// The parent spawns its own executable with [SelfRelaunch.flag] (see
-/// [SelfRelaunch]). In that child, [runMontyWorkerIfChild] hands the
+/// The parent relaunches its own executable with the flag
+/// `--dart-monty-core-worker` as its only argument. In that child,
+/// [runMontyWorkerIfChild] hands the
 /// process to `dart_monty_worker_main` in the worker library, which serves
 /// monty-proto on stdin and stdout until EOF or `Shutdown`, then exits with
 /// its code.
@@ -16,8 +17,6 @@
 ///     dart_monty_core:
 ///       build_worker: true
 /// ```
-///
-/// Internal to the package; nothing here is exported.
 library;
 
 import 'dart:ffi';
@@ -36,6 +35,7 @@ part 'self_relaunch_status.dart';
 @Native<Int32 Function()>(symbol: 'dart_monty_worker_main')
 external int _workerMain();
 
+/// Whether self-relaunch is armed in this isolate.
 bool _armed = false;
 
 /// The child exit status for a missing or unloadable bundled worker library.
@@ -49,8 +49,7 @@ typedef SelfRelaunchDiagnosis =
 
 /// Diagnoses whether this executable can serve a self-relaunched worker.
 ///
-/// The worker library lives beside an AOT executable in `../lib`. The optional
-/// arguments replace host operations in tests.
+/// An AOT executable finds its worker library in `../lib` beside itself.
 SelfRelaunchStatus diagnoseSelfRelaunch({
   @visibleForTesting void Function()? resolveWorker,
   @visibleForTesting String? executablePath,
@@ -117,12 +116,19 @@ String? workerChildFailureLine(SelfRelaunchStatus status) => switch (status) {
   SelfRelaunchReady() || SelfRelaunchNotArmed() => null,
 };
 
-/// Serves as the worker and exits when this process was relaunched as one;
-/// otherwise returns at once and enables [SelfRelaunch] for this process.
+/// Serves a worker child or arms self-relaunch in the current isolate.
 ///
-/// Call it as the first statement of `main`, with `main`'s arguments: the
-/// child's stdout carries the protocol, so nothing may be written to it
-/// before the worker starts.
+/// The parent uses `--dart-monty-core-worker` as the child's only argument.
+/// Such a child serves the binary protocol on standard input and output until
+/// EOF or Shutdown, then exits with the worker status. A missing or unloadable
+/// worker library writes one diagnostic line to standard error and exits with
+/// status 78.
+///
+/// Call this as the first statement of `main`, before any output, because a
+/// child reserves standard output for the protocol. The armed state is
+/// isolate-local.
+/// Every secondary isolate that locates a worker, including one entered by
+/// `Isolate.run`, must call this before it starts a pool.
 void runMontyWorkerIfChild(List<String> args) {
   _runMontyWorkerIfChild(
     args,

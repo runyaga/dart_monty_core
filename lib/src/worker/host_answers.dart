@@ -1,8 +1,6 @@
 /// How a session answers the worker's calls on the host's behalf: host
 /// functions, OS calls, name lookups and pending futures, as upstream's
 /// async binding answers them.
-///
-/// Internal to the package; nothing here is exported.
 library;
 
 import 'dart:async';
@@ -35,24 +33,24 @@ typedef ProtoExternalFunction =
       Map<String, MontyValue> kwargs,
     );
 
-/// Upstream's `OsHandler`: answers the OS calls such as `Path.read_text`
-/// that no mount covers.
+/// Answers an OS call after no mount handles it.
 ///
-/// [name] is upstream's OS function name, never validated, and [args] and
-/// [kwargs] its arguments, as upstream's `OsFunctionCall::to_args` gives
-/// them: a path is a [MontyPath], lexically normalized. The returned value
-/// is the answer; [MontyNone] is `None`. Throw [OsCallNotHandledException]
-/// to decline (upstream's `NOT_HANDLED`): the worker then raises the call's
-/// own default, `PermissionError` naming the path for a filesystem call and
-/// `RuntimeError` for the rest. Only a synchronous throw declines, as only a
-/// synchronously returned `NOT_HANDLED` does upstream; a returned [Future]
-/// that fails with it raises `TypeError` ([AsyncDecline]) for every call,
-/// sleeps included, so an `async` handler cannot decline. Throw
-/// [ExternalException] to raise a chosen exception; any other throw raises
-/// `Exception` with its text
-/// ([raisedFrom]). For `asyncio.sleep` a returned [Future] is the call's
-/// coroutine, which the sandbox awaits. For every other call it is awaited
-/// and its value is the answer.
+/// A synchronous [OsCallNotHandledException] declines the call. The sandbox
+/// then raises `PermissionError` for filesystem calls and `RuntimeError` for
+/// other calls. A future failure with that exception raises `TypeError`, so a
+/// handler that can decline must be synchronous and may return futures for
+/// calls it accepts. [ExternalException] selects a Python exception. Any other
+/// throw becomes `Exception` with its text.
+///
+/// [name] passes through without validation. Path arguments are lexically
+/// normalized [MontyPath] values. Write and append calls return the character
+/// or byte count written.
+///
+/// A future returned for `asyncio.sleep` or `system.async_sleep` becomes the
+/// sandbox coroutine and its value is ignored. Other future results are
+/// awaited as answers. For `os.getenv`, the handler must return the second
+/// positional argument when the key is absent because the worker does not
+/// apply that default.
 typedef OsHandler =
     FutureOr<MontyValue> Function(
       String name,
@@ -60,17 +58,11 @@ typedef OsHandler =
       Map<String, MontyValue> kwargs,
     );
 
-/// Marks [function] as a coroutine, as an `async def` host function is
-/// upstream: Dart cannot tell an `async` function from one that returns a
-/// [Future], so the mark says which it is.
+/// Marks a host function as a Python coroutine.
 ///
-/// A call to the returned function, as the `fn` of an `externalLookup`
-/// entry's [MontyHostFunction], is a coroutine in the sandbox: one the
-/// sandbox awaits with nothing else to run is awaited in place, and any
-/// other gets a pending future, settled when [function]'s future
-/// completes, so `asyncio.gather` runs several at once. Unmarked, a host
-/// function's returned future is awaited and its value is the call's
-/// answer.
+/// An eagerly awaited call waits in place. Other calls produce pending
+/// futures, so `asyncio.gather` can run several concurrently. An unmarked host
+/// function waits for its returned future before answering the call.
 ProtoExternalFunction coroutine(ProtoExternalFunction function) {
   FutureOr<MontyValue> marked(
     List<MontyValue> args,
@@ -81,8 +73,7 @@ ProtoExternalFunction coroutine(ProtoExternalFunction function) {
   return marked;
 }
 
-/// Marks a parity [function] as a coroutine, as [coroutine] marks a
-/// [ProtoExternalFunction], for use with [MontyHostFunction.parity].
+/// Marks a parity host function as a Python coroutine.
 FutureOr<Object?> Function(
   List<MontyValue> args,
   Map<String, MontyValue> kwargs,
@@ -109,9 +100,7 @@ bool isCoroutine(ProtoExternalFunction function) =>
 
 final Expando<bool> _coroutines = Expando('coroutine');
 
-/// Whether an OS call named [name] may be answered with a future: only
-/// `asyncio.sleep`, in either sleep mode (upstream
-/// `OsFunctionCall::accepts_future`).
+/// Whether the named OS call accepts a future answer.
 bool acceptsFuture(String name) =>
     name == 'asyncio.sleep' || name == 'system.async_sleep';
 
@@ -1075,24 +1064,12 @@ pb.ParentRequest _resume(
   ),
 );
 
-/// The Python exception a throw from host code (a host function, an OS
-/// handler or a coroutine) becomes.
+/// Converts a host throw into the Python exception sent to the worker.
 ///
-/// - A value the writer refused as Python does ([PythonRefusal]) raises
-///   Python's error, as upstream answers a conversion failure in an
-///   automatic answer.
-/// - An [ExternalException] raises its type, with its attributes sent as
-///   upstream sends a live exception's. Its message is always sent, `''`
-///   when it has none: upstream reads a raised exception's argument as
-///   `str(exc)` when it has no single `str` one (`exception_arg`), so
-///   `ValueError()` arrives as `ValueError('')`.
-/// - An [ExternalException] whose type upstream does not know is the
-///   [ArgumentError] a manual resume throws for it ([unknownExcType]), and
-///   is raised as any other throw is.
-/// - Any other throw raises `Exception` with its `toString()`: upstream
-///   raises a host exception as its nearest built-in class, and a Dart
-///   object has no Python class, so it takes the fallback a class of the
-///   host's own takes.
+/// [PythonRefusal] retains its Python error. A recognized [ExternalException]
+/// retains its requested type. An unknown requested type from live host code
+/// becomes plain `Exception` with the validation error text. Any other throw
+/// becomes `Exception` with its own text.
 pb.RaisedException raisedFrom(Object error) => switch (error) {
   PythonRefusal(:final excType, :final text) => pb.RaisedException(
     excType: excType,

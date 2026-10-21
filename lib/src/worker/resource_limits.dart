@@ -1,12 +1,10 @@
 /// Upstream's `ResourceLimits`, its validation and its `Configure`
 /// encoding, and the Rust `Duration` format its limit messages use.
 ///
-/// Upstream's is a TypedDict (`pydantic_monty/__init__.py`); here it is a
-/// small immutable class whose durations are [Duration]s. A value upstream's
-/// argument parsing refuses is an [ArgumentError] with upstream's message,
-/// raised by [ResourceLimitsInternal.validate] at checkout.
-///
-/// Internal until the cutover exports it; nothing here is exported.
+/// Upstream's is a TypedDict (`pydantic_monty/__init__.py`). Here it is a
+/// small immutable class whose durations are [Duration]s. If upstream's
+/// argument parsing refuses a value, checkout raises [ArgumentError] with the
+/// upstream message through [ResourceLimitsInternal.validate].
 library;
 
 import 'dart:typed_data';
@@ -15,10 +13,12 @@ import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:fixnum/fixnum.dart';
 import 'package:meta/meta.dart';
 
-/// Upstream's `ResourceLimits`: the limits one session runs under.
+/// The limits that apply to one session.
 ///
-/// A null limit is off, except [maxRecursionDepth] and [maxSuspensions],
-/// which cannot be turned off: null keeps upstream's default of 1000.
+/// The parent counts suspensions and total sleep across the entire checkout,
+/// including every feed and resume. A restored dump can tighten those two
+/// limits but cannot raise the receiving checkout's ceilings. Both counters
+/// restart at load.
 @immutable
 final class ResourceLimits {
   /// The limits; see each field.
@@ -47,16 +47,18 @@ final class ResourceLimits {
   /// How many allocations pass between garbage collections.
   final int? gcInterval;
 
-  /// The interpreter's recursion limit; null keeps 1000.
+  /// The interpreter's recursion limit. Null keeps 1000 and cannot disable it.
   final int? maxRecursionDepth;
 
   /// How many host calls a session may suspend for; past it the feed is
-  /// aborted with an uncatchable `RuntimeError`. Null keeps 1000.
+  /// aborted with an uncatchable `RuntimeError` and the session remains
+  /// usable. Null keeps 1000 and cannot disable it.
   final int? maxSuspensions;
 
-  /// The most the session's system sleeps may add up to; the sleep that
-  /// would pass it raises an uncatchable `TimeoutError` instead of waiting
-  /// (upstream `max_total_sleep_secs`).
+  /// The most the session's system sleeps may add up to. The parent charges
+  /// `system.sleep` and `system.async_sleep` before waiting. A sleep that
+  /// would pass this limit aborts the feed with an uncatchable `TimeoutError`
+  /// and leaves the session usable (upstream `max_total_sleep_secs`).
   final Duration? maxTotalSleep;
 
   @override

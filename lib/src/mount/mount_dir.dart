@@ -5,16 +5,18 @@ import 'package:dart_monty_core/src/mount/native_mount_service.dart';
 
 /// Maps an opened host directory into Python's virtual filesystem.
 ///
-/// Overlay writes and budgets belong to each feed. Closing this mount
-/// prevents new feeds from using it; feeds already running keep their root.
-/// Dropping the mount releases its root through the native finalizer.
-/// Construction on the web throws [UnsupportedError].
+/// The native finalizer releases an abandoned root. The capability belongs to
+/// its creating isolate and must be used there.
 final class MountDir {
-  /// Opens [hostPath] immediately and normalises [virtualPath].
+  /// Opens a host directory capability at a normalized virtual path.
   ///
-  /// [mode] is 'overlay', 'read-only', or 'read-write'. [writeBytesLimit]
-  /// limits each feed's writes; [memoryUsageLimit] bounds retained overlay
-  /// data and transient filesystem results in every mode.
+  /// Overlay writes disappear when their feed ends. Read-only writes raise
+  /// `PermissionError` with errno 30. Read-write writes persist on the host.
+  /// [writeBytesLimit] and [memoryUsageLimit] bound each feed.
+  /// The service is the `build_worker: true` hook asset or the library beside
+  /// the package worker in `lib/src/bin/<os>-<arch>/`. The constructor throws
+  /// [UnsupportedError] on the web or without that service, [ArgumentError]
+  /// for an invalid path or mode, and [RangeError] for a negative limit.
   MountDir({
     required String hostPath,
     required String virtualPath,
@@ -49,15 +51,21 @@ final class MountDir {
   /// The selected access mode.
   final String mode;
 
-  /// Maximum bytes written per feed, or null for no limit.
+  /// Maximum cumulative bytes written per feed, or null for no limit.
+  /// Exceeding it raises `OSError`.
   final int? writeBytesLimit;
 
-  /// Mount memory budget in bytes.
+  /// Mount memory budget for overlay data and transient directory listings.
+  ///
+  /// The default is 100000000 bytes.
+  /// Exceeding it raises `MemoryError`.
   final int memoryUsageLimit;
 
   final NativeMountRoot _root;
 
-  /// Releases the directory capability. Safe to call repeatedly.
+  /// Prevents new feeds from using the capability and safely repeats.
+  ///
+  /// Feeds already running retain their opened root.
   void close() => _root.close();
 
   @override

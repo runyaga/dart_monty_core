@@ -12,7 +12,7 @@ final class SelfRelaunchReady extends SelfRelaunchStatus {
   const SelfRelaunchReady();
 }
 
-/// Reports that main did not arm self-relaunch before locating a worker.
+/// Reports an isolate with self-relaunch unarmed.
 final class SelfRelaunchNotArmed extends SelfRelaunchStatus {
   /// Creates an unarmed self-relaunch diagnosis.
   const SelfRelaunchNotArmed();

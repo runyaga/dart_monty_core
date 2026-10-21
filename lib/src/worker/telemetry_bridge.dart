@@ -92,7 +92,7 @@ final class TelemetryBridge {
     );
   }
 
-  /// Never retries a callback or replaces its result with an adapter error.
+  /// Applies the exactly-once guarantee of [MontyTelemetry.runInContext].
   R invoke<R>(Object? context, R Function() body) {
     if (!spansEnabled) return body();
     final call = _Invocation(body);

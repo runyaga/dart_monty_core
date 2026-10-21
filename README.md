@@ -11,26 +11,28 @@
 
 **dart_monty_core 0.110.0 · monty 1.1.0**
 
-Run Python in Dart. Bindings for
-[pydantic/monty](https://github.com/pydantic/monty), the sandboxed Python
-interpreter from Pydantic, written in Rust.
+`dart_monty_core` runs Python in Dart through
+[pydantic-monty](https://github.com/pydantic/monty), a sandboxed Python
+interpreter written in Rust. Dart programs can provide typed inputs, host
+functions, OS operations, host-directory mounts, resource limits, and type
+checking. Results return as typed `MontyValue` objects.
 
-The interpreter never runs in your process. Each session runs in a worker:
-a child process on native platforms, a Web Worker in the browser. A crash in
-the sandbox kills that worker, not your app, and a pool replaces it. This is
-the model of upstream's own bindings (`pydantic_monty`'s `AsyncMonty`), and
-the API follows theirs.
+Dart applications cannot load new behavior without shipping a new binary.
+Monty lets an application run supplied Python under resource limits while
+exposing only selected host functions and OS operations. Pydantic runs a
+security bug bounty for the interpreter at
+[hackmonty.com](https://hackmonty.com/).
 
-## Why
+Each session runs outside the application process. Native sessions use child
+processes, and browser sessions use Web Workers. A sandbox crash ends its
+worker and session without ending the application. The pool replaces the
+worker for a later checkout.
 
-Dart is compiled, with no reflection: fast and tree-shakeable, but you cannot
-ship new behaviour without shipping a new binary. Monty is a sandboxed Python
-subset under hard resource limits, on native and on the web.
+## Installation
 
-LLMs write good Python. Let them script your Dart app through code your app
-type-checks, runs in a sandbox, lets reach only the host functions and OS
-calls you provide, and reads back as typed values. Pydantic runs a bug bounty
-at [hackmonty.com](https://hackmonty.com/) for the underlying interpreter.
+```bash
+dart pub add dart_monty_core
+```
 
 ## Quick start
 
@@ -40,7 +42,9 @@ import 'package:dart_monty_core/dart_monty_core.dart';
 Future<void> main() async {
   final value = await Monty.withPool(
     (monty) => monty.withSession((session) async {
-      await session.feedRun('def fib(n): return n if n < 2 else fib(n-1) + fib(n-2)');
+      await session.feedRun(
+        'def fib(n): return n if n < 2 else fib(n - 1) + fib(n - 2)',
+      );
       return session.feedRun('fib(10)');
     }),
   );
@@ -48,464 +52,40 @@ Future<void> main() async {
 }
 ```
 
-`Monty.withPool` starts a pool of workers and closes it however the body
-ends; `withSession` dedicates one worker to a session and gives it back
-afterwards. A session keeps its globals, functions and imports from one feed
-to the next. A live worker keeps the Dart process running, so a pool from
-`Monty.start` and a session from `checkout` must each be closed.
+The example evaluates Fibonacci in a pooled session.
 
-## API
+## Platform support
 
-### `Monty`: the pool
-
-| | |
-|---|---|
-| `Monty.start({minProcesses, maxProcesses, checkoutTimeout, requestTimeout, maxCheckoutsPerWorker, feedDurationLimitGrace, turnDurationLimitGrace, workerLocation})` | Start a pool (upstream `AsyncMonty`) |
-| `Monty.withPool(body, {…})` | The same, closed when `body` ends |
-| `checkout({scriptName, limits, typeCheck, typeCheckStubs, typeCheckFormat, typeCheckColor, assertMessageAnnotations, printFlushInterval, osPolicy})` | A session on its own worker |
-| `withSession(body, {…})` | The same, closed when `body` ends |
-| `close()` | Refuse new checkouts and end the idle workers |
-
-`requestTimeout` bounds each protocol turn; a turn past it kills the worker
-and the call fails with `MontyCrashedError` (`timedOut` is true).
-
-### `MontySession`: one interpreter
-
-| | |
-|---|---|
-| `feedRun(code, {inputs, externalLookup, printCallback, mount, cwd, os, skipTypeCheck})` | Run to the end and return the value of the last expression, or `MontyNone` |
-| `feedStart(code, {…})` | Run to the first suspension and return a `MontySnapshot` |
-| `dump()` | The session as bytes, idle or suspended |
-| `loadSession(bytes)` / `loadSnapshot(bytes, {mount, externalLookup, printCallback, os})` | Restore a dump into a fresh session |
-| `installDependencies(requirements)` | Empty list succeeds; any other throws `MontyRuntimeError` (core's worker is the pure-Monty sandbox, as upstream's) |
-| `workerPid` | The worker's process id (null on the web) |
-| `close()` | End the session; never throws |
-
-### Inputs, host functions and print
-
-```dart
-final value = await session.feedRun(
-  'f"{greeting}, {fetch(key)}!"',
-  inputs: {'greeting': const MontyString('hello'), 'key': const MontyString('k')},
-  externalLookup: {
-    'fetch': MontyHostFunction(
-      'fetch',
-      (args, kwargs) async =>
-          MontyString('value-for-${(args[0] as MontyString).value}'),
-    ),
-  },
-);
-print(value); // MontyString(hello, value-for-k!)
-```
-
-`inputs` are bound as global names before the code runs, each a `MontyValue`
-(`MontyValue.fromDart` converts plain Dart data). A host object's wrappers,
-`ClassInstance` and `ClassType`, are `MontyValue`s too, and the session serves
-their members.
-
-`externalLookup` resolves the names the code leaves undefined, when the code
-reads one (upstream's `external_lookup`). Every entry is a `MontyValue`: a
-host function (`MontyHostFunction`), or any other value, a host object
-included, converted when the name is read and then bound as a global. A host
-function's `fn` takes `(List<MontyValue> args, Map<String, MontyValue> kwargs)`
-and returns a `MontyValue`, directly or as a future, which is awaited before
-Python resumes; wrap `fn` in `coroutine(...)` to make it an `async def`
-function, whose
-calls Python awaits (`asyncio.gather` runs them at once). Throw
-`ExternalException('ValueError', 'bad key')` to raise a chosen Python
-exception; any other throw raises `Exception` with its text. `HostClass`
-describes a Dart class to `ClassInstance` and `ClassType`.
-
-`cwd` switches the sandbox's working directory (`os.getcwd()`, and what
-relative paths resolve against) before the code runs. A fresh session defaults
-to its first mount's virtual path, or `/` without mounts. A feed accepted past
-type checking establishes cwd, even if it then raises a syntax or runtime error;
-a typing rejection leaves it unset. Later feeds keep cwd unless explicitly
-changed. Session and snapshot restores preserve the saved directory.
-Invalid cwd is rejected before mount-table construction, leaving the session
-usable and its default eligibility unchanged.
-
-`printCallback` gets each run of printed text as `(stream, text)`, with
-`stream` `'stdout'` or `'stderr'`. `CollectStreams` and `CollectString` are
-ready-made callbacks that collect it under a byte cap:
-
-```dart
-final out = CollectString();
-await session.feedRun('print("hi")', printCallback: out.call);
-print(out.output); // hi
-```
-
-Without a callback, printed text goes to the process's stdout and stderr on
-native and to the console in a browser.
-
-### Snapshots: answering suspensions yourself
-
-`feedStart` returns at each host function call, OS call, name lookup and
-wait on pending futures. Answer each one and continue:
-
-```dart
-var snapshot = await session.feedStart('double(21)');
-while (snapshot is! MontyComplete) {
-  snapshot = switch (snapshot) {
-    FunctionSnapshot s when s.functionName == 'double' =>
-      await s.resume(ExternalReturnValue(MontyInt((s.args[0] as MontyInt).value * 2))),
-    FunctionSnapshot s => await s.resumeAuto(),
-    NameLookupSnapshot s => await s.resume(),
-    FutureSnapshot s => await s.resumeAuto(),
-    MontyComplete() => snapshot,
-  };
-}
-print(snapshot.output); // MontyInt(42)
-```
-
-`resumeAuto()` answers from the `externalLookup` and `os` given to `feedStart`.
-A suspended snapshot's `dump()` can be restored later, in another worker,
-with `loadSnapshot`.
-
-### OS calls
-
-`pathlib`, `open()`, `os.getenv`, `datetime.now` and the like are OS calls.
-Pass `os:`, an `OsHandler`, to answer them; without one they are declined.
-
-```dart
-await session.feedRun(
-  'import os\nos.getenv("APP_MODE")',
-  os: (name, args, kwargs) => switch (name) {
-    'os.getenv' => const MontyString('demo'),
-    _ => throw const OsCallNotHandledException(),
-  },
-);
-```
-
-The name is upstream's OS function name. Throwing `OsCallNotHandledException`
-synchronously declines the call, and the worker raises its default:
-`PermissionError` for a filesystem call, `RuntimeError` for the rest.
-
-`OSAccess` provides an in-memory filesystem for the entire virtual namespace:
-
-```dart
-final os = OSAccess(
-  files: [MemoryFile('/data/config.json', '{"debug": true}')],
-  environ: {'APP_ENV': 'test'},
-);
-await session.feedRun("open('/data/config.json').read()", os: os);
-```
-
-Files contain a `String` or `Uint8List`. Writes update caller-held file objects,
-and `os.files` also includes files created by Python. The handler owns its state
-across feeds; create a new handler for a fresh filesystem. Memory filesystem
-mount prefixes, read-only modes and byte budgets are no longer provided.
-Customize an operation by wrapping the callable `OSAccess` and forwarding the
-remaining calls. `StatResult.fileStat` and `dirStat` build stat responses for
-custom handlers.
-
-The clock, time zone, sleeps and random seed a session sees are set by
-`checkout(osPolicy: OsPolicy(...))`.
-
-#### Host directories (native)
-
-`MountDir` opens a host directory and maps it into the sandbox through upstream
-`monty-fs`. Pass a list to `mount:` on `feedRun`, `feedStart`, or `loadSnapshot`:
-
-```dart
-final mount = MountDir(hostPath: '/host/data', virtualPath: '/data');
-try {
-  await session.feedRun("open('config.json').read()", mount: [mount]);
-} finally {
-  mount.close();
-}
-```
-
-The default `mode: 'overlay'` discards writes at feed completion. Choose
-`'read-only'` to reject writes or `'read-write'` to persist them on the host.
-Mounts answer before `os:`; a missing path inside a mount remains a mount error.
-An in-progress feed keeps its mount table across snapshot resumes. A restored
-snapshot needs `mount:` again and starts with a fresh overlay; dumps contain
-neither mounts nor overlay contents. `FunctionSnapshot.resumeAuto()` uses the
-captured mounts and handler, while `resume(result)` answers directly.
-
-`feedStart` surfaces both system sleep kinds for manual answering or dispatch
-through `resumeAuto()` and `os:`. `feedRun` handles system sleeps automatically.
-`FakeMontySession` uses the same host dispatch for its scripted calls.
-
-The constructor throws `UnsupportedError` on the web. Native consumers need
-the mount library built with `build_worker: true`; repository tests use
-`tool/build_worker.sh`, which builds it beside the worker executable.
-See [host directory mounts](docs/reference/host-directory-mounts.md) for
-lifetime, error, budget, discovery and routing details.
-
-#### Host-reaching virtual files
-
-`package:dart_monty_core/unsafe_callback_file.dart` is a separate library on
-purpose. `CallbackFile` backs a virtual file with host callbacks, which run
-on the host with full access to its filesystem and network; one that touches
-the real filesystem breaks the sandbox. Importing it is a security decision.
-The separation is a signal, not a boundary: `AbstractFile` is an open interface,
-so audit every `AbstractFile` that is not a `MemoryFile`.
-
-### Resource limits and type checking
-
-```dart
-final session = await monty.checkout(
-  limits: const ResourceLimits(
-    maxMemory: 32 << 20,
-    maxRecursionDepth: 200,
-    maxFeedDuration: Duration(seconds: 5),
-  ),
-  typeCheck: true,
-);
-```
-
-Each limit is optional. Null means upstream's default. A limit hit raises a
-Python exception (`MemoryError`, `RecursionError`, `TimeoutError`) that
-arrives as `MontyRuntimeError`, and the session survives. A worker that exits
-after its allocator refused an allocation over the hard limit raises
-`MontyRuntimeError` carrying `MemoryError` and ends the session. On dart2js
-and dart2wasm, a session that keeps the allocation which exhausted `maxMemory`
-raises `MemoryError` on every later feed until a feed drops that allocation.
-With `typeCheck: true` each snippet is type-checked first; one the check
-rejects throws `MontyTypingError` without running.
-
-### Errors
-
-| | |
-|---|---|
-| `MontySyntaxError` | The code did not parse |
-| `MontyRuntimeError` | The code raised an exception it did not catch, a limit included |
-| `MontyTypingError` | The type check rejected the code, which did not run |
-| `MontyCrashedError` | The worker is gone: it died, was killed at a deadline, or broke the protocol |
-
-All four extend the sealed `MontyError`. `toString()` is upstream's `str()`;
-`exception` is the inner Python exception as a `MontyExceptionValue`;
-`MontySyntaxError` and `MontyRuntimeError` carry `traceback` (`List<Frame>`)
-and `display(format)`.
-
-### `MontyValue`: typed Python values
-
-```dart
-switch (value) {
-  case MontyInt(:final value):
-    print('int $value');
-  case MontyString(:final value):
-    print('str $value');
-  case MontyList(:final items):
-    print('list of ${items.length}');
-  case MontyDict(:final pairs):
-    print('dict of ${pairs.length}');
-  case MontyClassProxy(:final classType, :final attrs):
-    print('${classType.name} instance: ${attrs.keys}');
-  case MontyNone():
-    print('None');
-  default:
-    print(value);
-}
-```
-
-Scalars (`MontyInt`, `MontyBigInt`, `MontyFloat`, `MontyComplex`,
-`MontyString`, `MontyBool`, `MontyNone`, `MontyEllipsis`,
-`MontyNotImplemented`), collections
-(`MontyList`, `MontyTuple`, `MontyDict`, `MontySet`, `MontyFrozenSet`,
-`MontyBytes`), date and time (`MontyDate`, `MontyDateTime`, `MontyTime`,
-`MontyTimeDelta`, `MontyTimeZone`), and structured values (`MontyPath`,
-`MontyNamedTuple`, `MontyFileHandle`, `MontyExceptionValue`,
-`MontyClassProxy`, `MontyStdTypeProxy`).
-
-A class defined in the sandbox comes back as `MontyClassProxy`; its
-`classType` (`MontyClassTypeProxy`) names the class and says whether it is a
-dataclass. A function or a type comes back as `MontyStdTypeProxy`, whose
-`kind` is `'function'` or `'type'`.
-
-### Testing
-
-`package:dart_monty_core/dart_monty_core_testing.dart` exports
-`FakeMontySession`, a `MontySession` with scripted answers that needs no
-worker.
-
-## Platforms
-
-| | Worker | Needs |
+| Platform | Worker | Setup |
 |---|---|---|
-| Native (VM, AOT) | a child process | a worker executable (below) |
-| Web (dart2js, dart2wasm) | a Web Worker | nothing: the worker ships in `lib/assets/` |
+| Dart VM and AOT on macOS, Linux, and Windows | Child process | Supply a worker or enable the native build hook |
+| dart2js and dart2wasm | Web Worker | The package supplies the worker assets |
 
-### Native
+See [Native worker](docs/native-worker.md) for native worker setup, browser
+asset serving, caching, integrity checks, Flutter packaging, and platform
+details.
 
-The worker executable is not shipped on pub.dev. Either:
+Host-directory mounts require the native mount library and are unavailable in
+browsers. `OSAccess` provides an in-memory filesystem on every platform.
 
-- **Opt in to the build hook** in your app's pubspec and build with
-  `dart build cli`. The hook compiles the worker library from source (Rust
-  via [rustup](https://rustup.rs) and a C linker are needed), and your app
-  runs a copy of itself as the worker. Call `runMontyWorkerIfChild(args)` as
-  the first statement of `main`:
+## Documentation
 
-  ```yaml
-  hooks:
-    user_defines:
-      dart_monty_core:
-        build_worker: true
-  ```
+- [Documentation index](docs/README.md)
+- [Execution model](docs/reference/execution-model.md)
+- [Host functions and async](docs/deep-dives/async-matrix.md)
+- [OS access](docs/reference/os-access.md)
+- [Host directory mounts](docs/reference/host-directory-mounts.md)
+- [Telemetry](docs/reference/telemetry.md)
+- [Fake sessions](docs/reference/fake-session.md)
+- [Upstream divergences and limitations](docs/reference/upstream-divergences.md)
+- [Package versioning](docs/reference/versioning.md)
 
-  ```dart
-  import 'package:dart_monty_core/dart_monty_core.dart';
+The API reference documents values, errors, snapshots, limits, callbacks, and
+session methods. The package exports test doubles from
+`package:dart_monty_core/dart_monty_core_testing.dart` and host-backed virtual
+files from `package:dart_monty_core/unsafe_callback_file.dart`.
 
-  Future<void> main(List<String> args) async {
-    runMontyWorkerIfChild(args);
-    // ...
-  }
-  ```
-
-  Distribute the whole `dart build cli` bundle directory. `tool/aot_worker/`
-  in this repository is such a consumer.
-
-- **Or pass `workerLocation`**, the path of a worker executable, to
-  `Monty.start` or `Monty.withPool`. In this repository,
-  `bash tool/build_worker.sh` builds one into `lib/src/bin/<os>-<arch>/`,
-  where `dart run` and `dart test` find it without `workerLocation`.
-
-#### Worker integrity and warm start
-
-Published cached workers are unsigned. Installation verifies the worker's
-SHA-256 in full, which provides the integrity guarantee, then records its
-size, modification time, and change time beside it. On macOS and Linux, the
-change time additionally catches a same-size modification with the mtime
-restored. On Windows, `FileStat.changed` is the file creation time rather than
-the metadata change time, so the fingerprint is size, mtime, and creation time.
-Later runs compare that fingerprint and re-hash in full when the record is
-missing or corrupt, a field changes, or a different manifest entry selected the
-worker. On Windows, a same-size modification with the mtime restored is not
-detected until the next full hash.
-
-#### Flutter desktop (macOS)
-
-A Flutter macOS app has no package-relative worker, and the self-relaunch
-above is meant for `dart build cli` apps. Put the worker in the app bundle and
-pass its path:
-
-```dart
-import 'dart:io';
-
-import 'package:dart_monty_core/dart_monty_core.dart';
-
-Future<void> main() async {
-  final helper = '${File(Platform.resolvedExecutable).parent.parent.path}'
-      '/Helpers/dart_monty_worker';
-  final monty = await Monty.start(workerLocation: helper);
-}
-```
-
-`tool/flutter_macos/embed_worker.sh` places the worker at
-`Contents/Helpers/dart_monty_worker`. It refuses a worker whose SHA-256 does
-not match the `--sha256` you give it, signs the helper with the app's
-identity (`EXPANDED_CODE_SIGN_IDENTITY` in an Xcode Run Script phase, ad hoc
-otherwise) and refuses anything that is not a thin arm64 executable. Run it
-as a Run Script phase before the code-sign phase, or after the build with
-`--resign-app`. Only macOS arm64 workers are published in 0.110, and a
-universal Flutter release build is fine because the helper is not a build
-hook output. `tool/flutter_macos/probe.sh` builds a throwaway app and checks
-all of this without opening a window.
-
-#### Unsigned workers
-
-The 0.110 workers are not signed with a developer identity or notarised on
-any platform. On macOS the linker adds an ad-hoc signature and nothing more. The
-SHA-256 check is the integrity guarantee. The build hook checks the archive
-and the unpacked file against the manifest before it installs anything, and
-the runtime checks the cached file again before it starts it.
-
-What the operating systems did with a worker downloaded by Dart code, measured
-on GitHub-hosted runners with the probes in `tool/consumers/native/`:
-
-- **macOS.** A file written by `HttpClient` has no `com.apple.quarantine`
-  attribute, and the worker starts. The
-  worker carries only the linker's ad-hoc signature, and `spctl --assess`
-  rejects it. With the quarantine attribute added by hand, `Process.run`
-  still started it on the runner. That session had no desktop, so a Finder
-  launch, which can show the "cannot be opened" dialog, was not tried.
-- **Windows.** A file written by `HttpClient` has no Zone.Identifier stream
-  (Mark of the Web), so there is no mark for SmartScreen to read. A browser
-  download does carry one. With `ZoneId=3` added to a copy, `Process.run`
-  (CreateProcess) started it and exited 0, but `Start-Process`, which goes
-  through ShellExecute, failed with "The operation was canceled by the user".
-  After `Unblock-File` it started. The package starts the worker with
-  `Process.start`. I measured `Process.run`, which makes the same
-  CreateProcess call. A worker you copied out of a browser download and
-  start through the shell may need `Unblock-File` first.
-- **Linux.** A downloaded worker started normally. I found no quarantine
-  mechanism to test.
-
-A build hook sees `HOME` and `PATH` on Linux and macOS and, on Windows, also
-`LOCALAPPDATA`, `USERPROFILE`, `SYSTEMROOT`, `TEMP` and `TMP`. That is why
-the cache root is derived from `HOME` or `LOCALAPPDATA` and never from
-`XDG_CACHE_HOME`.
-
-### Web
-
-No toolchain and no setup: with no `workerLocation`, the pool finds the
-worker assets where a plain Dart web build (`packages/dart_monty_core/assets/`)
-or a Flutter web build (`assets/packages/dart_monty_core/lib/assets/`) serves
-them. Pass `workerLocation`, an asset base URL, to serve them from elsewhere.
-`tool/consumers/` holds one probe app of each kind.
-
-## Installation
-
-```bash
-dart pub add dart_monty_core
-```
-
-## Known upstream limitations
-
-External functions cannot be called from inside iterator-consuming builtins:
-`map(ext_fn, …)`, `filter(ext_fn, …)` and `sorted(…, key=ext_fn)` raise
-`RuntimeError` upstream.
-
-Dumps are not portable across a monty version: load a dump only into the
-version that made it, from a source you trust.
-
-## Contributing
-
-Start with [`AGENTS.md`](AGENTS.md): build, test and gate commands.
-
-```bash
-bash tool/gate.sh     # the commit gate
-```
-
-Read the **exit code** and the verdict line, not the tail of the summary.
-
-**Changelog.** Do not edit `CHANGELOG.md` in a PR. A PR that changes `lib/`
-adds a fragment, `changes/<slug>.md` (format in
-[`changes/README.md`](changes/README.md)); CI fails without one unless the PR
-has the `no-changelog` label or a body line starting `no-changelog:`. At tag or
-release time a maintainer folds the fragments into `CHANGELOG.md` and deletes
-them: `dart tool/changelog_assemble.dart [--version X.Y.Z]`, in a PR labeled
-`changelog-assembly`.
-
-**Coverage baseline.** `tool/coverage-baseline.json` is not part of a feature PR. CI
-fails a PR only if a file's coverage, or lib-wide coverage, drops below the
-base branch's baseline; a rise needs no baseline edit. After a merge, a
-maintainer refreshes the baseline once per release, in the release PR
-(`bash tool/record_coverage_baseline.sh --no-commit` on main records it from
-main's CI coverage); it is not recorded after every merge.
-
-Further contributor docs:
-[`docs/README.md`](docs/README.md) (the documentation index),
-[`docs/contributor/testing-philosophy.md`](docs/contributor/testing-philosophy.md)
-(whether a test is worth running),
-[`docs/contributor/testing-runbook.md`](docs/contributor/testing-runbook.md)
-(what to run), [`docs/reference/execution-model.md`](docs/reference/execution-model.md)
-(the fault boundary) and
-[`docs/deep-dives/async-matrix.md`](docs/deep-dives/async-matrix.md)
-(host functions and `async`).
-
-## Stability and versioning
-
-This package does **not** follow semantic versioning. The version tracks the
-upstream monty it pins: upstream 1.1.0 is 0.110.x, and the patch is this
-package's own fixes on that pin. `tool/check_version_pin.sh` enforces the
-mapping. Breaking changes can land in any release; pin a version and read the
-[CHANGELOG](CHANGELOG.md) before upgrading.
-
-If you plan to depend on this package, please open an issue so we can take
-your use case into account.
+Contributor commands and repository rules are in [AGENTS.md](AGENTS.md).
 
 ## License
 

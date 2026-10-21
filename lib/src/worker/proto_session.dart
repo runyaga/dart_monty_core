@@ -79,11 +79,11 @@ final class ProtoSession {
   /// keeping the worker's directory, `os.chdir` included (Checkout.cwd_set).
   bool _cwdSet = false;
 
-  /// Configures a session on [channel].
+  /// Configures a session on a worker channel.
   ///
-  /// Throws [ArgumentError] for a setting upstream refuses, before anything
-  /// is sent. A refusal from the worker is raised as any error is (a
-  /// [MontyRuntimeError], say), and the worker is killed.
+  /// Invalid settings throw [ArgumentError] before any frame is sent. A worker
+  /// refusal becomes its [MontyError]. A dead worker or protocol violation
+  /// becomes [MontyCrashedError]. A configuration failure kills the worker.
   static Future<ProtoSession> open(
     MontyChannel channel, [
     SessionConfig config = const SessionConfig(),
@@ -260,6 +260,7 @@ final class ProtoSession {
     return event;
   }
 
+  /// Sends the session configuration and requires an acknowledgment.
   Future<void> _configure() async {
     final request = pb.ParentRequest(configure: _config._toProto());
     final event = await _channel.turn(request);
@@ -385,13 +386,7 @@ extension ProtoSessionTransfer on ProtoSession {
     };
   }
 
-  /// Restores [state], a dump, into this fresh session (upstream's `Load`):
-  /// the re-announced suspension, or null for a dump taken between feeds,
-  /// with the dump's script name when the worker reports it.
-  ///
-  /// The dump carries the session's working directory. An error the worker
-  /// reports in place of the load (bytes it cannot read) is thrown, and the
-  /// session runs on as it was.
+  /// Returns the restored suspension event and dump script name.
   Future<(pb.ChildEvent?, String?)> load(List<int> state) => _guard(() async {
     // Host objects are never part of a dump: a loaded session starts with
     // none (upstream's instance store starts empty).
@@ -589,6 +584,8 @@ final class SessionConfig {
   final ResourceLimits? limits;
 
   /// Whether each fed snippet is type-checked before it runs.
+  ///
+  /// A rejected snippet throws [MontyTypingError] without executing.
   final bool typeCheck;
 
   /// Stub file contents for the type check.
@@ -655,8 +652,7 @@ final class SessionConfig {
   }
 }
 
-/// Receives one run of printed text, as it arrives; a returned future is
-/// awaited before the next run is delivered.
+/// Receives one run of printed text and delays the next run until completion.
 typedef ProtoPrintCallback =
     FutureOr<void> Function(String stream, String text);
 
@@ -864,8 +860,10 @@ int printFlushIntervalMs(Duration interval) {
 
 const int _u32Max = 0xffffffff;
 
-/// Throws [ArgumentError] unless [value] is in 0..2^32 - 1, with upstream's
-/// message. (Upstream spells 0 `False`, which this `int?` takes as 0.)
+/// Validates the assertion-annotation byte limit.
+///
+/// Zero disables annotations even though upstream's refusal text names one as
+/// the lower bound.
 void validateAssertMessageAnnotations(int? value) {
   if (value != null && (value < 0 || value > _u32Max)) {
     throw ArgumentError.value(

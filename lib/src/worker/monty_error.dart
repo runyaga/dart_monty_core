@@ -9,12 +9,7 @@
 /// exception's message is `exception.message`.
 ///
 /// Upstream's errors cannot be constructed from Python, so these have no
-/// public constructor: the session builds them from wire events through
-/// the factory functions here ([raisedError], [typingError], [crashedError],
-/// [protocolError]), which a fake session uses too.
-///
-/// Internal until the cutover exports the classes in place of today's
-/// public errors; nothing here is exported.
+/// public constructor. Sessions and fake sessions build them from wire events.
 library;
 
 import 'package:dart_monty_core/src/platform/monty_value.dart';
@@ -238,8 +233,7 @@ MontyError raisedError(pb.RaisedException raised) {
   return recordError(record);
 }
 
-/// The error [record] is, unchecked: for an exception the parent made
-/// itself, such as a memory-limit exit's `MemoryError`.
+/// Builds a syntax error for `SyntaxError` and a runtime error otherwise.
 MontyError recordError(RaisedRecord record) => record.excType == 'SyntaxError'
     ? MontySyntaxError._(record)
     : MontyRuntimeError._(record);
@@ -277,7 +271,7 @@ T encodingInput<T>(T Function() encode) {
   }
 }
 
-/// The error a `TypingError` event's [diagnostics] are.
+/// Builds a typing error from worker diagnostics.
 MontyTypingError typingError(String diagnostics) =>
     MontyTypingError._(diagnostics);
 
@@ -394,11 +388,7 @@ String _summary(RaisedRecord record) {
       : '${record.excType}: $text';
 }
 
-/// The exception upstream's binding builds for [record]
-/// (`exc_monty_to_py`): a Unicode or JSON decode error is rebuilt from its
-/// payload, with the payload's attributes; without one of the right kind it
-/// is a plain `ValueError`, as upstream's fallback is. Its rendering still
-/// names the original type.
+/// Rebuilds the exception value carried by a raised record.
 MontyExceptionValue _exceptionOf(RaisedRecord record) {
   final message = record.message ?? '';
   final type = record.excType;

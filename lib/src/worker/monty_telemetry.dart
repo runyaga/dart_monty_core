@@ -1,20 +1,18 @@
 part of 'telemetry.dart';
 
-/// Receives Monty's records for the host's own telemetry SDK.
+/// Receives Monty's records for the host's telemetry SDK.
 ///
-/// Monty owns no exporter, provider or credentials. Attribute values are
-/// strings, integers, doubles or booleans. Delivery is synchronous; there
-/// is nothing for Monty to flush. Each failing signal is disabled for the
-/// rest of this isolate and reported once through the installation zone.
+/// Attribute values are strings, integers, doubles, or booleans. Delivery is
+/// synchronous, so Monty has nothing to flush.
 abstract interface class MontyTelemetry {
-  /// The host's current context; null means no parent.
+  /// Returns the current parent context.
   Object? currentContext();
 
-  /// [context] with [span] as its current span.
+  /// Returns a context with the supplied span current.
   Object? contextWithSpan(Object? context, Object span);
 
-  /// Starts [name] under [parent] at explicit Unix-epoch nanoseconds.
-  /// An adapter ignoring spans returns any token and ignores it thereafter.
+  /// Starts a span at a Unix-epoch nanosecond time and returns the adapter's
+  /// token. An adapter that ignores spans may return any token and ignore it.
   Object startSpan(
     String name,
     Object? parent,
@@ -29,8 +27,10 @@ abstract interface class MontyTelemetry {
     required BigInt endTimeUnixNanos,
   });
 
-  /// Emits a log under [span], null when no span is open or spans failed.
-  /// [severity] is INFO (9) or ERROR (17); the timestamp is epoch nanoseconds.
+  /// Emits one log record at a Unix-epoch nanosecond timestamp.
+  ///
+  /// [severity] is `INFO` with number 9 or `ERROR` with number 17. [span] is
+  /// null when no span is open or the span signal has failed.
   void emitLog(
     Object? span,
     String severity,
@@ -40,8 +40,9 @@ abstract interface class MontyTelemetry {
     required int severityNumber,
   });
 
-  /// Records a raw measurement; [context] is explicitly empty (null).
-  /// The adapter must use its SDK's empty context, not the ambient span.
+  /// Records one metric measurement with an explicitly empty context.
+  ///
+  /// The adapter must use its SDK's empty context instead of the ambient span.
   // The approved adapter shape mirrors upstream's metric record (name, kind,
   // unit, description, value, attributes, context); bundling would add a
   // public type the surface delta does not allow.
@@ -56,6 +57,8 @@ abstract interface class MontyTelemetry {
     required Object? context,
   });
 
-  /// Runs [body] with [context] current, including asynchronous continuations.
+  /// Runs a body with the supplied context current for its continuations.
+  ///
+  /// The body runs exactly once even if the adapter omits it or throws.
   R runInContext<R>(Object? context, R Function() body);
 }

@@ -24,6 +24,7 @@ part 'os_access_repr.dart';
 ///
 /// The namespace has no mounts or filesystem budgets. Compose this handler to
 /// customize individual operations. Seeded paths retain `..` and double roots.
+/// `Path.is_symlink` returns false without reading its path argument.
 ///
 /// It is one namespace, as upstream's is: a `..` in a path stays inside it, so
 /// a directory seeded under it is not a boundary between the files around it.
@@ -235,7 +236,15 @@ MontyValue _mkdir(
   existOk: _truthy(kwargs['exist_ok']),
 );
 
-// The old public open helper is now private and owns its filesystem effects.
+/// Resolves an `open` call and applies its filesystem effect.
+///
+/// Read mode requires an existing file and preserves its content. A missing
+/// file raises `FileNotFoundError`, and a directory raises
+/// `IsADirectoryError`. Write mode truncates or creates an empty file and
+/// requires an existing parent directory, which otherwise raises
+/// `FileNotFoundError`. Write and append mode raise `IsADirectoryError` for a
+/// directory. Append mode preserves existing content or creates an empty file.
+/// An unsupported mode raises `ValueError`.
 MontyFileHandle _resolveOpenCall(
   _OsAccessTree tree,
   List<AbstractFile> createdFiles,

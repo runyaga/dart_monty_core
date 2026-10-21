@@ -3,12 +3,11 @@
 /// print callback to keep what the sandbox prints, under a byte cap. One
 /// file holds both, named after the first.
 ///
-/// Upstream's print target handles its collectors itself; a Dart print
+/// Upstream's print target handles its collectors itself. A Dart print
 /// callback is a function, so each collector is callable instead. Its
 /// [CollectStreams.call] is what the session calls for each printed
 /// fragment, and may be called directly too.
 ///
-/// Internal until the cutover exports both; nothing here is exported.
 library;
 
 import 'dart:async';
@@ -26,17 +25,14 @@ const int defaultMaxPrintCollectBytes = 10 << 20;
 /// outgrow the cap.
 const int collectStreamsEntryOverhead = 64;
 
-/// Collects each printed fragment as a `(stream, text)` record, in order
-/// (upstream's `CollectStreams`).
+/// Collects printed fragments as ordered stream and text records.
 ///
-/// Each record is charged its text's UTF-8 bytes plus
-/// [collectStreamsEntryOverhead], against `maxBytes`
-/// ([defaultMaxPrintCollectBytes] by default; null for no cap, for trusted
-/// code only). The cap is the collector's own, not the session's
-/// `maxMemory`.
+/// Each record costs its UTF-8 text length plus 64 bytes against this
+/// collector's cap. The cap is independent of session memory, applies across
+/// every feed using this instance, and defaults to 10 MiB. Null removes the
+/// cap for trusted code. The [output] getter does not drain the records.
 final class CollectStreams {
-  /// An empty collector capped at [maxBytes]. A negative [maxBytes] throws
-  /// [ArgumentError], as upstream refuses it (`OverflowError` there).
+  /// Creates an empty collector and throws [ArgumentError] for a negative cap.
   CollectStreams({int? maxBytes = defaultMaxPrintCollectBytes})
     : _maxBytes = _checkedCap(maxBytes);
 
@@ -46,7 +42,7 @@ final class CollectStreams {
   /// The bytes charged so far.
   int _charged = 0;
 
-  /// Keeps [text] as printed to [stream], `'stdout'` or `'stderr'`; any
+  /// Keeps [text] as printed to [stream], `'stdout'` or `'stderr'`. Any
   /// other [stream] throws [ArgumentError].
   ///
   /// A fragment that would take the charge past the cap is refused whole,
@@ -61,8 +57,7 @@ final class CollectStreams {
     _charged += add;
   }
 
-  /// The records so far, in a new list: reading does not drain the
-  /// collector, and changing the list does not reach it.
+  /// Returns a copy of the records so far.
   List<(String, String)> get output => List.of(_output);
 
   /// Upstream's `repr`: `CollectStreams(output=[('stdout', 'text'), ...])`.
@@ -76,16 +71,14 @@ final class CollectStreams {
   }
 }
 
-/// Collects the printed text of both streams as one string, in order
-/// (upstream's `CollectString`).
+/// Collects printed text from both streams in delivery order.
 ///
-/// The text is charged its UTF-8 bytes, with no overhead, against
-/// `maxBytes` ([defaultMaxPrintCollectBytes] by default; null for no cap,
-/// for trusted code only). The cap is the collector's own, not the
-/// session's `maxMemory`.
+/// Text costs its UTF-8 length with no per-fragment overhead against this
+/// collector's cap. The cap is independent of session memory, applies across
+/// every feed using this instance, and defaults to 10 MiB. Null removes the
+/// cap for trusted code. The [output] getter does not drain the text.
 final class CollectString {
-  /// An empty collector capped at [maxBytes]. A negative [maxBytes] throws
-  /// [ArgumentError], as upstream refuses it (`OverflowError` there).
+  /// Creates an empty collector and throws [ArgumentError] for a negative cap.
   CollectString({int? maxBytes = defaultMaxPrintCollectBytes})
     : _maxBytes = _checkedCap(maxBytes);
 
@@ -99,7 +92,7 @@ final class CollectString {
   /// starts with a trail surrogate pairs with.
   bool _endsWithLead = false;
 
-  /// Appends [text] as printed to [stream], `'stdout'` or `'stderr'`; the
+  /// Appends [text] as printed to [stream], `'stdout'` or `'stderr'`. The
   /// stream is not kept, and nothing separates fragments. Any other
   /// [stream] throws [ArgumentError].
   ///
@@ -121,7 +114,7 @@ final class CollectString {
     }
   }
 
-  /// The text so far; reading does not drain the collector.
+  /// The text collected so far.
   String get output => _output.toString();
 
   /// Upstream's `repr`: `CollectString(output='text')`.
@@ -173,7 +166,7 @@ void _checkStream(String stream) {
 }
 
 /// Upstream's `check_print_collect_limit`: refuses a growth by [add] of
-/// [current] past [limit]; equality fits, and a null [limit] is no cap.
+/// [current] past [limit]. Equality fits, and a null [limit] is no cap.
 void _checkLimit(int current, int add, int? limit) {
   if (limit == null) return;
   final used = current + add;

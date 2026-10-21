@@ -1,13 +1,12 @@
 /// Upstream's `OSPolicy`, `TimeZone` and `RandomSeed`, their validation
 /// and their `Configure` encoding.
 ///
-/// Upstream's are TypedDicts (`pydantic_monty/__init__.py`); here each is a
+/// Upstream's are TypedDicts (`pydantic_monty/__init__.py`). Here each is a
 /// small immutable class. Literals are `String`s, and a field that is a mode
-/// or a value is two parameters (the mode, and a typed value form). A value
-/// upstream's argument parsing refuses is an [ArgumentError] with upstream's
-/// message, raised by `OsPolicyInternal.validate` at checkout.
-///
-/// Internal until the cutover exports them; nothing here is exported.
+/// or a value is two parameters (the mode, and a typed value form). If
+/// upstream's argument parsing refuses a value, checkout raises
+/// [ArgumentError] with the upstream message through
+/// `OsPolicyInternal.validate`.
 library;
 
 import 'dart:typed_data';

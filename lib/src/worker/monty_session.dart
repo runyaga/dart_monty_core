@@ -33,99 +33,65 @@ import 'package:fixnum/fixnum.dart';
 
 /// A Python session on a worker dedicated to it until [close].
 ///
-/// Every call is async. Protocol turns are serialized, as upstream's are: a
-/// [feedRun] made while another feed's turn is in flight waits for that
-/// turn, then runs if the other feed has finished, or throws [StateError]
-/// if it is suspended on a host call (upstream's "feed called while a
-/// suspension is awaiting an answer"), or if the session closed meanwhile.
-/// A [feedRun] made from inside one of its own session's print callbacks
-/// throws [StateError] at once: that callback runs inside the turn.
+/// One call owns the protocol turn at a time, and other calls queue in arrival
+/// order. A suspended feed owns no turn. Its suspension wakes queued feeds,
+/// which then fail with [StateError], and a newly arriving feed fails
+/// immediately. Calls from the session's own print callback also fail
+/// immediately because that callback runs inside the turn, except [close],
+/// which succeeds and terminates the worker.
 ///
-/// A Python exception throws [MontyRuntimeError] (or [MontySyntaxError])
-/// and the session stays usable. A dead worker throws [MontyCrashedError];
-/// so does a turn that outlives the pool's `requestTimeout` or a duration
-/// backstop, whose worker is killed (`timedOut`), and a worker that answers
-/// against the protocol, which is discarded. A worker that exceeds its
-/// memory limit throws [MontyRuntimeError] with a `MemoryError`. After any
-/// of the last four the session is finished: its slot is free, and every
-/// later call throws [StateError].
+/// Python runtime and syntax errors leave the session usable. A dead worker,
+/// timeout, duration backstop, or protocol violation throws
+/// [MontyCrashedError] and finishes it. The interpreter's
+/// [ResourceLimits.maxMemory] raises a sandbox `MemoryError` with traceback and
+/// leaves the session usable.
+/// A worker allocator failure exits with code 65 and raises `MemoryError`
+/// without traceback with the message `the worker exceeded its memory limit
+/// and was terminated`. The session then finishes.
 ///
-/// A feed's `externalLookup` resolves the names the code leaves undefined,
-/// lazily, when the code reads one (upstream's `external_lookup`); a name in
-/// `inputs` too is served by the input. An entry is a [MontyValue]: a host
-/// function ([MontyHostFunction]), whose `fn` takes the call's positional and
-/// keyword arguments and returns a `FutureOr<MontyValue>`, or any other value,
-/// a host object's wrapper included. A read of a host function gives a
-/// function named by its key (its docstring kept), and a
-/// call to that name runs the entry, outside the turn: it may take as long as
-/// it likes, and `requestTimeout` does not count it. A read of a value converts
-/// it then and binds it as a global, so later feeds see it without the lookup.
-/// A call to a name whose entry is a value raises `TypeError` ("'int' object is
-/// not callable"), and an absent name raises `NameError`. A value the converter
-/// refuses (a cyclic list, an unpaired surrogate) is not answered: the feed
-/// throws its [MontyRuntimeError], which a sandbox `try` does not catch, and
-/// the session is finished, as upstream discards the checkout.
+/// Inputs bind as globals before code runs and take precedence over
+/// `externalLookup`. A plain lookup value converts and binds on first read, so
+/// later feeds reuse it without another lookup. A host function binds on read
+/// and runs outside the protocol turn. Under [feedStart], its lookup and call
+/// are separate suspensions in that order. A lookup value that cannot convert
+/// raises an uncatchable [MontyRuntimeError] and finishes the session.
+/// A host function uses its lookup key as its name and keeps its docstring. A
+/// call to another lookup value raises `TypeError`, and an absent name raises
+/// `NameError`.
 ///
-/// A host function whose `fn` is marked with `coroutine` is a coroutine, as an
-/// `async def` host function is upstream: a call the sandbox awaits with
-/// nothing else to run is awaited in place, any other gets a pending future
-/// the sandbox awaits later, settled when its Dart future completes.
-///
-/// A feed's `cwd` switches the sandbox's working directory before the code
-/// runs: an absolute POSIX path, its trailing slashes trimmed, that
-/// `os.getcwd()` reports and relative paths resolve against. It lasts across
-/// feeds, `os.chdir` included, until a feed switches it; without one a feed
-/// keeps the current directory. Until cwd is established, it defaults to the
-/// first mount's virtual path, or `/` with no mounts. A typing rejection
-/// does not establish cwd; a sent syntax/runtime error does. A successful
-/// session or snapshot restore establishes the dump's cwd. A relative path or
-/// one with a NUL throws [MontyRuntimeError] (`ValueError`) before the code
-/// runs or a mount table is built, and the session runs on. An unpaired
-/// surrogate throws [ArgumentError] (upstream's `UnicodeEncodeError`) before
-/// anything else.
-/// Each feed's `mount` table is tried before its OS handler. Overlay data
-/// and write budgets are discarded when the feed ends. A closed mount throws
-/// [StateError]; overlapping mounts throw [MontyRuntimeError].
+/// The working directory persists across feeds, including changes from
+/// `os.chdir`. Before establishment, it uses the first mount's virtual path or
+/// `/`. The session leaves it unestablished when type checking rejects a feed.
+/// A syntax error, runtime error, or successful restore establishes it. A
+/// relative path or NUL raises a
+/// recoverable `ValueError` before code or mounts run. An unpaired surrogate
+/// throws [ArgumentError].
 abstract interface class MontySession {
-  /// Runs [code] to completion and returns its value: the last expression's,
-  /// or [MontyNone].
+  /// Runs one Python snippet to completion and returns its last expression.
   ///
-  /// [inputs] are bound as global names first: values, host objects'
-  /// wrappers ([ClassInstance], [ClassType]) among them, whose members the
-  /// session serves.
+  /// A throwing print callback receives no more text but lets the turn finish.
+  /// A collector overflow remains `MemoryError`. An [ExternalException] selects
+  /// its known Python type, and an unknown type or any other throw becomes
+  /// `Exception` with its text. `SyntaxError`
+  /// produces [MontySyntaxError], while other types produce
+  /// [MontyRuntimeError]. None carries a traceback. The session remains usable
+  /// after a completed or raised turn, but finishes when the turn ends
+  /// suspended on a host call. A callback that never completes ends at the
+  /// earliest turn deadline or at [close], which kills the worker.
   ///
-  /// [externalLookup] resolves the names the code leaves undefined, and
-  /// [cwd] switches the working directory first (see the class
-  /// documentation).
-  ///
-  /// [os] answers OS calls; without it they are declined.
-  ///
-  /// [printCallback] receives each run of printed text, in order, and its
-  /// future is awaited before the next event is read. Without one, the text
-  /// goes to the process's stdout and stderr on native and to the console
-  /// in a browser. A callback that throws gets no more text; the turn runs
-  /// to its end, then its error is thrown, as a [MontyError] (`printFailure`).
-  /// The session runs on if the turn completed or raised, and is finished if
-  /// it ended suspended on a host call. A callback that never completes is
-  /// ended by `requestTimeout` or [close], as any turn is.
-  ///
-  /// A request over the frame limit (256 MiB) is refused before it is sent,
-  /// with [MontyRuntimeError] (`RuntimeError`). For [inputs] the session runs
-  /// on. For a host function's answer the suspension stays pending: every
-  /// later feed throws [StateError], and only [close] recovers the worker.
-  ///
-  /// A `time.sleep` is waited by the session, cut to the OS policy's
-  /// system-sleep maximum (10 s by default). An `asyncio.sleep` is waited
-  /// the same way through the futures protocol, so sibling tasks run
-  /// meanwhile.
-  ///
-  /// On a type-checking session a snippet the check rejects throws
-  /// [MontyTypingError] without running; [skipTypeCheck] skips the check
-  /// for this snippet. Past the session's
-  /// `maxSuspensions` host calls the feed is aborted with an in-sandbox
-  /// `RuntimeError`; a system sleep, either kind, that would take the
-  /// session's sleeps past `maxTotalSleep` aborts it with an in-sandbox
-  /// `TimeoutError`.
+  /// This method waits for `system.sleep` and `system.async_sleep`, capped by
+  /// the OS policy at 10 seconds by default. [skipTypeCheck] bypasses the
+  /// session's configured check for this snippet. A completed feed releases
+  /// its mount table. A feed without a final expression returns [MontyNone].
+  /// The feed tries its mounts before [os], and mount overlay data and write
+  /// budgets end with the feed. A closed mount throws [StateError], and
+  /// overlapping mounts throw [MontyRuntimeError]. Without [os], OS calls are
+  /// declined. [printCallback] receives `stdout`
+  /// or `stderr` in order, and each returned future completes before the next
+  /// run is delivered. The default writes to native standard streams or the
+  /// browser console. Inputs over 256 MiB throw [MontyRuntimeError] and leave
+  /// the session usable. `system.async_sleep` waits through the futures
+  /// protocol, so sibling tasks run while it waits.
   Future<MontyValue> feedRun(
     String code, {
     Map<String, MontyValue>? inputs,
@@ -137,17 +103,14 @@ abstract interface class MontySession {
     bool skipTypeCheck = false,
   });
 
-  /// Starts [code] and returns at its first suspension, or its end: each
-  /// host function call, OS call (system sleeps included), name lookup and
-  /// wait on pending futures is a [MontySnapshot] for the caller to answer
-  /// (upstream's `feed_start`). The parameters are [feedRun]'s; [cwd] holds
-  /// for the whole feed, and [externalLookup] and [os] are kept for the
-  /// snapshots' `resumeAuto`, never consulted otherwise.
+  /// Starts one Python snippet and returns its first snapshot.
   ///
-  /// While a suspension is unanswered the session refuses a new feed with
-  /// [StateError] ("feed called while a suspension is awaiting an
-  /// answer"). The budgets, the deadlines and [close] apply to each resume
-  /// as to a feed's turns.
+  /// The feed retains its mount table, lookup, OS handler, print callback, and
+  /// working directory across resumes. [FunctionSnapshot.resumeAuto] forwards
+  /// `system.sleep` and `system.async_sleep` to the mounts and OS handler.
+  /// A manual resume sends its supplied answer directly. Every resume uses the
+  /// same budgets, deadlines, and close behavior as a feed turn. Other
+  /// parameter behavior follows [feedRun].
   Future<MontySnapshot> feedStart(
     String code, {
     Map<String, MontyValue>? inputs,
@@ -159,36 +122,28 @@ abstract interface class MontySession {
     bool skipTypeCheck = false,
   });
 
-  /// Restores [state], a dump taken between feeds, into this session
-  /// (upstream's `load_session`). The dump brings its own globals, script
-  /// name, limits, type check and working directory; this session's
-  /// settings for them no longer apply.
+  /// Restores a between-feed dump into a fresh session.
   ///
-  /// Only for a fresh session: once it has been fed or loaded, a load
-  /// throws [StateError]. A dump taken mid-feed throws [StateError] too, and
-  /// the session is then finished. Bytes the worker cannot load throw
-  /// [MontyRuntimeError], and the session runs on, still unloaded.
-  ///
-  /// The bytes are trusted: load only an unmodified dump from a compatible
-  /// producer whose provenance the caller has checked. Loading does not
-  /// validate them, and an invalid dump has no guarantee of correctness or
-  /// availability.
+  /// The dump replaces globals, script name, type-check settings, working
+  /// directory, and feed and turn durations.
+  /// A used session or mid-feed dump throws [StateError]. A wrong-kind dump
+  /// finishes the session. Corrupt bytes throw [MontyRuntimeError] and leave a
+  /// fresh session usable. Dump bytes are trusted and must come unchanged from
+  /// a compatible producer.
   Future<void> loadSession(Uint8List state);
 
-  /// Restores [state], a dump taken mid-feed (by [dump] while a suspension
-  /// waited, or by a snapshot's `dump`), and returns the suspension it
-  /// re-announces (upstream's `load_snapshot`). [mount] supplies fresh tables:
-  /// dumps carry neither mounts nor overlay data. [externalLookup], [os] and
-  /// [printCallback] are [feedStart]'s, kept for the snapshots' `resumeAuto`
-  /// (the dump carries its working directory);
-  /// a restored [FutureSnapshot]'s coroutines are gone, so its `resumeAuto`
-  /// fails.
+  /// Restores a mid-feed dump into a fresh session.
   ///
-  /// As [loadSession]: only for a fresh session, the same trust contract,
-  /// and a dump taken between feeds throws [StateError] and finishes the
-  /// session. The re-announced suspension counts against the dump's
-  /// suspension budget, under this session's limit as a ceiling: with a
-  /// limit of 0 it aborts the load with an in-sandbox `RuntimeError`.
+  /// A between-feed dump throws [StateError] and finishes the session. Dumps
+  /// contain no mounts, overlay state, host-object registrations, or host
+  /// coroutines. Callers must supply mounts and re-register named host objects.
+  /// An unregistered object identifier decodes to a proxy whose method call
+  /// raises `RuntimeError`. A restored [FutureSnapshot] must use manual
+  /// [FutureSnapshot.resume] because automatic resume has no original
+  /// coroutines. The same fresh-session, budget, corruption, and trust rules
+  /// as [loadSession] apply. The re-announced suspension counts against the
+  /// receiving suspension budget, so a zero ceiling aborts this load with
+  /// `RuntimeError`.
   Future<MontySnapshot> loadSnapshot(
     Uint8List state, {
     List<MountDir>? mount,
@@ -229,18 +184,21 @@ abstract interface class MontySession {
   /// the session is finished, and while a protocol turn is in flight.
   int? get workerPid;
 
-  /// Ends the session and gives its slot back, exactly once.
+  /// Ends the session and releases its pool slot.
   ///
-  /// With no protocol turn in flight (idle, or a host callback running) it
-  /// sends `Reset` and returns the worker to the pool. A call waiting on a
-  /// host callback fails as finished at once; the callback is not
-  /// interrupted, and its result is dropped when it comes. With a turn in
-  /// flight it kills the worker, and that call fails with
-  /// [MontyCrashedError] ([CrashCause.killed]). Never throws. Idempotent.
+  /// With no protocol turn in flight, including while host code runs, this
+  /// sends Reset and waits up to the pool request timeout. A null timeout waits
+  /// as long as the worker takes. The pool kills the worker without Reset
+  /// when it is closed and no checkout is waiting. Host code continues, but
+  /// its late result is discarded.
   ///
-  /// A session collected without a close has its worker killed and its
-  /// slot freed by a finalizer. That is a backstop only: a finalizer may
-  /// never run, so every session must still be closed.
+  /// During a protocol turn, including a host-initiated [dump], this kills the
+  /// worker without Reset and fails the turn with [MontyCrashedError] with the
+  /// message `monty worker killed: the session was closed during a turn`. A
+  /// call that awaits a host callback fails as finished at once, while the
+  /// callback continues and its late result is discarded. This method never
+  /// throws and is idempotent. A finalizer kills an abandoned session only as
+  /// a fallback and may never run.
   Future<void> close();
 }
 
@@ -1005,7 +963,6 @@ final class _FeedDrive implements SnapshotDriver {
     return _suspension(event);
   }
 
-  /// Spends [snapshot] and sends [request], already built and checked.
   Future<MontySnapshot> _resume(
     SuspendedSnapshot snapshot,
     pb.ParentRequest request,
@@ -1415,23 +1372,13 @@ double? _systemSleepSeconds(pb.ChildEvent event) {
 pb.RaisedException _raised(String type, String message) =>
     pb.RaisedException(excType: type, message: message);
 
-/// The session's view of its worker: the lease's channel, with each turn
-/// refused once the session is finished and bounded by its deadline.
+/// Runs serialized worker turns under the session budgets and deadlines.
 ///
-/// It also keeps upstream's suspension and sleep budgets ([SessionBudget]):
-/// the checkout's suspensions are counted, and one past `maxSuspensions`
-/// (default 1000) is not handed to the driver. The feed is aborted in its
-/// place with an in-sandbox `RuntimeError`, which the driver then sees as
-/// the turn's answer. Its system sleeps, `time.sleep` and `asyncio.sleep`
-/// alike, are charged against `maxTotalSleep` the same way, before they are
-/// waited: the one that would pass it aborts the feed with an in-sandbox
-/// `TimeoutError`. A worker reply can only tighten either limit.
-///
-/// A turn's deadline is the pool's `requestTimeout`; an execution turn's is
-/// also bounded by what the feed budget has left and by the turn budget,
-/// each plus its grace (upstream's duration backstops). Past it the worker
-/// is killed and the turn fails with [MontyCrashedError]. Time spent in
-/// host callbacks is never counted: it falls between turns.
+/// An execution turn uses the earliest of the pool request timeout, remaining
+/// feed duration plus feed grace, and turn duration plus turn grace. A null
+/// timeout removes that term, while a null duration limit or grace removes its
+/// duration term. Host callback time falls between turns and is not counted.
+/// An expired deadline kills the worker and throws [MontyCrashedError].
 final class _SessionChannel implements MontyChannel, TelemetryChannel {
   _SessionChannel(this._hold, this._options, SessionConfig config)
     : _budget = SessionBudget(config);

@@ -1,4 +1,4 @@
-/// Host telemetry bridge. Installation and failures are isolate-wide.
+/// Host telemetry bridge with isolate-wide installation and failures.
 library;
 
 import 'dart:async';
@@ -13,10 +13,13 @@ final class _Telemetry {
   TelemetryBridge? bridge;
 }
 
-/// Installs [telemetry] for this isolate's lifetime. Cannot be undone.
-/// A second call throws [StateError]. With no adapter, no records are made
-/// and snapshot trace contexts are null (D-087). Browser sessions record
-/// the same signals as native sessions (D-090).
+/// Installs the telemetry adapter for this isolate's lifetime.
+///
+/// This must run before the first checkout because existing sessions never
+/// report. A second call throws [StateError]. A throwing signal stops for the
+/// rest of the isolate while the other signals continue, and its first failure
+/// is reported through the installation zone. Browser and native sessions
+/// record the same signals.
 void instrumentTelemetry(MontyTelemetry telemetry) {
   if (_installation.bridge != null) {
     throw StateError('Monty telemetry is already configured');
