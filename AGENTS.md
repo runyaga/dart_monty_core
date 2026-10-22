@@ -249,10 +249,8 @@ pull requests only). `consumers.yaml` builds the two web consumer probes under
   the mapping, reads `tool/upstream/upstream-pin.json`, covers
   `native/worker/Cargo.toml`, and refuses an upstream version with a
   component above 9 (the mapping joins three single digits).
-- `0.110.0-dev.N` is a pre-release. `publish.yaml` matches `v[0-9]+.[0-9]+.[0-9]+*`
-  but excludes `v*-dev.*`; `check_workflows_valid.sh` fails if a dev tag would
-  publish.
-- Release PR: assemble fragments (`dart tool/changelog_assemble.dart --version X`),
-  run `dart pub publish --dry-run` there (it fails on a tree whose CHANGELOG
-  lacks the version), then tag. Tags matching the pattern publish via OIDC.
-- The first publish of a new package name must be manual.
+- `0.110.0-dev.N` is a pre-release. Releases are immutable git tags; nothing
+  is published to pub.dev.
+- Release preparation: assemble fragments (`dart tool/changelog_assemble.dart
+  --version X`) and run `dart pub publish --dry-run` as a local packaging
+  check (it fails on a tree whose CHANGELOG lacks the version), then tag.
