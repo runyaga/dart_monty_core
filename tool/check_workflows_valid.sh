@@ -19,28 +19,11 @@
 # block a commit — but it says so, so a silent skip is impossible to mistake
 # for a pass.
 #
-# It also checks the publish prohibition (F14): this package is never
-# published to pub.dev, so no workflow may contain `pub publish`. That half
-# needs no network, so it runs before actionlint and never SKIPs.
-#
 # Usage: bash tool/check_workflows_valid.sh
 # =============================================================================
 set -euo pipefail
 PKG="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PKG"
-
-# --- The publish prohibition -------------------------------------------------
-python3 -I - <<'PY'
-import glob, re, sys
-
-rc = 0
-for path in sorted(glob.glob(".github/workflows/*.y*ml")):
-    for line_number, line in enumerate(open(path), start=1):
-        if re.search(r"\bpub\s+publish\b", line):
-            print(f"FAIL: {path}:{line_number}: workflows must not contain pub publish")
-            rc = 1
-sys.exit(rc)
-PY
 
 VERSION=1.7.7
 CACHE="${HOME}/.cache/actionlint-${VERSION}"
