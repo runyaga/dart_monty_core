@@ -7,10 +7,12 @@ stderr. The allowlist under test is the committed one,
 tool/dependency_allowlist.txt, unless a test writes its own.
 
 dart_monty_core's policy row is FORBIDDEN = {dart_monty, dart_monty_extras}
-with no FORBIDDEN_PREFIXES, so contract item 15 (a prefixed name failing
-with `direction`) belongs to dart_monty_extras only and is replaced here
-by a test that a `dart_monty`-prefixed name breaks only the allowlist
-rule.
+with no FORBIDDEN_PREFIXES and an empty PREFIX_EXEMPT, so contract item
+15 (a prefixed name failing with `direction`) belongs to
+dart_monty_extras only and is replaced here by the dart_monty_core
+form: a `dart_monty`-prefixed name breaks only the allowlist rule and
+passes once listed. Item 16 runs the checker against the repository's
+real pubspec.lock when `dart pub get` has produced one.
 
 Usage: python3 -m unittest tool/test_check_dependencies.py -v
 """
@@ -27,6 +29,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 CHECK = ROOT / 'tool' / 'check_dependencies.py'
 COMMITTED_ALLOWLIST = ROOT / 'tool' / 'dependency_allowlist.txt'
+REAL_LOCKFILE = ROOT / 'pubspec.lock'
 
 # The two names forbidden for dart_monty_core (its policy row).
 FORBIDDEN = ('dart_monty', 'dart_monty_extras')
@@ -314,15 +317,26 @@ class CheckDependenciesTest(unittest.TestCase):
         self.assertEqual(result.stdout, pass_line(3))
         self.assertEqual(result.stderr, '')
 
-    # dart_monty_core has no FORBIDDEN_PREFIXES, so a `dart_monty`-prefixed
-    # name breaks only the allowlist rule (contract item 15 is for
-    # dart_monty_extras only).
+    # 15. Contract item 15 (a prefixed name failing with `direction`) is
+    # scoped to dart_monty_extras, the only row with FORBIDDEN_PREFIXES.
+    # dart_monty_core's row has none (and an empty PREFIX_EXEMPT), so
+    # this repo gets the other side of the rule: a `dart_monty`-prefixed
+    # name is no direction violation -- it breaks only the allowlist
+    # rule, and it passes once listed.
     def test_prefixed_name_is_not_forbidden_here(self) -> None:
         result, _, _ = self.run_check(
             lock(entry('path'), entry('dart_monty_foo')))
         self.assertEqual(result.returncode, 1)
         self.assertEqual(result.stdout, '')
         self.assertEqual(result.stderr, allowlist_line('dart_monty_foo'))
+
+    def test_prefixed_name_passes_once_allowlisted(self) -> None:
+        result, _, _ = self.run_check(
+            lock(entry('path'), entry('dart_monty_foo')),
+            allowlist_text='path\ndart_monty_foo\n')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, pass_line(2))
+        self.assertEqual(result.stderr, '')
 
     # 14. The committed allowlist is sorted and free of duplicates.
     def test_committed_allowlist_is_sorted_and_duplicate_free(self) -> None:
@@ -340,6 +354,22 @@ class CheckDependenciesTest(unittest.TestCase):
             self.assertRegex(name, r'^[a-z0-9_]+$')
         for name in FORBIDDEN:
             self.assertNotIn(name, entries)
+
+    # 16. The checker passes against the repository's real pubspec.lock
+    # after `dart pub get`. The lock is a local build artifact, so the
+    # test skips until `dart pub get` has generated one.
+    @unittest.skipUnless(REAL_LOCKFILE.exists(),
+                         'pubspec.lock is absent (run dart pub get)')
+    def test_checker_passes_against_real_lockfile(self) -> None:
+        result = subprocess.run(
+            [sys.executable, '-I', str(CHECK)],
+            capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stderr, '')
+        # The resolved count moves with `dart pub upgrade`, so this pins
+        # the line's shape rather than the number.
+        self.assertRegex(
+            result.stdout, r'^PASS: [1-9][0-9]* resolved packages allowed\n$')
 
 
 if __name__ == '__main__':

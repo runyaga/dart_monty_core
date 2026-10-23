@@ -5,8 +5,8 @@ Shared contract (every dart_monty* repository carries a copy of this
 checker; only the policy constants below differ):
 
   * direction -- a resolved package whose name is in FORBIDDEN, or starts
-    with one of the FORBIDDEN_PREFIXES, is a violation. This holds even
-    when the name is in the allowlist.
+    with one of the FORBIDDEN_PREFIXES while not being in PREFIX_EXEMPT,
+    is a violation. This holds even when the name is in the allowlist.
   * allowlist -- a resolved package that is absent from the allowlist is
     a violation. The two rules are checked independently, so a package
     that breaks both produces two findings. An allowlist entry that no
@@ -44,11 +44,14 @@ import sys
 from pathlib import Path
 
 # --------------------------------------------------------------- policy ---
-# dart_monty_core's row of the shared contract. It sits at the bottom of
-# the layering, so it must not depend on either package above it; no
-# name prefixes are forbidden here.
+# dart_monty_core's row of the shared contract (dependency_check.md,
+# section 1). It sits at the bottom of the layering, so it must not
+# depend on either package above it; no name prefixes are forbidden
+# here, so PREFIX_EXEMPT -- the escape hatch from a prefix rule -- is
+# empty.
 FORBIDDEN = frozenset({'dart_monty', 'dart_monty_extras'})
 FORBIDDEN_PREFIXES = ()
+PREFIX_EXEMPT = frozenset()
 
 # ----------------------------------------------------------- constants ----
 DEFAULT_ROOT = Path(__file__).resolve().parent.parent
@@ -176,6 +179,8 @@ def forbidden_reason(name: str) -> str | None:
     """Why `name` breaks the direction rule, or None if it does not."""
     if name in FORBIDDEN:
         return f'forbidden dependency direction ({name} is in FORBIDDEN)'
+    if name in PREFIX_EXEMPT:
+        return None  # an exempt name escapes the prefix rule only
     for prefix in FORBIDDEN_PREFIXES:
         if name.startswith(prefix):
             return (f'forbidden dependency direction '
