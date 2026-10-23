@@ -1,24 +1,39 @@
 #!/usr/bin/env python3
 """Check dart_monty_core's resolved dependencies against the allowlist.
 
-Rules (see tool/dependency_allowlist.txt):
-  1. Forbidden direction: this package must not depend on dart_monty or
-     dart_monty_extras -- they sit above dart_monty_core in the layering.
-  2. Allowlist: every package pubspec.lock resolves -- direct main, direct
-     dev, transitive or overridden, i.e. every entry under `packages:` --
-     must be named in tool/dependency_allowlist.txt.
+Shared contract (every dart_monty* repository carries a copy of this
+checker; only the policy constants below differ):
 
-pubspec.lock is not committed; CI generates it with `dart pub get` before
-running this check. A missing lockfile or one with no resolved packages is
-therefore a failure, never a pass.
+  * direction -- a resolved package whose name is in FORBIDDEN, or starts
+    with one of the FORBIDDEN_PREFIXES, is a violation. This holds even
+    when the name is in the allowlist.
+  * allowlist -- a resolved package that is absent from the allowlist is
+    a violation. The two rules are checked independently, so a package
+    that breaks both produces two findings. An allowlist entry that no
+    package resolves is allowed: the allowlist is a set of approved
+    names, not an inventory.
 
-Python 3 standard library only: pubspec.lock's `packages:` block is parsed
-line by line (no PyYAML). A package entry is exactly a 2-space-indented
-`name:` key below `packages:`; deeper-indented keys such as `dependency:`
-or `description:` belong to the entry above and the block ends at the first
-column-0 key (`sdks:`).
+Every entry under pubspec.lock's `packages:` block counts as resolved,
+whatever its `dependency:` kind -- direct main, direct dev, transitive or
+direct overridden. The block is parsed line by line with the standard
+library only (no PyYAML): a package is exactly a 2-space-indented
+`<name>:` key below `packages:`, lines indented 4 or more spaces belong
+to the entry above, and the block ends at the next line at column 0.
+Comments (a line whose first non-space character is `#`, or ` #` and
+everything after it) and blank lines are stripped first and never end
+the block.
 
-Usage: python3 tool/check_dependencies.py [--lockfile PATH] [--allowlist PATH]
+Input errors -- a missing or unreadable file, non-UTF-8 content, no
+`packages:` block, more than one, an empty block, a duplicate package
+key, or a malformed or duplicate allowlist entry -- are each one
+`input` finding on stderr, exit 1, never a traceback.
+
+Usage:
+  python3 tool/check_dependencies.py [--root DIR] [--lockfile PATH]
+      [--allowlist PATH]
+  --root defaults to the repository root (the parent of this script's
+  directory); relative --lockfile/--allowlist paths resolve against it.
+Exit codes: 0 pass, 1 findings, 2 usage error.
 """
 
 from __future__ import annotations
@@ -28,97 +43,204 @@ import re
 import sys
 from pathlib import Path
 
-TOOL_DIR = Path(__file__).resolve().parent
-DEFAULT_LOCKFILE = TOOL_DIR.parent / 'pubspec.lock'
-DEFAULT_ALLOWLIST = TOOL_DIR / 'dependency_allowlist.txt'
+# --------------------------------------------------------------- policy ---
+# dart_monty_core's row of the shared contract. It sits at the bottom of
+# the layering, so it must not depend on either package above it; no
+# name prefixes are forbidden here.
+FORBIDDEN = frozenset({'dart_monty', 'dart_monty_extras'})
+FORBIDDEN_PREFIXES = ()
 
-# Packages dart_monty_core must never depend on (forbidden direction).
-FORBIDDEN_PACKAGES = ('dart_monty', 'dart_monty_extras')
+# ----------------------------------------------------------- constants ----
+DEFAULT_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_LOCKFILE = Path('pubspec.lock')
+DEFAULT_ALLOWLIST = Path('tool/dependency_allowlist.txt')
 
-# A package entry: exactly two spaces, a key with no embedded colon or
-# whitespace, a colon, end of line. 4+-space-indented keys do not match.
-PACKAGE_KEY = re.compile(r'^  ([^:\s]+):$')
+# A package key: exactly two spaces, [a-z0-9_]+, a colon, end of line.
+PACKAGE_KEY = re.compile(r'^  ([a-z0-9_]+):$')
+# A legal allowlist entry.
+ALLOWLIST_ENTRY = re.compile(r'^[a-z0-9_]+$')
+# A trailing comment: whitespace followed by '#'. A '#' glued to content
+# with no whitespace in front is content, not a comment.
+TRAILING_COMMENT = re.compile(r'\s#.*$')
+
+NO_BLOCK = "lockfile has no 'packages:' block"
+MULTI_BLOCK = "lockfile has more than one 'packages:' block"
+EMPTY_BLOCK = "lockfile has an empty 'packages:' block"
 
 
-def parse_packages(lock_text: str) -> list[str]:
-    """Return the package names in the `packages:` block, in file order.
+# -------------------------------------------------------------- parsing ---
+def strip_comment(line: str) -> str:
+    """Return `line` without its comment part (may be empty).
 
-    Every dependency section of the block (direct main, direct dev,
-    transitive, overridden) is an entry at the same 2-space indent, so all
-    of them are collected.
+    A line whose first non-space character is '#' is a whole-line
+    comment. Otherwise a '# preceded by whitespace' starts a trailing
+    comment; everything from that whitespace on is removed.
     """
+    if line.lstrip().startswith('#'):
+        return ''
+    return TRAILING_COMMENT.sub('', line)
+
+
+def cleaned_lines(text: str) -> list[str]:
+    """Comment-stripped, right-stripped, non-blank lines, in file order."""
+    lines = []
+    for raw in text.splitlines():
+        line = strip_comment(raw).rstrip()
+        if line:
+            lines.append(line)
+    return lines
+
+
+def parse_lockfile(text: str) -> tuple[list[str], list[str]]:
+    """Return (resolved package names in file order, input error reasons)."""
     packages: list[str] = []
+    seen: set[str] = set()
+    errors: list[str] = []
+    blocks = 0
     in_block = False
-    for line in lock_text.splitlines():
+    multi_noted = False
+    for line in cleaned_lines(text):
         if not in_block:
-            if line.strip() == 'packages:':
-                in_block = True
+            # Only an exact column-0 `packages:` starts the block; an
+            # indented one is content of the key above it.
+            if line == 'packages:':
+                blocks += 1
+                if blocks == 1:
+                    in_block = True
+                elif not multi_noted:
+                    errors.append(MULTI_BLOCK)
+                    multi_noted = True
             continue
-        if not line.strip():
-            continue  # blank line inside the block
-        if not line.startswith((' ', '\t')):
-            break  # column-0 key (e.g. `sdks:`) ends the block
+        if not line.startswith(' '):
+            # The next line at column 0 ends the block.
+            in_block = False
+            if line == 'packages:':
+                blocks += 1
+                if not multi_noted:
+                    errors.append(MULTI_BLOCK)
+                    multi_noted = True
+            continue
+        indent = len(line) - len(line.lstrip(' '))
+        if indent != 2:
+            continue  # 4+ spaces: belongs to the current package entry
         match = PACKAGE_KEY.match(line)
-        if match:
-            packages.append(match.group(1))
-    return packages
+        if match is None:
+            errors.append(
+                f"expected '  <name>:' at 2-space indent, got '{line}'")
+            continue
+        name = match.group(1)
+        if name in seen:
+            errors.append(f"lockfile has a duplicate package key '{name}'")
+            continue
+        seen.add(name)
+        packages.append(name)
+    if blocks == 0:
+        errors.append(NO_BLOCK)
+    elif blocks == 1 and not packages:
+        errors.append(EMPTY_BLOCK)
+    return packages, errors
 
 
-def read_allowlist(path: Path) -> set[str] | None:
-    """Allowed package names, or None if the allowlist file is missing.
+def parse_allowlist(text: str) -> tuple[set[str], list[str]]:
+    """Return (allowed names, input error reasons)."""
+    allowed: set[str] = set()
+    errors: list[str] = []
+    for raw in text.splitlines():
+        entry = strip_comment(raw).strip()
+        if not entry:
+            continue
+        if not ALLOWLIST_ENTRY.match(entry):
+            errors.append(f"allowlist has a malformed entry '{entry}'")
+        elif entry in allowed:
+            errors.append(f"allowlist has a duplicate entry '{entry}'")
+        else:
+            allowed.add(entry)
+    return allowed, errors
 
-    One name per line; `#` starts a comment (whole-line or trailing).
-    """
-    if not path.is_file():
-        return None
-    names = set()
-    for raw in path.read_text(encoding='utf-8').splitlines():
-        entry = raw.split('#', 1)[0].strip()
-        if entry:
-            names.add(entry)
-    return names
+
+def read_input(path: Path, label: str) -> tuple[str | None, str | None]:
+    """Return (text, None), or (None, input error reason) on failure."""
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return None, f'{label} is missing or unreadable'
+    try:
+        text = data.decode('utf-8')
+    except UnicodeDecodeError:
+        return None, f'{label} is not valid UTF-8'
+    return text, None
+
+
+# --------------------------------------------------------------- rules ----
+def forbidden_reason(name: str) -> str | None:
+    """Why `name` breaks the direction rule, or None if it does not."""
+    if name in FORBIDDEN:
+        return f'forbidden dependency direction ({name} is in FORBIDDEN)'
+    for prefix in FORBIDDEN_PREFIXES:
+        if name.startswith(prefix):
+            return (f'forbidden dependency direction '
+                    f"(starts with forbidden prefix '{prefix}')")
+    return None
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description='Check resolved dependencies against the allowlist.')
-    parser.add_argument('--lockfile', type=Path, default=DEFAULT_LOCKFILE,
-                        help='pubspec.lock to check (default: %(default)s)')
-    parser.add_argument('--allowlist', type=Path, default=DEFAULT_ALLOWLIST,
-                        help='allowed package names, one per line (default: %(default)s)')
+        description="Check dart_monty_core's resolved dependencies "
+                    'against the dependency allowlist.')
+    parser.add_argument(
+        '--root', type=Path, default=DEFAULT_ROOT,
+        help='repository root that relative paths resolve against '
+             "(default: the parent of the script's directory)")
+    parser.add_argument(
+        '--lockfile', type=Path, default=DEFAULT_LOCKFILE,
+        help='pubspec.lock to check, relative to --root '
+             '(default: %(default)s)')
+    parser.add_argument(
+        '--allowlist', type=Path, default=DEFAULT_ALLOWLIST,
+        help='allowlist to check against, relative to --root '
+             '(default: %(default)s)')
     args = parser.parse_args(argv)
 
-    if not args.lockfile.is_file():
-        print(f'{args.lockfile}: missing pubspec.lock -- run `dart pub get` '
-              'before this check')
-        return 1
-    packages = parse_packages(args.lockfile.read_text(encoding='utf-8'))
-    if not packages:
-        print(f'{args.lockfile}: no packages resolved -- expected a non-empty '
-              '`packages:` block')
-        return 1
-    allowed = read_allowlist(args.allowlist)
-    if allowed is None:
-        print(f'{args.allowlist}: allowlist file is missing')
+    lockfile = (args.lockfile if args.lockfile.is_absolute()
+                else args.root / args.lockfile)
+    allowlist = (args.allowlist if args.allowlist.is_absolute()
+                 else args.root / args.allowlist)
+
+    # (rule, package-or-path, reason) tuples, in report order.
+    findings: list[tuple[str, str, str]] = []
+
+    lock_text, error = read_input(lockfile, 'lockfile')
+    if error is None:
+        packages, errors = parse_lockfile(lock_text)
+        findings += [('input', str(lockfile), reason) for reason in errors]
+    else:
+        packages = []
+        findings.append(('input', str(lockfile), error))
+
+    allow_text, error = read_input(allowlist, 'allowlist')
+    if error is None:
+        allowed, errors = parse_allowlist(allow_text)
+        findings += [('input', str(allowlist), reason) for reason in errors]
+    else:
+        allowed = set()
+        findings.append(('input', str(allowlist), error))
+
+    if not findings:  # input errors suppress the rule checks
+        for name in packages:
+            reason = forbidden_reason(name)
+            if reason is not None:
+                findings.append(('direction', name, reason))
+            if name not in allowed:
+                findings.append(
+                    ('allowlist', name,
+                     'resolved but not in the dependency allowlist'))
+
+    if findings:
+        for rule, subject, reason in findings:
+            print(f'FAIL {rule} {subject}: {reason}', file=sys.stderr)
         return 1
 
-    violations: list[str] = []
-    for name in packages:
-        if name in FORBIDDEN_PACKAGES:
-            violations.append(
-                f'{name}: forbidden dependency direction -- dart_monty_core '
-                'must not depend on it')
-        elif name not in allowed:
-            violations.append(
-                f'{name}: resolved in {args.lockfile} but not in the '
-                f'dependency allowlist ({args.allowlist})')
-
-    if violations:
-        for violation in violations:
-            print(violation)
-        return 1
-    print(f'PASS: {len(packages)} resolved packages all allowed; '
-          'no forbidden dependencies')
+    print(f'PASS: {len(packages)} resolved packages allowed')
     return 0
 
 

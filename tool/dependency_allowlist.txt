@@ -1,5 +1,7 @@
 # Packages allowed in dart_monty_core's pubspec.lock (generated in CI by
-# `dart pub get`). One package name per line; `#` starts a comment.
+# `dart pub get`). One package name per line; a line whose first
+# non-space character is `#`, or ` #` and everything after it, is a
+# comment.
 # tool/check_dependencies.py fails when a resolved package -- direct main,
 # direct dev, transitive or overridden -- is not listed here.
 # dart_monty and dart_monty_extras are deliberately absent: depending on
