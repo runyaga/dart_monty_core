@@ -99,5 +99,22 @@ class CheckDependenciesTest(unittest.TestCase):
         self.assertIn('no packages', output)
 
 
+    def test_key_after_packages_block_not_collected(self) -> None:
+        """A package-shaped key after the `packages:` block is not a package.
+
+        The trailing `sdks:` block only ever holds `dart: ">=3.x"` values,
+        which can never match the bare-key pattern, so by itself it proves
+        nothing about block termination. This lockfile adds a top-level
+        `extra:` section whose bare `  dart_monty:` key *does* match the
+        pattern -- and names a forbidden package, so a parser that ran
+        past the end of `packages:` would collect it and fail the check.
+        """
+        lock = lockfile('path') + 'extra:\n  dart_monty:\n'
+        result = self.run_check(lock)
+        output = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 0, output)
+        self.assertIn('PASS', result.stdout)
+
+
 if __name__ == '__main__':
     unittest.main()
