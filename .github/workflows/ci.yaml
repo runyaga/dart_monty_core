@@ -284,6 +284,10 @@ jobs:
         with:
           sdk: 3.13.5
       - run: dart pub get
+      - name: Dependency direction and allowlist
+        run: |
+          python3 tool/check_dependencies.py
+          python3 -m unittest tool/test_check_dependencies.py
       - run: python3 test/tool/docs_checks_test.py
       - run: bash tool/check_docs.sh
       - if: github.event_name == 'pull_request'
