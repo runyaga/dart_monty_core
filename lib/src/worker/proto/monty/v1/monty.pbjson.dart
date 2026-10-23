@@ -335,6 +335,15 @@ const MontyNode$json = {
       '9': 0,
       '10': 'complex'
     },
+    {
+      '1': 'module',
+      '3': 32,
+      '4': 1,
+      '5': 11,
+      '6': '.monty.v1.ModuleNode',
+      '9': 0,
+      '10': 'module'
+    },
   ],
   '8': [
     {'1': 'kind'},
@@ -366,7 +375,8 @@ final $typed_data.Uint8List montyNodeDescriptor = $convert.base64Decode(
     'bmN0aW9uEhQKBHBhdGgYGyABKAlIAFIEcGF0aBI3CgtmaWxlX2hhbmRsZRgcIAEoCzIULm1vbn'
     'R5LnYxLkZpbGVIYW5kbGVIAFIKZmlsZUhhbmRsZRIUCgRyZXByGB0gASgJSABSBHJlcHISFgoF'
     'Y3ljbGUYHiABKAlIAFIFY3ljbGUSLQoHY29tcGxleBgfIAEoCzIRLm1vbnR5LnYxLkNvbXBsZX'
-    'hIAFIHY29tcGxleEIGCgRraW5k');
+    'hIAFIHY29tcGxleBIuCgZtb2R1bGUYICABKAsyFC5tb250eS52MS5Nb2R1bGVOb2RlSABSBm1v'
+    'ZHVsZUIGCgRraW5k');
 
 @$core.Deprecated('Use indexesDescriptor instead')
 const Indexes$json = {
@@ -691,6 +701,28 @@ final $typed_data.Uint8List classInstanceNodeDescriptor = $convert.base64Decode(
     'ChFDbGFzc0luc3RhbmNlTm9kZRIdCgpjbGFzc190eXBlGAEgASgNUgljbGFzc1R5cGUSLwoLaW'
     '5zdGFuY2VfaWQYAiABKAsyDi5tb250eS52MS5VdWlkUgppbnN0YW5jZUlkEikKBWF0dHJzGAMg'
     'ASgLMhMubW9udHkudjEuTm9kZVBhaXJzUgVhdHRycw==');
+
+@$core.Deprecated('Use moduleNodeDescriptor instead')
+const ModuleNode$json = {
+  '1': 'ModuleNode',
+  '2': [
+    {'1': 'name', '3': 1, '4': 1, '5': 9, '10': 'name'},
+    {'1': 'id', '3': 2, '4': 1, '5': 11, '6': '.monty.v1.Uuid', '10': 'id'},
+    {
+      '1': 'attrs',
+      '3': 3,
+      '4': 1,
+      '5': 11,
+      '6': '.monty.v1.NodePairs',
+      '10': 'attrs'
+    },
+  ],
+};
+
+/// Descriptor for `ModuleNode`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List moduleNodeDescriptor = $convert.base64Decode(
+    'CgpNb2R1bGVOb2RlEhIKBG5hbWUYASABKAlSBG5hbWUSHgoCaWQYAiABKAsyDi5tb250eS52MS'
+    '5VdWlkUgJpZBIpCgVhdHRycxgDIAEoCzITLm1vbnR5LnYxLk5vZGVQYWlyc1IFYXR0cnM=');
 
 @$core.Deprecated('Use function_Descriptor instead')
 const Function_$json = {
@@ -2271,6 +2303,33 @@ const OsCall$json = {
       '10': 'asyncSystemSleep'
     },
     {
+      '1': 'import',
+      '3': 31,
+      '4': 1,
+      '5': 11,
+      '6': '.monty.v1.OsCall.Import',
+      '9': 0,
+      '10': 'import'
+    },
+    {
+      '1': 'import_stubs',
+      '3': 32,
+      '4': 1,
+      '5': 11,
+      '6': '.monty.v1.OsCall.ImportStubs',
+      '9': 0,
+      '10': 'importStubs'
+    },
+    {
+      '1': 'scan',
+      '3': 33,
+      '4': 1,
+      '5': 11,
+      '6': '.monty.v1.OsCall.Scan',
+      '9': 0,
+      '10': 'scan'
+    },
+    {
       '1': 'values',
       '3': 50,
       '4': 1,
@@ -2305,7 +2364,10 @@ const OsCall$json = {
     OsCall_DateTimeNow$json,
     OsCall_Urandom$json,
     OsCall_Sleep$json,
-    OsCall_AsyncSleep$json
+    OsCall_AsyncSleep$json,
+    OsCall_Scan$json,
+    OsCall_Import$json,
+    OsCall_ImportStubs$json
   ],
   '8': [
     {'1': 'call'},
@@ -2419,6 +2481,55 @@ const OsCall_AsyncSleep$json = {
   ],
 };
 
+@$core.Deprecated('Use osCallDescriptor instead')
+const OsCall_Scan$json = {
+  '1': 'Scan',
+  '2': [
+    {'1': 'path', '3': 1, '4': 1, '5': 9, '10': 'path'},
+    {
+      '1': 'max_depth',
+      '3': 2,
+      '4': 1,
+      '5': 13,
+      '9': 0,
+      '10': 'maxDepth',
+      '17': true
+    },
+    {'1': 'follow_symlinks', '3': 3, '4': 1, '5': 8, '10': 'followSymlinks'},
+    {'1': 'pattern', '3': 4, '4': 3, '5': 9, '10': 'pattern'},
+    {
+      '1': 'case_sensitive',
+      '3': 5,
+      '4': 1,
+      '5': 8,
+      '9': 1,
+      '10': 'caseSensitive',
+      '17': true
+    },
+    {'1': 'recurse_symlinks', '3': 6, '4': 1, '5': 8, '10': 'recurseSymlinks'},
+  ],
+  '8': [
+    {'1': '_max_depth'},
+    {'1': '_case_sensitive'},
+  ],
+};
+
+@$core.Deprecated('Use osCallDescriptor instead')
+const OsCall_Import$json = {
+  '1': 'Import',
+  '2': [
+    {'1': 'module', '3': 1, '4': 1, '5': 9, '10': 'module'},
+  ],
+};
+
+@$core.Deprecated('Use osCallDescriptor instead')
+const OsCall_ImportStubs$json = {
+  '1': 'ImportStubs',
+  '2': [
+    {'1': 'modules', '3': 1, '4': 3, '5': 9, '10': 'modules'},
+  ],
+};
+
 /// Descriptor for `OsCall`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List osCallDescriptor = $convert.base64Decode(
     'CgZPc0NhbGwSFwoHY2FsbF9pZBgBIAEoDVIGY2FsbElkEhgKBmV4aXN0cxgCIAEoCUgAUgZleG'
@@ -2445,19 +2556,28 @@ final $typed_data.Uint8List osCallDescriptor = $convert.base64Decode(
     'EuT3NDYWxsLkFzeW5jU2xlZXBIAFIKYXN5bmNTbGVlcBI7CgxzeXN0ZW1fc2xlZXAYHSABKAsy'
     'Fi5tb250eS52MS5Pc0NhbGwuU2xlZXBIAFILc3lzdGVtU2xlZXASSwoSYXN5bmNfc3lzdGVtX3'
     'NsZWVwGB4gASgLMhsubW9udHkudjEuT3NDYWxsLkFzeW5jU2xlZXBIAFIQYXN5bmNTeXN0ZW1T'
-    'bGVlcBInCgZ2YWx1ZXMYMiABKAsyDy5tb250eS52MS5BcmVuYVIGdmFsdWVzEioKEWFsbG93X2'
-    'VhZ2VyX2F3YWl0GDMgASgIUg9hbGxvd0VhZ2VyQXdhaXQSMQoIcG9zaXRpb24YNCABKAsyFS5t'
-    'b250eS52MS5Tb3VyY2VSYW5nZVIIcG9zaXRpb24aMwoJVGV4dFdyaXRlEhIKBHBhdGgYASABKA'
-    'lSBHBhdGgSEgoEZGF0YRgCIAEoCVIEZGF0YRo0CgpCeXRlc1dyaXRlEhIKBHBhdGgYASABKAlS'
-    'BHBhdGgSEgoEZGF0YRgCIAEoDFIEZGF0YRouCgRPcGVuEhIKBHBhdGgYASABKAlSBHBhdGgSEg'
-    'oEbW9kZRgCIAEoCVIEbW9kZRpQCgVNa2RpchISCgRwYXRoGAEgASgJUgRwYXRoEhgKB3BhcmVu'
-    'dHMYAiABKAhSB3BhcmVudHMSGQoIZXhpc3Rfb2sYAyABKAhSB2V4aXN0T2saLAoGUmVuYW1lEh'
-    'AKA3NyYxgBIAEoCVIDc3JjEhAKA2RzdBgCIAEoCVIDZHN0GjQKBkdldGVudhIQCgNrZXkYASAB'
-    'KAlSA2tleRIYCgdkZWZhdWx0GAIgASgNUgdkZWZhdWx0GiIKCFRpbWVDYWxsEhYKBmNhbGxlch'
-    'gBIAEoCVIGY2FsbGVyGj0KC0RhdGVUaW1lTm93EicKAnR6GAEgASgLMhIubW9udHkudjEuVGlt'
-    'ZVpvbmVIAFICdHqIAQFCBQoDX3R6Gh0KB1VyYW5kb20SEgoEc2l6ZRgBIAEoBFIEc2l6ZRohCg'
-    'VTbGVlcBIYCgdzZWNvbmRzGAEgASgBUgdzZWNvbmRzGiIKCkFzeW5jU2xlZXASFAoFZGVsYXkY'
-    'ASABKAFSBWRlbGF5QgYKBGNhbGw=');
+    'bGVlcBIxCgZpbXBvcnQYHyABKAsyFy5tb250eS52MS5Pc0NhbGwuSW1wb3J0SABSBmltcG9ydB'
+    'JBCgxpbXBvcnRfc3R1YnMYICABKAsyHC5tb250eS52MS5Pc0NhbGwuSW1wb3J0U3R1YnNIAFIL'
+    'aW1wb3J0U3R1YnMSKwoEc2NhbhghIAEoCzIVLm1vbnR5LnYxLk9zQ2FsbC5TY2FuSABSBHNjYW'
+    '4SJwoGdmFsdWVzGDIgASgLMg8ubW9udHkudjEuQXJlbmFSBnZhbHVlcxIqChFhbGxvd19lYWdl'
+    'cl9hd2FpdBgzIAEoCFIPYWxsb3dFYWdlckF3YWl0EjEKCHBvc2l0aW9uGDQgASgLMhUubW9udH'
+    'kudjEuU291cmNlUmFuZ2VSCHBvc2l0aW9uGjMKCVRleHRXcml0ZRISCgRwYXRoGAEgASgJUgRw'
+    'YXRoEhIKBGRhdGEYAiABKAlSBGRhdGEaNAoKQnl0ZXNXcml0ZRISCgRwYXRoGAEgASgJUgRwYX'
+    'RoEhIKBGRhdGEYAiABKAxSBGRhdGEaLgoET3BlbhISCgRwYXRoGAEgASgJUgRwYXRoEhIKBG1v'
+    'ZGUYAiABKAlSBG1vZGUaUAoFTWtkaXISEgoEcGF0aBgBIAEoCVIEcGF0aBIYCgdwYXJlbnRzGA'
+    'IgASgIUgdwYXJlbnRzEhkKCGV4aXN0X29rGAMgASgIUgdleGlzdE9rGiwKBlJlbmFtZRIQCgNz'
+    'cmMYASABKAlSA3NyYxIQCgNkc3QYAiABKAlSA2RzdBo0CgZHZXRlbnYSEAoDa2V5GAEgASgJUg'
+    'NrZXkSGAoHZGVmYXVsdBgCIAEoDVIHZGVmYXVsdBoiCghUaW1lQ2FsbBIWCgZjYWxsZXIYASAB'
+    'KAlSBmNhbGxlcho9CgtEYXRlVGltZU5vdxInCgJ0ehgBIAEoCzISLm1vbnR5LnYxLlRpbWVab2'
+    '5lSABSAnR6iAEBQgUKA190ehodCgdVcmFuZG9tEhIKBHNpemUYASABKARSBHNpemUaIQoFU2xl'
+    'ZXASGAoHc2Vjb25kcxgBIAEoAVIHc2Vjb25kcxoiCgpBc3luY1NsZWVwEhQKBWRlbGF5GAEgAS'
+    'gBUgVkZWxheRr3AQoEU2NhbhISCgRwYXRoGAEgASgJUgRwYXRoEiAKCW1heF9kZXB0aBgCIAEo'
+    'DUgAUghtYXhEZXB0aIgBARInCg9mb2xsb3dfc3ltbGlua3MYAyABKAhSDmZvbGxvd1N5bWxpbm'
+    'tzEhgKB3BhdHRlcm4YBCADKAlSB3BhdHRlcm4SKgoOY2FzZV9zZW5zaXRpdmUYBSABKAhIAVIN'
+    'Y2FzZVNlbnNpdGl2ZYgBARIpChByZWN1cnNlX3N5bWxpbmtzGAYgASgIUg9yZWN1cnNlU3ltbG'
+    'lua3NCDAoKX21heF9kZXB0aEIRCg9fY2FzZV9zZW5zaXRpdmUaIAoGSW1wb3J0EhYKBm1vZHVs'
+    'ZRgBIAEoCVIGbW9kdWxlGicKC0ltcG9ydFN0dWJzEhgKB21vZHVsZXMYASADKAlSB21vZHVsZX'
+    'NCBgoEY2FsbA==');
 
 @$core.Deprecated('Use nameLookupDescriptor instead')
 const NameLookup$json = {

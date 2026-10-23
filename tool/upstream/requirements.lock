@@ -15,21 +15,21 @@
 # PyPI rather than relaxing --require-hashes.
 #
 # Checked by tool/check_upstream_pin.sh (offline: shape; --online: install).
-pydantic-monty==1.1.0 \
-    --hash=sha256:51037ef7908535b49794a70494b81f32bd3d70a575600b1285a961a4ee838315 \
-    --hash=sha256:31d61d045b4779869bf09f7653e34d3fd2f52371d08b689619eb707e9dcdb282
-pydantic-monty-client==1.1.0 \
-    --hash=sha256:432326f4d519fcadbffe6b8e26465bceba03edd810551b98d909ffee8e6a6bc4 \
-    --hash=sha256:b8edf4ebde6ccd40a483d87b6889f7e19183fa7fef74ff37a3c2e4c2c427fbb3 \
-    --hash=sha256:a5eca05016900cf385c5049db6c643763ca7ab3635beb578831825638c3fa60f \
-    --hash=sha256:ed3309bbb3f8199fc014f48f63e32dee18f8c0b6f5f62fd8f88799a30c79408b \
-    --hash=sha256:34ae1937375a3542a2a40b8aff56a18ce9772988f389c7db619b6af152d1eb07 \
-    --hash=sha256:d84da5dcdf55e88b84a078ebb2a9c2b265c2f6780507a5d9697dca9eb741d0ed \
-    --hash=sha256:cb21da6e4e25d52387b49d196aa6388585f3856c04c7f5abd1129c422238638c
-pydantic-monty-runtime==1.1.0 \
-    --hash=sha256:1f6b68b078b058dcf64f53c1d0e4cd4a2d843c1bff7c9de5d21eef723be961aa \
-    --hash=sha256:7cee4303924ad44a858ec3efdde4123cadbf032cb23006a2d260c73d68748d60 \
-    --hash=sha256:ac03475cf60b3a07d7bfdb3a32c3fcfb6b026d903b536856d097001145960dc5
+pydantic-monty==1.3.0 \
+    --hash=sha256:dc1e6588044bd6bb2e32d0b8624bedc8400692dbafdef8a37079bf565f17b7de \
+    --hash=sha256:d7a406b98cba2305822a7023a125cb4238f3d97c43b9f67b534835804a4a9a70
+pydantic-monty-client==1.3.0 \
+    --hash=sha256:b7bf8c47fb82263b46abbcce8c082284f4909386c84001f8471b35440b0159e4 \
+    --hash=sha256:e0bfc1f95d645130e7d0b13b29973f0fc247c0e286cfd971c6709f87e68ed512 \
+    --hash=sha256:bd08a77a0c42f6530ddb268488c424aaa30102ed865a0634d81d20cff84ee666 \
+    --hash=sha256:8d082bde5bfeabf2c3fd2e7294dade24c862d2b14cf4ba6c7ccd2fd4107457f9 \
+    --hash=sha256:53df6a9e9387868dcb5e7d04d8fb906e65c86104c971e5b40826c63f0e6a78fc \
+    --hash=sha256:d2276d9ab245ec4a9dd3455b3c95d91717aac3bcb7205a3920398f12fc869862 \
+    --hash=sha256:066503bdce0b227f40fea6aa40c9fc48ecf35698b121eff04f78b6eff204f5b4
+pydantic-monty-runtime==1.3.0 \
+    --hash=sha256:9466e6ff0c9d48ad9c355e728d9b54d02cbabec583ddc6f32d73b81d79a4a444 \
+    --hash=sha256:7948355d47bd296ddaab6aae3364a6fc760b0b836c03ea9c9e8c3f8f5fd0459b \
+    --hash=sha256:fe299a91e2d3888fb8abd70ba0673766b3296f07b70ad5d2833765298e5771d4
 typing-extensions==4.16.0 \
     --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8 \
     --hash=sha256:dc983d19a509c94dba722ee6abd33940f7c05a89e243c47e907eb4db6f1a43e5
