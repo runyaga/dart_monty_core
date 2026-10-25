@@ -8,6 +8,7 @@ import 'dart:collection';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:dart_monty_core/src/fake_answers.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/platform/value_graph_budget.dart';
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
@@ -16,6 +17,7 @@ import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/monty_snapshot.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/python_rules.dart';
+import 'package:dart_monty_core/src/worker/raised_record.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:test/test.dart';
 
@@ -330,6 +332,176 @@ void main() {
       );
       expect(error, isA<MontyRuntimeError>());
     });
+
+    test(
+      'JSON payload bounds use the optional outer message and allow one past doc',
+      () {
+        // A JSON error's message is its `msg` with the position appended, so
+        // upstream sizes `msg` by that message's UTF-8 bytes when the wire
+        // carries one, and by the cap when it does not.
+        MontyExceptionValue read(String? message, pb.ExcData data) =>
+            raisedError(
+              pb.RaisedException(
+                excType: 'json.JSONDecodeError',
+                message: message,
+                data: data,
+              ),
+            ).exception;
+
+        // Over the cap yet under a longer message: kept. 40 * 1024 'é' are
+        // 80 KiB of UTF-8, more than the 70 KiB `msg`.
+        final long = 'x' * (70 * 1024);
+        final kept = read('é' * (40 * 1024), _jsonData(msg: long));
+        expect(kept.excType, 'json.JSONDecodeError');
+        expect(_attrs(kept)['msg'], MontyString(long));
+
+        // Under the cap yet longer than the message: dropped. 100 'é' are
+        // 200 UTF-8 bytes against 150 ASCII ones.
+        expect(
+          read('x' * 150, _jsonData(msg: 'é' * 100)).excType,
+          'ValueError',
+        );
+
+        // An absent message leaves the cap alone: at it kept, past it
+        // dropped.
+        expect(
+          read(null, _jsonData(doc: null, msg: 'x' * cap)).excType,
+          'json.JSONDecodeError',
+        );
+        expect(
+          read(null, _jsonData(doc: null, msg: 'x' * (cap + 1))).excType,
+          'ValueError',
+        );
+
+        // An empty message is a carried one, not an absent one: only an
+        // empty `msg` fits under it.
+        expect(read('', _jsonData(doc: null)).excType, 'ValueError');
+        expect(
+          read('', _jsonData(doc: null, msg: '')).excType,
+          'json.JSONDecodeError',
+        );
+
+        // A doc that is present, empty or absent: a present one bounds
+        // `pos`, and an absent one reads as '' and leaves `pos` alone.
+        const canonical = 'Expecting value: line 1 column 7 (char 6)';
+        expect(
+          _attrs(read(canonical, _jsonData()))['doc'],
+          const MontyString('{"a": x}'),
+        );
+        expect(
+          read(canonical, _jsonData(doc: '', pos: Int64(1))).excType,
+          'json.JSONDecodeError',
+        );
+        final noDoc = _attrs(
+          read(canonical, _jsonData(doc: null, pos: Int64(2000001))),
+        );
+        expect(noDoc['doc'], const MontyString(''));
+        expect(noDoc['pos'], const MontyInt(2000001));
+
+        // One past the doc's characters is kept -- `tomllib` reports an
+        // escape cut off by the end of input one past it -- and two past is
+        // dropped. The count is characters: '€€€' is 3 of them, 9 bytes.
+        expect(
+          read(canonical, _jsonData(doc: '[1,', pos: Int64(4))).excType,
+          'json.JSONDecodeError',
+        );
+        expect(
+          read(canonical, _jsonData(doc: '€€€', pos: Int64(4))).excType,
+          'json.JSONDecodeError',
+        );
+        expect(
+          read(canonical, _jsonData(doc: '[1,', pos: Int64(5))).excType,
+          'ValueError',
+        );
+        expect(
+          read(canonical, _jsonData(doc: '€€€', pos: Int64(5))).excType,
+          'ValueError',
+        );
+
+        // An oversized doc, a zero line or a zero column drops the payload
+        // without rejecting the exception it arrived on.
+        for (final data in [
+          _jsonData(doc: 'x' * (cap + 1)),
+          _jsonData(lineno: 0),
+          _jsonData(colno: 0),
+        ]) {
+          final error = raisedError(
+            pb.RaisedException(
+              excType: 'json.JSONDecodeError',
+              message: canonical,
+              data: data,
+            ),
+          );
+          expect(error, isA<MontyRuntimeError>());
+          expect(error.exception.excType, 'ValueError');
+          expect(error.exception.attributes, isEmpty);
+          expect(
+            (error as MontyRuntimeError).display('type-msg'),
+            'json.JSONDecodeError: $canonical',
+          );
+        }
+
+        // Both `payloadOf` callers read the same bounds: the wire record,
+        // and the fake replay of a host answer.
+        final carried = pb.RaisedException(
+          excType: 'json.JSONDecodeError',
+          message: 'x' * (cap + 1),
+          data: _jsonData(doc: null, msg: 'x' * (cap + 1)),
+        );
+        expect(
+          RaisedRecord.fromWire(carried).payload?.attributes['msg'],
+          MontyString('x' * (cap + 1)),
+        );
+        expect(
+          exceptionOf(carried).attributes['msg'],
+          MontyString('x' * (cap + 1)),
+        );
+
+        final onePast = pb.RaisedException(
+          excType: 'json.JSONDecodeError',
+          message: canonical,
+          data: _jsonData(doc: '[1,', pos: Int64(4)),
+        );
+        expect(
+          RaisedRecord.fromWire(onePast).payload?.attributes['pos'],
+          const MontyInt(4),
+        );
+        expect(exceptionOf(onePast).attributes['pos'], const MontyInt(4));
+
+        final twoPast = pb.RaisedException(
+          excType: 'json.JSONDecodeError',
+          message: canonical,
+          data: _jsonData(doc: '[1,', pos: Int64(5)),
+        );
+        expect(RaisedRecord.fromWire(twoPast).payload, isNull);
+        expect(exceptionOf(twoPast).attributes, isEmpty);
+
+        final longer = pb.RaisedException(
+          excType: 'json.JSONDecodeError',
+          message: 'x' * 150,
+          data: _jsonData(doc: null, msg: 'é' * 100),
+        );
+        expect(RaisedRecord.fromWire(longer).payload, isNull);
+        final longerReplay = exceptionOf(longer);
+        expect(longerReplay.excType, 'json.JSONDecodeError');
+        expect(longerReplay.attributes, isEmpty);
+
+        // The Unicode caps stand either way: no message, however long,
+        // loosens them, and none, however short, tightens them.
+        expect(
+          _read(
+            'UnicodeEncodeError',
+            _strData('x' * (cap + 1)),
+            'x' * (cap + 1),
+          ).excType,
+          'ValueError',
+        );
+        expect(
+          _read('UnicodeEncodeError', _strData('x' * cap), '').excType,
+          'UnicodeEncodeError',
+        );
+      },
+    );
   });
 
   group('attributes in ==, hashCode and the walk budget', () {
