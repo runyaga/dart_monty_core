@@ -7,6 +7,7 @@
 // referenced twice. Decoding them, and re-encoding to the same bytes, on the
 // VM, dart2js and dart2wasm is what shows the generated code and package:
 // protobuf are wire-compatible with the worker, not merely self-consistent.
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dart_monty_core/dart_monty_core.dart' hide Frame;
@@ -15,6 +16,7 @@ import 'package:dart_monty_core/src/worker/frame.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/wire_scalars.dart';
 import 'package:fixnum/fixnum.dart';
+import 'package:protobuf/protobuf.dart';
 import 'package:test/test.dart';
 
 import '../../_accessors.dart';
@@ -192,6 +194,374 @@ void main() {
       pb.ChildEvent_Kind.complete,
     );
   });
+
+  test(
+    'generated bindings recognize v1.2.0 module and OS messages',
+    _checkV120ModuleAndOsMessages,
+  );
 }
 
 Uint8List _bytes(List<int> l) => Uint8List.fromList(l);
+
+// ---------------------------------------------------------------------------
+// Upstream v1.2.0 module and OS messages
+// ---------------------------------------------------------------------------
+//
+// Upstream monty v1.2.0 added a host module value (`MontyNode.module`, tag
+// 32) and three OS-call arms (`OsCall.import` 31, `OsCall.import_stubs` 32,
+// `OsCall.scan` 33). The bytes below are written by hand, the way upstream's
+// own prost encoder writes them, so a pass means the generated bindings read
+// upstream's bytes -- not merely that they agree with themselves.
+//
+// The messages are read through the generated message's reflection
+// (`info_.fieldInfo`) rather than by naming their fields. A binding that does
+// not know a tag then fails an assertion, naming the tag, instead of failing
+// to compile or quietly keeping the bytes as unknown fields: unknown fields
+// are written back out unchanged, so a byte-for-byte round trip alone would
+// pass on bindings that understand nothing of the message.
+//
+// Upstream: crates/monty-proto/proto/monty/v1/monty.proto at v1.2.0, and the
+// round-trip tests crates/monty-proto/tests/roundtrip.rs and
+// crates/monty-proto/tests/differential.rs, whose hand-written encoder is
+// what these bytes imitate.
+
+/// The wire type of a varint field.
+const int _wireVarint = 0;
+
+/// The wire type of a length-delimited field.
+const int _wireBytes = 2;
+
+/// A protobuf varint, written by hand.
+List<int> _varint(int value) {
+  final bytes = <int>[];
+  var rest = value;
+  while (rest > 0x7f) {
+    bytes.add((rest & 0x7f) | 0x80);
+    rest >>= 7;
+  }
+
+  bytes.add(rest);
+
+  return bytes;
+}
+
+/// A tag header: the field number and the wire type.
+List<int> _header(int field, int wireType) => _varint((field << 3) | wireType);
+
+/// A length-delimited field: the header, the length and the payload.
+List<int> _lengthDelimited(int field, List<int> payload) => [
+  ..._header(field, _wireBytes),
+  ..._varint(payload.length),
+  ...payload,
+];
+
+/// A varint field: the header and the value.
+List<int> _varintField(int field, int value) => [
+  ..._header(field, _wireVarint),
+  ..._varint(value),
+];
+
+/// Asserts that the generated bindings know [tag] on [message].
+///
+/// A tag the bindings do not know is an assertion failure, not a thrown
+/// [ArgumentError]: the point is that an incomplete binding fails the test
+/// with a message that names the tag it is missing.
+void _expectRecognized(GeneratedMessage message, int tag, String what) {
+  expect(
+    message.info_.fieldInfo.containsKey(tag),
+    isTrue,
+    reason: '$what (tag $tag) is not a recognized field',
+  );
+}
+
+/// The value of [tag] on [message], or null when it is not set.
+///
+/// The tag is checked first, so a binding that does not know it fails an
+/// assertion instead of reading a field that is not there.
+Object? _value(GeneratedMessage message, int tag, String what) {
+  _expectRecognized(message, tag, what);
+
+  return message.getFieldOrNull(tag);
+}
+
+/// The string on [tag].
+String _string(GeneratedMessage message, int tag, String what) {
+  final value = _value(message, tag, what);
+  expect(value, isA<String>(), reason: '$what (tag $tag) is not a string');
+  if (value case final String text) {
+    return text;
+  }
+
+  fail('$what (tag $tag) is not a string');
+}
+
+/// The integer on [tag].
+int _int(GeneratedMessage message, int tag, String what) {
+  final value = _value(message, tag, what);
+  expect(value, isA<int>(), reason: '$what (tag $tag) is not an integer');
+  if (value case final int number) {
+    return number;
+  }
+
+  fail('$what (tag $tag) is not an integer');
+}
+
+/// The boolean on [tag].
+bool _bool(GeneratedMessage message, int tag, String what) {
+  final value = _value(message, tag, what);
+  expect(value, isA<bool>(), reason: '$what (tag $tag) is not a boolean');
+  if (value case final bool flag) {
+    return flag;
+  }
+
+  fail('$what (tag $tag) is not a boolean');
+}
+
+/// The bytes on [tag].
+List<int> _bytesOf(GeneratedMessage message, int tag, String what) {
+  final value = _value(message, tag, what);
+  expect(value, isA<List<int>>(), reason: '$what (tag $tag) is not bytes');
+  if (value case final List<int> bytes) {
+    return bytes;
+  }
+
+  fail('$what (tag $tag) is not bytes');
+}
+
+/// The message on [tag].
+GeneratedMessage _message(GeneratedMessage message, int tag, String what) {
+  final value = _value(message, tag, what);
+  expect(
+    value,
+    isA<GeneratedMessage>(),
+    reason: '$what (tag $tag) is not a message',
+  );
+  if (value case final GeneratedMessage nested) {
+    return nested;
+  }
+
+  fail('$what (tag $tag) is not a message');
+}
+
+/// The messages on [tag].
+List<GeneratedMessage> _messages(
+  GeneratedMessage message,
+  int tag,
+  String what,
+) {
+  final value = _value(message, tag, what);
+  expect(
+    value,
+    isA<List<GeneratedMessage>>(),
+    reason: '$what (tag $tag) is not a list of messages',
+  );
+  if (value case final List<GeneratedMessage> nested) {
+    return nested;
+  }
+
+  fail('$what (tag $tag) is not a list of messages');
+}
+
+/// The strings on [tag].
+List<String> _strings(GeneratedMessage message, int tag, String what) {
+  final value = _value(message, tag, what);
+  expect(
+    value,
+    isA<List<String>>(),
+    reason: '$what (tag $tag) is not a list of strings',
+  );
+  if (value case final List<String> nested) {
+    return nested;
+  }
+
+  fail('$what (tag $tag) is not a list of strings');
+}
+
+/// A new, empty message of the type [tag] carries on [owner].
+GeneratedMessage _newMessage(GeneratedMessage owner, int tag, String what) {
+  _expectRecognized(owner, tag, what);
+  final create = owner.info_.fieldInfo[tag]?.subBuilder;
+  if (create == null) {
+    fail('$what (tag $tag) is not a message field');
+  }
+
+  return create();
+}
+
+/// The v1.2.0 module and OS messages, read through the generated bindings.
+void _checkV120ModuleAndOsMessages() {
+  _checkModuleValue();
+  _checkOsImport();
+  _checkOsImportStubs();
+  _checkOsScan();
+}
+
+/// The host module value upstream carries in `MontyNode.module` (tag 32).
+void _checkModuleValue() {
+  final uuid = List.generate(16, (index) => index + 1);
+  final moduleBytes = <int>[
+    // ModuleNode.name
+    ..._lengthDelimited(1, utf8.encode('pkg.sub')),
+    // ModuleNode.id, a Uuid
+    ..._lengthDelimited(2, _lengthDelimited(1, uuid)),
+    // ModuleNode.attrs, a NodePairs of one (name, value) pair
+    ..._lengthDelimited(
+      3,
+      _lengthDelimited(1, [..._varintField(1, 10), ..._varintField(2, 11)]),
+    ),
+  ];
+  final frame = _lengthDelimited(32, moduleBytes);
+
+  final node = pb.MontyNode.fromBuffer(frame);
+  _expectRecognized(node, 32, 'MontyNode.module');
+  final module = _message(node, 32, 'MontyNode.module');
+  expect(
+    module.unknownFields.isEmpty,
+    isTrue,
+    reason: 'ModuleNode kept unknown bytes',
+  );
+  expect(_string(module, 1, 'ModuleNode.name'), 'pkg.sub');
+  final id = _message(module, 2, 'ModuleNode.id');
+  expect(_bytesOf(id, 1, 'Uuid.data'), uuid);
+  final attrs = _message(module, 3, 'ModuleNode.attrs');
+  final pairs = _messages(attrs, 1, 'NodePairs.pairs');
+  expect(pairs, hasLength(1));
+  final pair = firstItem(pairs);
+  expect(_int(pair, 1, 'NodePair.key'), 10);
+  expect(_int(pair, 2, 'NodePair.value'), 11);
+  expect(module.writeToBuffer(), moduleBytes);
+  expect(node.writeToBuffer(), frame);
+}
+
+/// The `OsCall.import` arm (tag 31): the module the sandbox could not find.
+void _checkOsImport() {
+  final importBytes = _lengthDelimited(1, utf8.encode('pkg.sub'));
+  final frame = _lengthDelimited(31, importBytes);
+
+  final call = pb.OsCall.fromBuffer(frame);
+  _expectRecognized(call, 31, 'OsCall.import');
+  final import = _message(call, 31, 'OsCall.import');
+  expect(
+    import.unknownFields.isEmpty,
+    isTrue,
+    reason: 'Import kept unknown bytes',
+  );
+  expect(_string(import, 1, 'Import.module'), 'pkg.sub');
+  expect(import.writeToBuffer(), importBytes);
+  expect(call.writeToBuffer(), frame);
+
+  // The same message on its own, decoded from the bytes upstream writes for
+  // it rather than from the frame that carries it.
+  final standalone = _newMessage(call, 31, 'OsCall.import')
+    ..mergeFromBuffer(importBytes);
+  expect(
+    standalone.unknownFields.isEmpty,
+    isTrue,
+    reason: 'Import kept unknown bytes',
+  );
+  expect(_string(standalone, 1, 'Import.module'), 'pkg.sub');
+  expect(standalone.writeToBuffer(), importBytes);
+}
+
+/// The `OsCall.import_stubs` arm (tag 32): the modules to type check.
+void _checkOsImportStubs() {
+  final stubsBytes = <int>[
+    ..._lengthDelimited(1, utf8.encode('pkg')),
+    ..._lengthDelimited(1, utf8.encode('pkg.sub')),
+  ];
+  final frame = _lengthDelimited(32, stubsBytes);
+
+  final call = pb.OsCall.fromBuffer(frame);
+  _expectRecognized(call, 32, 'OsCall.import_stubs');
+  final stubs = _message(call, 32, 'OsCall.import_stubs');
+  expect(
+    stubs.unknownFields.isEmpty,
+    isTrue,
+    reason: 'ImportStubs kept unknown bytes',
+  );
+  expect(_strings(stubs, 1, 'ImportStubs.modules'), ['pkg', 'pkg.sub']);
+  expect(stubs.writeToBuffer(), stubsBytes);
+  expect(call.writeToBuffer(), frame);
+}
+
+/// The `OsCall.scan` arm (tag 33): a subtree listing.
+void _checkOsScan() {
+  final path = utf8.encode('/mnt/data');
+  // The whole tree, with CPython's default case sensitivity: both optional
+  // fields absent.
+  final absent = _lengthDelimited(1, path);
+  // The same listing with max_depth explicitly zero and case_sensitive
+  // explicitly false. Upstream's optional fields carry presence, so both
+  // are on the wire even though they hold the default value.
+  final explicit = <int>[
+    ...absent,
+    ..._varintField(2, 0),
+    ..._varintField(5, 0),
+  ];
+  // A glob listing: a pattern to prune by and both symlink switches.
+  final glob = <int>[
+    ...absent,
+    ..._varintField(3, 1),
+    ..._lengthDelimited(4, utf8.encode('**')),
+    ..._lengthDelimited(4, utf8.encode('*.py')),
+    ..._varintField(6, 1),
+  ];
+
+  _checkScanAbsent(absent);
+  _checkScanExplicit(explicit);
+  _checkScanGlob(glob);
+}
+
+/// A listing of the whole tree: neither optional field is set.
+void _checkScanAbsent(List<int> bytes) {
+  final scan = _scan(bytes);
+  expect(
+    _value(scan, 2, 'Scan.max_depth'),
+    isNull,
+    reason: 'max_depth is absent',
+  );
+  expect(
+    _value(scan, 5, 'Scan.case_sensitive'),
+    isNull,
+    reason: 'case_sensitive is absent',
+  );
+  expect(scan.writeToBuffer(), bytes);
+}
+
+/// A listing with both optional fields set to their default value.
+///
+/// Upstream's optional fields carry presence, so an explicit zero and an
+/// explicit false are on the wire where an absent field is not.
+void _checkScanExplicit(List<int> bytes) {
+  final scan = _scan(bytes);
+  expect(
+    _value(scan, 2, 'Scan.max_depth'),
+    0,
+    reason: 'max_depth is explicitly zero',
+  );
+  expect(
+    _value(scan, 5, 'Scan.case_sensitive'),
+    false,
+    reason: 'case_sensitive is explicitly false',
+  );
+  expect(scan.writeToBuffer(), bytes);
+}
+
+/// A glob listing: a pattern to prune by and both symlink switches.
+void _checkScanGlob(List<int> bytes) {
+  final scan = _scan(bytes);
+  expect(_bool(scan, 3, 'Scan.follow_symlinks'), isTrue);
+  expect(_strings(scan, 4, 'Scan.pattern'), ['**', '*.py']);
+  expect(_bool(scan, 6, 'Scan.recurse_symlinks'), isTrue);
+  expect(scan.writeToBuffer(), bytes);
+}
+
+/// The `Scan` message carried by an `OsCall.scan` (tag 33) holding [bytes].
+GeneratedMessage _scan(List<int> bytes) {
+  final call = pb.OsCall.fromBuffer(_lengthDelimited(33, bytes));
+  _expectRecognized(call, 33, 'OsCall.scan');
+  final scan = _message(call, 33, 'OsCall.scan');
+  expect(scan.unknownFields.isEmpty, isTrue, reason: 'Scan kept unknown bytes');
+
+  return scan;
+}
