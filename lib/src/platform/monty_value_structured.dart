@@ -489,3 +489,79 @@ String _pyReprRune(int rune, String quote) {
     _ => c,
   };
 }
+
+// ---------------------------------------------------------------------------
+// ExternalModule
+// ---------------------------------------------------------------------------
+
+/// A host module the sandbox imports: upstream's `PyExternalModule`
+/// (monty-proto `src/python/external_module.rs`).
+///
+/// The host builds one and gives it to the session's `external_modules`
+/// mapping, and the sandbox imports it by name. [attrs] is copied and
+/// checked once, at construction, so a module never changes after: its keys
+/// must be strings and identifiers (a keyword is not one), and a nested
+/// [ExternalModule] may sit only under a key naming a module the sandbox
+/// does not itself provide. Ordinary values are neither checked nor
+/// converted at construction; [attrValue] converts one when it is read, the
+/// moment an import would.
+///
+/// Two are equal, as upstream's `__eq__`, when their ids, attrs and stubs
+/// all match; the hash agrees.
+///
+/// STUB: every member below returns a wrong value, checks nothing and never
+/// throws. The real behaviour is pinned by monty_value_test.dart's
+/// 'ExternalModule copies attributes and validates names identity and
+/// stubs'.
+final class ExternalModule {
+  /// Creates a module from a shallow copy of [attrs].
+  ///
+  /// A key that is not a [String] is an [ArgumentError] with upstream's
+  /// message (`ExternalModule attrs must have str keys, not <type>`), as is
+  /// one that is not an identifier or is a keyword
+  /// (`ExternalModule attrs must have identifier keys, not '<key>'`). A
+  /// nested [ExternalModule] is imported by its key, so that key must also
+  /// name a module the sandbox does not provide itself: an [ArgumentError]
+  /// that names the key and says the module is provided by the sandbox and
+  /// cannot be replaced. [id] must be a uuid, canonical whatever its case;
+  /// a random version 4 one is made when it is absent, as a class id is.
+  //
+  // The stub stores the attrs given and a blank id; the real one copies,
+  // checks keys and makes a uuid4, so no const constructor can serve.
+  // ignore: prefer-declaring-const-constructor
+  ExternalModule(Map<Object?, Object?> attrs, {this.stubs, String? id})
+    : _given = attrs,
+      id = id ?? '';
+
+  /// The module's `.pyi` source, `null` when it has none.
+  final String? stubs;
+
+  /// Identity of the module, a canonical lowercase uuid string; every import
+  /// of the module carries it.
+  final String id;
+
+  /// The attrs given at construction, kept only so the stub's [toString]
+  /// can count them; the copy, the checks and the conversions are not
+  /// implemented yet.
+  final Map<Object?, Object?> _given;
+
+  /// A copy of the module's attributes, protected ones included. Editing it,
+  /// or the map given at construction, changes neither the module nor the
+  /// next copy read; the values are the very objects given.
+  Map<String, Object?> get attrs => {};
+
+  /// The public attributes, in insertion order: every attribute whose name
+  /// does not start with `_`.
+  Map<String, Object?> get publicAttrs => {};
+
+  /// The attribute [name] as the sandbox sees it: `null` when [name] is
+  /// absent or protected (its name starts with `_`), a nested
+  /// [ExternalModule] as itself, and any other value converted now —
+  /// deferred from construction — by `MontyValue.fromDart`.
+  Object? attrValue(String name) => MontyString(name);
+
+  /// Upstream's `__repr__`:
+  /// `ExternalModule(<attrs>, stubs=<stubs or None>, id=UUID('<id>'))`.
+  @override
+  String toString() => 'ExternalModule(${_given.length} attrs)';
+}
