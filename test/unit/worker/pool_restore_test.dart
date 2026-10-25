@@ -10,6 +10,7 @@ import 'package:test/test.dart';
 
 import '_pool_protocol_support.dart';
 import '_pool_support.dart';
+import '_restore_cases.dart';
 import '_scripted_channel.dart';
 
 Future<void> _restoredSleep(String mode) async {
@@ -92,6 +93,7 @@ Future<void> _wrongDumpKind(bool snapshot) async {
 }
 
 void main() {
+  registerSessionConfigMemoryGcRecursionTests();
   for (final mode in ['system', 'call_host', 'zero']) {
     test(
       'restored waits and charges keep $mode checkout cap',
