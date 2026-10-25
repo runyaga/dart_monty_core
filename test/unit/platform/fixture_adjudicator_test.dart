@@ -333,4 +333,327 @@ void main() {
       );
     });
   });
+
+  // Upstream's `Path.scan` — the one OS call behind `os.scandir`, `os.walk`,
+  // `Path.walk` and `Path.glob` — as the fixture host must answer it.
+  //
+  // WHERE THE EXPECTED VALUES COME FROM: upstream's scan contract at monty
+  // v1.2.0 (crates/monty-types/src/scan.rs, crates/monty-fs/tests/scan.rs,
+  // crates/monty-datatest/src/main.rs:1131). The reply is a sequence of
+  // (path, is_dir, is_file, is_symlink) entries whose paths are relative to
+  // the root, '' being the root itself; a root that is not there is a
+  // FileNotFoundError naming it, spelled as the root was spelled.
+  //
+  // The fixture host has no scan handler yet, so the call is declined. The
+  // stub below answers a declined call with a wrong value rather than
+  // letting the decline escape, so this test fails on its first assertion
+  // instead of on an exception; once the handler lands, the same call
+  // reaches it.
+  test(
+    'WorkerFixtureOs scans reachable trees and preserves root errors',
+    () async {
+      /// The five keywords upstream's scan takes, all of them on every call: a
+      /// handler that reads them all must find them all.
+      Map<String, MontyValue> keywords({
+        MontyValue maxDepth = const MontyNone(),
+        bool followSymlinks = false,
+        MontyValue pattern = const MontyNone(),
+        bool caseSensitive = true,
+        bool recurseSymlinks = false,
+      }) => {
+        'max_depth': maxDepth,
+        'follow_symlinks': MontyBool(followSymlinks),
+        'pattern': pattern,
+        'case_sensitive': MontyBool(caseSensitive),
+        'recurse_symlinks': MontyBool(recurseSymlinks),
+      };
+
+      /// The scan call the worker makes: the root as a `MontyPath`, the five
+      /// keywords upstream's `ScanArgs` takes as kwargs.
+      ///
+      /// The stub: a call the fixture host has no handler for is declined, and
+      /// a declined call would fail this test with an exception rather than
+      /// with an assertion. So the decline is answered with a wrong value — an
+      /// empty reply, where the tree is not empty.
+      Future<MontyValue> scan(
+        WorkerFixtureOs fixture,
+        String root, {
+        Map<String, MontyValue> kwargs = const {},
+      }) async {
+        try {
+          return await fixture.call(
+            'Path.scan',
+            [MontyPath(root)],
+            {
+              ...keywords(),
+              ...kwargs,
+            },
+          );
+        } on OsCallNotHandledException {
+          return const MontyList([]);
+        }
+      }
+
+      /// One of an entry's flags: a boolean, strictly.
+      bool boolFlag(MontyValue flagValue, String name) => switch (flagValue) {
+        MontyBool(:final value) => value,
+        final other => fail(
+          'the $name of a scan entry is a boolean, got $other',
+        ),
+      };
+
+      /// One scan entry, read as upstream encodes it: the path relative to the
+      /// root, and what the entry is.
+      (String, bool, bool, bool) entry(List<MontyValue> parts) =>
+          switch (parts) {
+            [final path, final isDir, final isFile, final isSymlink] => (
+              switch (path) {
+                MontyString(:final value) => value,
+                final other => fail(
+                  'the path of a scan entry is a string, got $other',
+                ),
+              },
+              boolFlag(isDir, 'is_dir'),
+              boolFlag(isFile, 'is_file'),
+              boolFlag(isSymlink, 'is_symlink'),
+            ),
+            final other => fail(
+              'a scan entry is (path, is_dir, is_file, is_symlink), got $other',
+            ),
+          };
+
+      /// The entries of a tree reply.
+      List<(String, bool, bool, bool)> entries(MontyValue reply) {
+        final replyItems = switch (reply) {
+          MontyList(:final items) || MontySet(:final items) => items,
+          final other => fail(
+            'a scan reply is a sequence of entries, got $other',
+          ),
+        };
+
+        return [
+          for (final item in replyItems)
+            switch (item) {
+              MontyTuple(:final items) ||
+              MontyList(:final items) => entry(items),
+              MontyNamedTuple(:final values) => entry(values),
+              final other => fail('a scan entry is a tuple, got $other'),
+            },
+        ];
+      }
+
+      /// The paths a reply names: a tree reply names them in its entries, a
+      /// glob reply in its matches.
+      List<String> paths(MontyValue reply) => switch (reply) {
+        MontyDict(:final pairs) => [
+          for (final (_, matchList) in pairs)
+            if (matchList is MontyList)
+              for (final match in matchList.items)
+                switch (match) {
+                  MontyString(:final value) => value,
+                  final other => fail('a glob match is a path, got $other'),
+                },
+        ],
+        _ => [for (final scanned in entries(reply)) scanned.$1],
+      };
+
+      // The two trees the fixture host serves: upstream's `/virtual` and the
+      // `/mnt` mount. Both have the same shape — four files, and a `subdir`
+      // with a file and a `deep` directory holding a file.
+      final trees = [
+        (root: '/virtual', file: 'file.txt', mounted: false),
+        (root: '/mnt', file: 'hello.txt', mounted: true),
+      ];
+
+      // The exception a root that is not there raises.
+      final fileNotFound = isA<ExternalException>().having(
+        (error) => error.excType,
+        'excType',
+        'FileNotFoundError',
+      );
+
+      for (final tree in trees) {
+        final root = tree.root;
+        final fixture = tree.mounted
+            ? WorkerFixtureOs.mounted()
+            : WorkerFixtureOs.virtual();
+
+        /// The entries of a scan, sorted by path: the order the reply comes in
+        /// is not part of the contract, the entries are.
+        Future<List<(String, bool, bool, bool)>> scanned(
+          WorkerFixtureOs host,
+          String scanRoot, {
+          MontyValue maxDepth = const MontyNone(),
+          bool followSymlinks = false,
+        }) async {
+          final reply = await scan(
+            host,
+            scanRoot,
+            kwargs: keywords(
+              maxDepth: maxDepth,
+              followSymlinks: followSymlinks,
+            ),
+          );
+
+          return [...entries(reply)]
+            ..sort((left, right) => left.$1.compareTo(right.$1));
+        }
+
+        void expectEntries(
+          String scanRoot,
+          List<(String, bool, bool, bool)> actual,
+          List<(String, bool, bool, bool)> expected,
+        ) => expect(
+          actual,
+          equals(
+            [...expected]..sort((left, right) => left.$1.compareTo(right.$1)),
+          ),
+          reason: 'the entries the scan of $scanRoot reports',
+        );
+
+        // The tree under the root, as upstream reports it: the root itself
+        // (the empty path) and every entry below it, relative to the root.
+        const rootEntry = ('', true, false, false);
+        final files = [
+          ('data.bin', false, true, false),
+          ('empty.txt', false, true, false),
+          (tree.file, false, true, false),
+          ('readonly.txt', false, true, false),
+        ];
+        final children = [...files, ('subdir', true, false, false)];
+        const grandchildren = [
+          ('subdir/deep', true, false, false),
+          ('subdir/nested.txt', false, true, false),
+        ];
+        const greatGrandchildren = [
+          ('subdir/deep/file.txt', false, true, false),
+        ];
+
+        // The whole tree, when no depth is asked for.
+        expectEntries(
+          root,
+          await scanned(fixture, root),
+          [
+            rootEntry,
+            ...children,
+            ...grandchildren,
+            ...greatGrandchildren,
+          ],
+        );
+
+        // A depth is the depth of the deepest entry: 0 is the root alone, 1
+        // its children, 2 their children.
+        expectEntries(
+          root,
+          await scanned(fixture, root, maxDepth: const MontyInt(0)),
+          [rootEntry],
+        );
+        expectEntries(
+          root,
+          await scanned(fixture, root, maxDepth: const MontyInt(1)),
+          [rootEntry, ...children],
+        );
+        expectEntries(
+          root,
+          await scanned(fixture, root, maxDepth: const MontyInt(2)),
+          [rootEntry, ...children, ...grandchildren],
+        );
+
+        // Both values of `follow_symlinks`: the tree has no symlink, so both
+        // report the same tree.
+        for (final follow in [false, true]) {
+          expectEntries(
+            root,
+            await scanned(fixture, root, followSymlinks: follow),
+            [
+              rootEntry,
+              ...children,
+              ...grandchildren,
+              ...greatGrandchildren,
+            ],
+          );
+        }
+
+        // A file is described, not listed: the root of the scan is the file
+        // itself.
+        expectEntries(
+          '$root/${tree.file}',
+          await scanned(fixture, '$root/${tree.file}'),
+          [('', false, true, false)],
+        );
+
+        // A newly created empty directory is a root of its own, and its tree
+        // is the root alone. A fixture of its own, so the new directory does
+        // not change the tree the scans above see.
+        final fresh = tree.mounted
+            ? WorkerFixtureOs.mounted()
+            : WorkerFixtureOs.virtual();
+        await fresh.call('Path.mkdir', [MontyPath('$root/fresh')], const {});
+        expectEntries(
+          '$root/fresh',
+          await scanned(fresh, '$root/fresh'),
+          [rootEntry],
+        );
+
+        // The descendants of a directory that is not there cannot be reached,
+        // so the scan does not report them. The subtree is moved under a
+        // directory that does not exist: the mounted tree takes its
+        // descendants along, the virtual tree leaves them where they are,
+        // and neither is reachable from the root any more.
+        final moved = tree.mounted
+            ? WorkerFixtureOs.mounted()
+            : WorkerFixtureOs.virtual();
+        await moved.call(
+          'Path.rename',
+          [MontyPath('$root/subdir'), MontyPath('$root/ghost/subdir')],
+          const {},
+        );
+        expectEntries(
+          root,
+          await scanned(moved, root),
+          [rootEntry, ...files],
+        );
+
+        // A root that is not there is a FileNotFoundError naming it, spelled
+        // as the root was spelled.
+        await expectLater(
+          () => scan(fixture, '$root/nope'),
+          throwsA(
+            fileNotFound.having(
+              (error) => error.message,
+              'message',
+              "[Errno 2] No such file or directory: '$root/nope'",
+            ),
+          ),
+        );
+
+        // The empty root is spelled '.' by the path it arrives as — the
+        // spelling it has before the root is normalized — and it is not
+        // there either.
+        await expectLater(
+          () => scan(fixture, ''),
+          throwsA(
+            fileNotFound.having(
+              (error) => error.message,
+              'message',
+              "[Errno 2] No such file or directory: '.'",
+            ),
+          ),
+        );
+
+        // All five keywords at once, a pattern among them: a pattern is a
+        // pruning hint, so the reply must at least name what it matches.
+        final globbed = await scan(
+          fixture,
+          root,
+          kwargs: keywords(
+            followSymlinks: true,
+            pattern: const MontyList([MontyString('*.txt')]),
+            recurseSymlinks: true,
+          ),
+        );
+        expect(paths(globbed), contains('empty.txt'));
+      }
+    },
+  );
 }
