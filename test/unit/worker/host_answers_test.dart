@@ -2,10 +2,14 @@
 // sleeps and coroutines (host_answers.dart).
 // Pure Dart: vm, dart2js and dart2wasm.
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:dart_monty_core/src/worker/arena_reader.dart';
 import 'package:dart_monty_core/src/worker/arena_writer.dart'
     show PythonRefusal;
+import 'package:dart_monty_core/src/worker/frame_scan.dart';
 import 'package:dart_monty_core/src/worker/host_answers.dart';
 import 'package:dart_monty_core/src/worker/monty_snapshot.dart'
     show ExternalException, unknownExcType;
@@ -518,6 +522,194 @@ void main() {
     }
   });
 
+  test(
+    'v1.2.0 OS calls preserve arguments validate stubs and dispatch scans',
+    () async {
+      // The wire a v1.2.0 worker speaks: `OsCall.import` is field 31,
+      // `OsCall.import_stubs` field 32 and `OsCall.scan` field 33 (monty
+      // 1.2.0, `proto/monty/v1/monty.proto`). The frames are built by hand
+      // and read by the scanner, so the arguments, the refusal and the
+      // dispatch are exercised as a worker drives them.
+      const id = 7;
+      final import = _scanned(
+        _osCallFrame(_osCallBody(id, _importArm('tools'))),
+      );
+      final stubs = _scanned(
+        _osCallFrame(_osCallBody(id, _importStubsArm(['tools', 'other']))),
+      );
+      final listing = _scanned(
+        _osCallFrame(_osCallBody(id, _scanArm('/data'))),
+      );
+      final glob = _scanned(
+        _osCallFrame(
+          _osCallBody(
+            id,
+            _scanArm(
+              '/data',
+              maxDepth: 0,
+              followSymlinks: true,
+              pattern: ['*.py'],
+              caseSensitive: false,
+              recurseSymlinks: true,
+            ),
+          ),
+        ),
+      );
+
+      // Every arm keeps its name and its arguments, as upstream's
+      // `OsFunctionCall::to_args` presents them to a host.
+      final cases = [
+        _Case(
+          'import names the module it asks for',
+          import,
+          'import',
+          [const MontyString('tools')],
+          const {},
+        ),
+        _Case(
+          'import_stubs names every module, in the order they were asked '
+              'for',
+          stubs,
+          'import_stubs',
+          [
+            const MontyList([
+              MontyString('tools'),
+              MontyString('other'),
+            ]),
+          ],
+          const {},
+        ),
+        _Case(
+          'a plain scan keeps its path and every keyword',
+          listing,
+          'Path.scan',
+          [MontyPath('/data')],
+          {
+            'max_depth': const MontyNone(),
+            'follow_symlinks': const MontyBool(false),
+            'pattern': const MontyNone(),
+            'case_sensitive': const MontyNone(),
+            'recurse_symlinks': const MontyBool(false),
+          },
+        ),
+        _Case(
+          'a glob scan keeps the depth, the pattern and the flags it was '
+              'given',
+          glob,
+          'Path.scan',
+          [MontyPath('/data')],
+          {
+            'max_depth': const MontyInt(0),
+            'follow_symlinks': const MontyBool(true),
+            'pattern': const MontyList([MontyString('*.py')]),
+            'case_sensitive': const MontyBool(false),
+            'recurse_symlinks': const MontyBool(true),
+          },
+        ),
+      ];
+      for (final c in cases) {
+        // The scanner kept the arm: a v1.2.0 field is not an unknown one.
+        expect(
+          c.call.whichCall(),
+          isNot(pb.OsCall_Call.notSet),
+          reason: c.reason,
+        );
+        final (partName, partArgs, partKwargs) = osCallParts(c.call);
+        expect(partName, c.name, reason: c.reason);
+        expect(partArgs, c.args, reason: c.reason);
+        expect(partKwargs, c.kwargs, reason: c.reason);
+      }
+
+      // A stubs ask naming a module once reaches the handler.
+      final handled = <String>[];
+      final host = HostAnswers(
+        os: (name, args, kwargs) {
+          handled.add(name);
+
+          return const MontyNone();
+        },
+      );
+      final accepted = await _refused(host.osCall(stubs, parentSleeps: true));
+      expect(accepted, isFalse, reason: 'each module is asked about once');
+      expect(handled, ['import_stubs']);
+
+      // A stubs ask naming a module twice is refused before any handler
+      // runs: a host runs one factory per name, and a compromised child
+      // must not multiply that work.
+      final repeated = _scanned(
+        _osCallFrame(
+          _osCallBody(id, _importStubsArm(['tools', 'other', 'tools'])),
+        ),
+      );
+      final refused = await _refused(
+        host.osCall(repeated, parentSleeps: true),
+      );
+      expect(refused, isTrue, reason: 'a module asked about twice');
+      expect(handled, ['import_stubs'], reason: 'the handler must not run');
+
+      // The host's answer comes back as it was given: the tree a scan
+      // returns, the root included, under the call's own id.
+      const tree = MontyList([
+        MontyTuple([
+          MontyString(''),
+          MontyBool(true),
+          MontyBool(false),
+          MontyBool(false),
+        ]),
+        MontyTuple([
+          MontyString('a.py'),
+          MontyBool(false),
+          MontyBool(true),
+          MontyBool(false),
+        ]),
+      ]);
+      final seen = <(String, List<MontyValue>, Map<String, MontyValue>)>[];
+      final scanning = HostAnswers(
+        os: (name, args, kwargs) {
+          seen.add((name, args, kwargs));
+
+          return tree;
+        },
+      );
+      final answer = await scanning.osCall(listing, parentSleeps: true);
+      final (hostName, hostArgs, hostKwargs) = onlyItem(seen);
+      expect(hostName, 'Path.scan');
+      expect(hostArgs, [MontyPath('/data')]);
+      expect(hostKwargs, {
+        'max_depth': const MontyNone(),
+        'follow_symlinks': const MontyBool(false),
+        'pattern': const MontyNone(),
+        'case_sensitive': const MontyNone(),
+        'recurse_symlinks': const MontyBool(false),
+      });
+      final resumed = answer.resumeCall;
+      expect(resumed.callId, id);
+      expect(resumed.result.hasReturnValue(), isTrue);
+      final reader = ArenaReader(resumed.values);
+      expect(reader[resumed.result.returnValue], tree);
+
+      // A call with no handler, and one the handler declines, are not
+      // handled: the sandbox raises the error itself.
+      final noHandler = await HostAnswers().osCall(listing, parentSleeps: true);
+      expect(noHandler.resumeCall.result.hasNotHandled(), isTrue);
+      final declined = await HostAnswers(
+        os: (name, args, kwargs) => throw const OsCallNotHandledException(),
+      ).osCall(listing, parentSleeps: true);
+      expect(declined.resumeCall.result.hasNotHandled(), isTrue);
+
+      // A decline from a future is a TypeError, as upstream's coroutine
+      // returning NOT_HANDLED is.
+      final asynchronous = await HostAnswers(
+        os: (name, args, kwargs) =>
+            Future.error(const OsCallNotHandledException()),
+      ).osCall(listing, parentSleeps: true);
+      final asynchronousResult = asynchronous.resumeCall.result;
+      expect(asynchronousResult.hasNotHandled(), isFalse);
+      expect(asynchronousResult.error.excType, 'TypeError');
+      expect(asynchronousResult.error.message, AsyncDecline.message);
+    },
+  );
+
   group('MontyHostFunction.parity evaluation vs serialization', () {
     pb.FunctionCall callTo(
       String name, {
@@ -683,6 +875,116 @@ void main() {
       },
     );
   });
+}
+
+/// One OS call a v1.2.0 worker sends, and what the host must see of it.
+final class _Case {
+  const _Case(this.reason, this.call, this.name, this.args, this.kwargs);
+
+  /// What the case is about, as a failure message says.
+  final String reason;
+
+  /// The call, as the scanner read it.
+  final pb.OsCall call;
+
+  /// The OS function's name.
+  final String name;
+
+  /// Its positional arguments.
+  final List<MontyValue> args;
+
+  /// Its keyword arguments.
+  final Map<String, MontyValue> kwargs;
+}
+
+/// A varint, as the wire carries it.
+List<int> _varint(int value) {
+  final out = <int>[];
+  var rest = value;
+  do {
+    var byte = rest & 0x7f;
+    rest >>= 7;
+    if (rest != 0) byte |= 0x80;
+    out.add(byte);
+  } while (rest != 0);
+
+  return out;
+}
+
+/// The tag of the field [number], with the wire type [wire].
+List<int> _tag(int number, int wire) => _varint((number << 3) | wire);
+
+/// A varint field [number] holding [value].
+List<int> _varintField(int number, int value) => [
+  ..._tag(number, 0),
+  ..._varint(value),
+];
+
+/// A length-delimited field [number] holding [bytes].
+List<int> _bytesField(int number, List<int> bytes) => [
+  ..._tag(number, 2),
+  ..._varint(bytes.length),
+  ...bytes,
+];
+
+/// A length-delimited field [number] holding the UTF-8 of [text].
+List<int> _stringField(int number, String text) =>
+    _bytesField(number, utf8.encode(text));
+
+/// The `ChildEvent` frame carrying the OS call [body]: `os_call` is
+/// field 3 of a child event.
+Uint8List _osCallFrame(List<int> body) =>
+    Uint8List.fromList(_bytesField(3, body));
+
+/// The OS call in the raw frame [frame], as the scanner reads it.
+pb.OsCall _scanned(Uint8List frame) => FrameScan.decodeChildEvent(frame).osCall;
+
+/// An `OsCall` body: the call's id and the arm it carries.
+List<int> _osCallBody(int id, List<int> arm) => [
+  ..._varintField(1, id),
+  ...arm,
+];
+
+/// The `import` arm (field 31): the module [module].
+List<int> _importArm(String module) => _bytesField(31, _stringField(1, module));
+
+/// The `import_stubs` arm (field 32): the modules [modules], in order.
+List<int> _importStubsArm(List<String> modules) => _bytesField(
+  32,
+  [for (final module in modules) ..._stringField(1, module)],
+);
+
+/// The `scan` arm (field 33): the path and the arguments beside it.
+///
+/// An absent [maxDepth] and an absent [caseSensitive] are left out of the
+/// frame, as upstream's `optional` fields are; a depth of zero and a case
+/// sensitivity of false are written, so the two are told apart.
+List<int> _scanArm(
+  String path, {
+  int? maxDepth,
+  bool followSymlinks = false,
+  List<String> pattern = const [],
+  bool? caseSensitive,
+  bool recurseSymlinks = false,
+}) => _bytesField(33, [
+  ..._stringField(1, path),
+  if (maxDepth != null) ..._varintField(2, maxDepth),
+  ..._varintField(3, followSymlinks ? 1 : 0),
+  for (final part in pattern) ..._stringField(4, part),
+  if (caseSensitive != null) ..._varintField(5, caseSensitive ? 1 : 0),
+  ..._varintField(6, recurseSymlinks ? 1 : 0),
+]);
+
+/// Whether [answer] refuses the call: it throws, as an invalid payload
+/// does, or answers with an error.
+Future<bool> _refused(Future<pb.ParentRequest> answer) async {
+  try {
+    final reply = await answer;
+
+    return reply.resumeCall.result.hasError();
+  } on Object {
+    return true;
+  }
 }
 
 /// A timer that runs only when the test fires it.
