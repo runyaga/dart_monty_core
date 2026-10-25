@@ -115,6 +115,10 @@ void manifestTests() {
       );
     },
   );
+
+  test('pyValueRepr preserves fixed-point boundaries and declines scientific values', () {
+    expect(pyValueRepr(MontyFloat(1e15)), equals('1000000000000000.0')); expect(pyValueRepr(MontyFloat(-1e15)), equals('-1000000000000000.0')); expect(pyValueRepr(MontyFloat(1e-4)), equals('0.0001')); expect(pyValueRepr(MontyFloat(-1e-4)), equals('-0.0001')); expect(pyValueRepr(MontyFloat(1e16)), isNull); expect(pyValueRepr(MontyFloat(-1e16)), isNull); expect(pyValueRepr(MontyFloat(1e-5)), isNull); expect(pyValueRepr(MontyFloat(-1e-5)), isNull); expect(pyValueRepr(MontyFloat(0.0)), equals('0.0')); expect(pyValueRepr(MontyFloat(-0.0)), equals('-0.0')); expect(pyValueRepr(MontyFloat(double.nan)), equals('nan')); expect(pyValueRepr(MontyFloat(double.infinity)), equals('inf')); expect(pyValueRepr(MontyFloat(double.negativeInfinity)), equals('-inf'));
+  });
 }
 
 /// Runs the whole corpus on [target]'s pool and judges it against the
