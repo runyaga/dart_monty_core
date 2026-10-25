@@ -5,7 +5,9 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ffi' show Abi;
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dart_monty_core/dart_monty_core.dart'
@@ -319,26 +321,71 @@ String _bits(MontyValue v) => switch (v) {
   _ => fail('$v is not a float'),
 };
 
-// The release pin readers below are STUBS, each returning a wrong value
-// without throwing, so 'release pin and oracle lock target v1.2.0' fails on
-// its assertion until they are implemented against the records named below.
+// The release pin readers below read the records they name: the pin
+// tool/upstream/upstream-pin.json and the oracle lock it points at. They
+// report what those records say, so 'release pin and oracle lock target
+// v1.2.0' fails while the tree still pins an older upstream release.
 
 /// The upstream monty release this core pins: `version` in
 /// tool/upstream/upstream-pin.json (upstream pydantic/monty).
-String _pinnedUpstreamVersion() => '1.1.0';
+String _pinnedUpstreamVersion() => _pinString('version');
 
 /// The git tag recorded in tool/upstream/upstream-pin.json, which must be
 /// `v` + the version in [_pinnedUpstreamVersion].
-String _pinnedUpstreamTag() => 'v1.1.0';
+String _pinnedUpstreamTag() => _pinString('tag');
 
 /// The PyPI distributions recorded in the pin's `python.distributions`,
 /// the three upstream packages tool/bump_upstream.py's `DIST_NAMES` lock.
-Map<String, String> _pinnedUpstreamDistributions() => const {
-  'pydantic-monty': '1.1.0',
-  'pydantic-monty-client': '1.1.0',
-  'pydantic-monty-runtime': '1.1.0',
-};
+Map<String, String> _pinnedUpstreamDistributions() {
+  final python = _pinRecord()['python'];
+  if (python is! Map<String, Object?>) {
+    fail('the upstream pin records no "python" section');
+  }
+  final distributions = python['distributions'];
+  if (distributions is! Map<String, Object?>) {
+    fail('the upstream pin records no "python.distributions" section');
+  }
+
+  final pinned = <String, String>{};
+  for (final entry in distributions.entries) {
+    final version = entry.value;
+    if (version is! String) {
+      fail('the upstream pin records ${entry.key} at no version');
+    }
+    pinned[entry.key] = version;
+  }
+
+  return pinned;
+}
 
 /// Whether `python3 -I tool/check_upstream_pin.py` passes offline: record
 /// shape and sha256 lock hashes, no network, exit 0.
-bool _offlineUpstreamPinValidationSucceeds() => false;
+bool _offlineUpstreamPinValidationSucceeds() {
+  final result = Process.runSync(
+    'python3',
+    ['-I', 'tool/check_upstream_pin.py'],
+  );
+
+  return result.exitCode == 0;
+}
+
+/// The upstream pin record, read from tool/upstream/upstream-pin.json.
+Map<String, Object?> _pinRecord() {
+  final file = File('tool/upstream/upstream-pin.json');
+  final Object? decoded = json.decode(file.readAsStringSync());
+  if (decoded is! Map<String, Object?>) {
+    fail('${file.path} is not a JSON object');
+  }
+
+  return decoded;
+}
+
+/// The string the upstream pin record holds at [key], or a failure naming it.
+String _pinString(String key) {
+  final value = _pinRecord()[key];
+  if (value is! String) {
+    fail('the upstream pin records no "$key"');
+  }
+
+  return value;
+}
