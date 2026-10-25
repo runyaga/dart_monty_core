@@ -179,17 +179,17 @@ String _repr(MontyValue v, List<Object> open) {
       if (value.isNaN) return 'nan';
       if (value.isInfinite) return value.isNegative ? '-inf' : 'inf';
       // dart2js has one number type, so a whole float prints without its
-      // `.0`: spell it as Python does.
+      // `.0`; outside [1e-4, 1e16) a value has no Python repr.
       if (value == 0) return value.isNegative ? '-0.0' : '0.0';
-      if (value.abs() < 1e15 && value == value.truncateToDouble()) {
-        return '${value.toInt()}.0';
-      }
-      final text = '$value';
-      if (text.contains('e')) {
+      final magnitude = value.abs();
+      if (magnitude < 1e-4 || magnitude >= 1e16) {
         throw const FormatException('value has no supported Python repr');
       }
+      if (value == value.truncateToDouble()) {
+        return '${value.toInt()}.0';
+      }
 
-      return text;
+      return '$value';
     case MontyString(:final value):
       return pyStringRepr(value);
     case MontyList(:final items):
