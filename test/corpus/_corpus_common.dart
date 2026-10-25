@@ -1,6 +1,7 @@
 // The corpus checks shared by the VM and browser entry points: pure Dart, so
 // the same code judges the native worker and the Web Worker.
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:dart_monty_core/dart_monty_core.dart';
 // PoolOptions is internal: the browser entry point starts its pools with its
@@ -76,6 +77,8 @@ void corpusTests(CorpusTarget target) {
 
 /// The manifest is well formed.
 void manifestTests() {
+  _mountedTextTests();
+
   test('the manifest is well formed', () {
     expect(manifestProblems(fixtureCorpusV1.keys), isEmpty);
     expect(fixtureCorpusV1, hasLength(643));
@@ -332,3 +335,154 @@ List<String> recursionSetProblems(
 
 /// Swallows the corpus runner's progress lines.
 final void Function(String) _discard = <String>[].add;
+
+/// The byte order mark a UTF-8 file may start with, as the character it
+/// decodes to: upstream's `json__file_io.py` writes a file that starts with
+/// one, and reads the text back with the mark still in it.
+const String _bom = '\uFEFF';
+
+/// The bytes upstream's `json__file_io.py` writes: the BOM, then JSON
+/// (`crates/monty/test_cases/json__file_io.py:51`).
+final List<int> _bomBytes = [0xEF, 0xBB, 0xBF, ...utf8.encode('{"bom": 1}')];
+
+/// The text of a file with ordinary UTF-8 in it.
+const String _utf8Text = 'héllo ☃';
+
+/// The program the mounted tree runs: it writes the BOM payload, an empty
+/// file, ordinary UTF-8, and bytes that are not UTF-8 at all, then reads
+/// each back as text and as bytes. It answers the texts, the bytes, and the
+/// error the invalid file raised, in that order. The empty file is the one
+/// upstream reads at `crates/monty/test_cases/json__file_io.py:82`.
+const String _mountedTextProgram = r'''
+from pathlib import Path
+
+bom_path = root / 'bom.json'
+bom_path.write_bytes(b'\xef\xbb\xbf{"bom": 1}')
+bom_text = bom_path.read_text()
+bom_bytes = bom_path.read_bytes()
+
+empty_path = root / 'empty_bytes.txt'
+empty_path.write_bytes(b'')
+empty_text = empty_path.read_text()
+empty_bytes = empty_path.read_bytes()
+
+utf8_path = root / 'utf8.txt'
+utf8_path.write_bytes('héllo ☃'.encode('utf-8'))
+utf8_text = utf8_path.read_text()
+utf8_bytes = utf8_path.read_bytes()
+
+bad_path = root / 'bad_utf8.bin'
+bad_path.write_bytes(b'\x80\x81\x82')
+try:
+    bad_path.read_text()
+    bad_text = ''
+except UnicodeDecodeError as exc:
+    bad_text = str(exc)
+
+(bom_text, bom_bytes, empty_text, empty_bytes, utf8_text, utf8_bytes, bad_text)
+''';
+
+/// The answers the mounted program gives: every file read back as text and as
+/// bytes, and the error the invalid file raised.
+typedef _MountedAnswers = ({
+  String bomText,
+  List<int> bomBytes,
+  String emptyText,
+  List<int> emptyBytes,
+  String utf8Text,
+  List<int> utf8Bytes,
+  String badText,
+});
+
+/// The mounted tree's text and bytes, as upstream's `json__file_io.py` reads
+/// them: a file written with a UTF-8 BOM reads back as text that keeps the
+/// BOM, and as the bytes that were written
+/// (`crates/monty/test_cases/json__file_io.py:51-57`).
+///
+/// The tree is [WorkerFixtureOs.mounted], the mounted tree the corpus
+/// fixtures see, and the pool is [withCorpusPool]'s, so the VM and the
+/// browser read the same files the same way.
+void _mountedTextTests() {
+  test(
+    'mounted fixture text preserves BOM and binary reads preserve bytes',
+    () async {
+      final fixtureOs = WorkerFixtureOs.mounted();
+      await withCorpusPool((pool) async {
+        final session = await pool.checkout(scriptName: 'mounted_text.py');
+        try {
+          final answers = _mountedAnswers(
+            await session.feedRun(
+              _mountedTextProgram,
+              cwd: '/mnt',
+              os: fixtureOs.call,
+              externalLookup: {'root': MontyPath('/mnt')},
+              printCallback: _discardPrint,
+            ),
+          );
+
+          // The BOM is text: upstream's fixture reads the file's text with
+          // the mark in it, which `json.load` then rejects.
+          expect(answers.bomText, startsWith(_bom));
+          expect(answers.bomBytes, equals(_bomBytes));
+          // The controls around it: an empty file, ordinary UTF-8, and bytes
+          // that are not UTF-8 at all.
+          expect(answers.emptyText, isEmpty);
+          expect(answers.emptyBytes, isEmpty);
+          expect(answers.utf8Text, _utf8Text);
+          expect(answers.utf8Bytes, equals(utf8.encode(_utf8Text)));
+          expect(
+            answers.badText,
+            "'utf-8' codec can't decode byte 0x80 in position 0: "
+            'invalid start byte',
+          );
+        } finally {
+          await session.close();
+        }
+      });
+    },
+    timeout: const Timeout(Duration(minutes: 5)),
+  );
+}
+
+/// The answers the mounted program gave, read off the tuple it returned.
+_MountedAnswers _mountedAnswers(MontyValue answers) => switch (answers) {
+  MontyTuple(
+    items: [
+      final bomText,
+      final bomBytes,
+      final emptyText,
+      final emptyBytes,
+      final utf8Text,
+      final utf8Bytes,
+      final badText,
+    ],
+  ) =>
+    (
+      bomText: _text(bomText),
+      bomBytes: _bytes(bomBytes),
+      emptyText: _text(emptyText),
+      emptyBytes: _bytes(emptyBytes),
+      utf8Text: _text(utf8Text),
+      utf8Bytes: _bytes(utf8Bytes),
+      badText: _text(badText),
+    ),
+  _ => fail('the mounted program must answer seven values, got $answers'),
+};
+
+/// The text [answer] holds, or a failure.
+String _text(MontyValue answer) => switch (answer) {
+  MontyString(:final value) => value,
+  _ => fail('expected a string, got $answer'),
+};
+
+/// The bytes [answer] holds, or a failure.
+List<int> _bytes(MontyValue answer) => switch (answer) {
+  MontyBytes(:final value) => value,
+  _ => fail('expected bytes, got $answer'),
+};
+
+/// Swallows what the mounted program prints: the corpus judges values, not
+/// printed output.
+void _discardPrint(String stream, String text) {
+  return;
+}
