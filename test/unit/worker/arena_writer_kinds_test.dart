@@ -7,6 +7,7 @@ import 'package:dart_monty_core/src/platform/monty_value.dart'
     show montyClassProxy, montyClassTypeProxy, montyStdTypeProxy;
 import 'package:dart_monty_core/src/worker/arena_reader.dart';
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
+import 'package:dart_monty_core/src/worker/monty_error.dart' show raisedError;
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:test/test.dart';
 
@@ -857,5 +858,58 @@ void main() {
       final tried = parityWriter.tryAdd(null, parity: true);
       expect(itemAt(parityNodes, tried).hasNone(), isTrue);
     });
+  });
+
+  // A host-raised `tomllib.TOMLDecodeError` carries the same five attributes
+  // as a `json.JSONDecodeError`, so upstream maps it onto the same json arm;
+  // the control is the JSON host-exception coverage retained here.
+  test('host TOML exceptions encode JSON payload attributes', () {
+    const full = {
+      'msg': MontyString('Expecting value'),
+      'doc': MontyString('{"a": x}'),
+      'pos': MontyInt(6),
+      'lineno': MontyInt(1),
+      'colno': MontyInt(7),
+    };
+
+    // The JSON host-exception coverage is retained: the control encodes the
+    // json arm and round-trips it through the reconstruction path unchanged.
+    final json = raisedException('json.JSONDecodeError', 'm', full);
+    final jsonData = json.data;
+    expect(jsonData.hasJson(), isTrue);
+    expect(jsonData.json.msg, 'Expecting value');
+    expect(jsonData.json.doc, '{"a": x}');
+    final jsonBack = raisedError(json).exception;
+    expect(jsonBack.excType, 'json.JSONDecodeError');
+    expect(jsonBack.message, 'm');
+    expect(jsonBack.attributes, full);
+
+    // A TOMLDecodeError carries the same five attributes, so it emits the
+    // same json arm with its outer message and round-trips the same way.
+    final toml = raisedException('tomllib.TOMLDecodeError', 'm', full);
+    final tomlData = toml.data;
+    expect(tomlData.hasJson(), isTrue);
+    expect(tomlData.json.msg, 'Expecting value');
+    final tomlBack = raisedError(toml).exception;
+    expect(tomlBack.excType, 'tomllib.TOMLDecodeError');
+    expect(tomlBack.message, 'm');
+    expect(tomlBack.attributes, full);
+
+    // Unusable-attribute controls: a missing or mistyped attribute drops the
+    // arm, whatever the host type, so neither encodes a json arm.
+    for (final type in ['json.JSONDecodeError', 'tomllib.TOMLDecodeError']) {
+      expect(raisedException(type, 'm', const {}).hasData(), isFalse);
+      expect(
+        raisedException(type, 'm', {...full}..remove('colno')).hasData(),
+        isFalse,
+      );
+      expect(
+        raisedException(type, 'm', {
+          ...full,
+          'pos': const MontyString('6'),
+        }).hasData(),
+        isFalse,
+      );
+    }
   });
 }
