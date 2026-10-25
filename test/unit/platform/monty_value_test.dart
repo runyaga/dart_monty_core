@@ -11,8 +11,70 @@ import 'dart:typed_data';
 
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart'
-    show MontyValueInternal, montyClassProxy, montyClassTypeProxy;
+    show
+        ExternalModule,
+        MontyValueInternal,
+        montyClassProxy,
+        montyClassTypeProxy;
 import 'package:test/test.dart';
+
+/// Upstream's `add`, one of the TOOLS functions.
+int _add(int a, int b) => a + b;
+
+/// Upstream's `concat`, the other TOOLS function.
+String _concat(String a, String b) => a + b;
+
+/// The protected member of TOOLS, never exposed to the sandbox.
+String _probe() => 'hidden';
+
+/// Upstream's `ADD_STUB`, the `.pyi` source of `add`.
+const _addStub = 'def add(a: int, b: int) -> int: ...\n';
+
+/// A canonical uuid4: lowercase hex, version digit 4, variant digit 8-b.
+final RegExp _uuid4 = RegExp(
+  r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+);
+
+/// Upstream's `TOOLS`, fresh on each call so edits to one copy cannot leak
+/// into another.
+Map<String, Object?> _tools() => {
+  'add': _add,
+  'concat': _concat,
+  'VERSION': 3,
+  '_secret': _probe,
+};
+
+/// Each row is refused at construction, eagerly: a non-string key, a key
+/// that is not an identifier (a keyword included) and a nested module under
+/// a key naming a module the sandbox provides itself.
+void _rejectsInvalidModules() {
+  final argError = isA<ArgumentError>();
+  for (final (key, value, parts) in <(Object?, Object?, List<String>)>[
+    (1, _add, ['str keys', 'int']),
+    ('a.b', _add, ['identifier keys', "'a.b'"]),
+    ('1sub', _add, ['identifier keys', "'1sub'"]),
+    ('for', _add, ['identifier keys', "'for'"]),
+    (
+      'json',
+      ExternalModule({'VERSION': 9}),
+      [
+        "attrs['json']",
+        'provided by the sandbox',
+      ],
+    ),
+  ]) {
+    expect(
+      () => ExternalModule({key: value}),
+      throwsA(
+        argError.having(
+          (e) => e.message,
+          'message',
+          allOf([for (final part in parts) contains(part)]),
+        ),
+      ),
+    );
+  }
+}
 
 void main() {
   // ------------------------------------------------------------------
@@ -852,4 +914,121 @@ void main() {
       }
     });
   });
+
+  test(
+    'ExternalModule copies attributes and validates names identity and stubs',
+    () {
+      // Upstream: monty-python tests/test_external_modules.py
+      // (test_invalid_modules_are_rejected_at_construction,
+      // test_the_module_object_is_frozen and test_attrs_are_copied_at_
+      // construction) and monty-proto src/python/external_module.rs
+      // (PyExternalModule::new).
+
+      // attrs are copied once, at construction, shallowly: the values are
+      // the very objects given, and neither side's later edits cross.
+      final given = _tools();
+      final expected = _tools();
+      final module = ExternalModule(given, stubs: _addStub);
+      given['VERSION'] = 99;
+      given['extra'] = 'later';
+      expect(module.attrs, expected);
+      expect(module.attrs['add'], same(_add));
+      module.attrs['VERSION'] = 1;
+      expect(module.attrs['VERSION'], 3);
+      final nested = <String, Object?>{'inner': 1};
+      final holder = ExternalModule({'nested': nested});
+      expect(holder.attrs['nested'], same(nested));
+
+      // a name starting with '_' is protected: the sandbox never sees it.
+      expect(
+        module.publicAttrs,
+        {'add': _add, 'concat': _concat, 'VERSION': 3},
+      );
+      expect(module.publicAttrs.keys, ['add', 'concat', 'VERSION']);
+
+      // stubs are optional.
+      final bare = ExternalModule({'add': _add});
+      expect(bare.stubs, isNull);
+      expect(module.stubs, _addStub);
+
+      // a fresh id is a uuid4 (version digit 4, variant 8-b) and each
+      // module gets its own; a given one is used, canonical whatever its
+      // case, and a non-uuid is refused.
+      final looksLikeUuid4 = matches(_uuid4);
+      final fresh = ExternalModule({'VERSION': 1});
+      final otherFresh = ExternalModule({'VERSION': 2});
+      expect(fresh.id, looksLikeUuid4);
+      expect(otherFresh.id, looksLikeUuid4);
+      expect(fresh.id, isNot(otherFresh.id));
+      const suppliedId = '0A1B2C3D-4E5F-4A6B-8C9D-0E1F2A3B4C5D';
+      final supplied = ExternalModule({'VERSION': 3}, id: suppliedId);
+      expect(supplied.id, suppliedId.toLowerCase());
+      final argError = isA<ArgumentError>();
+      expect(
+        () => ExternalModule({'VERSION': 4}, id: 'not-a-uuid'),
+        throwsA(
+          argError.having((e) => e.message, 'message', contains('uuid')),
+        ),
+      );
+
+      // equal when id, attrs and stubs all match, and only then.
+      const uid = '9e107669-c31b-4d0f-8b76-2f0e2a4b5a03';
+      final baseTools = _tools();
+      final twinTools = _tools();
+      final base = ExternalModule(baseTools, stubs: _addStub, id: uid);
+      final twin = ExternalModule(twinTools, stubs: _addStub, id: uid);
+      expect(base, twin);
+      expect(base.hashCode, twin.hashCode);
+      // a fresh id differs.
+      final differentIdTools = _tools();
+      final differentId = ExternalModule(differentIdTools, stubs: _addStub);
+      expect(base, isNot(differentId));
+      // stubs null differs from stubs given.
+      final noStubsTools = _tools();
+      final noStubs = ExternalModule(noStubsTools, id: uid);
+      expect(base, isNot(noStubs));
+      // the same keys, id and stubs, one VALUE changed.
+      final changedTools = _tools();
+      final changedValue = ExternalModule(
+        {...changedTools, 'VERSION': 4},
+        stubs: _addStub,
+        id: uid,
+      );
+      expect(base, isNot(changedValue));
+      // one key dropped.
+      final dropped = ExternalModule(
+        {'add': _add, 'concat': _concat, 'VERSION': 3},
+        stubs: _addStub,
+        id: uid,
+      );
+      expect(base, isNot(dropped));
+
+      // keys are checked eagerly, at construction (see
+      // _rejectsInvalidModules): strings only, identifiers, keywords
+      // included, and no nested module under a sandbox name.
+      _rejectsInvalidModules();
+      final subTools = _tools();
+      final sub = ExternalModule(subTools);
+      expect(() => ExternalModule({'sub': sub}), returnsNormally);
+
+      // ordinary values are converted when read, not at construction.
+      expect(module.attrValue('VERSION'), const MontyInt(3));
+      expect(module.attrValue('_secret'), isNull);
+      expect(module.attrValue('missing'), isNull);
+      expect(ExternalModule({'pkg': sub}).attrValue('pkg'), same(sub));
+      final odd = Object();
+      final unconvertible = ExternalModule({'odd': odd});
+      expect(unconvertible.attrs['odd'], same(odd));
+      expect(
+        () => unconvertible.attrValue('odd'),
+        throwsA(
+          argError.having(
+            (e) => e.message,
+            'message',
+            contains('Cannot convert'),
+          ),
+        ),
+      );
+    },
+  );
 }
