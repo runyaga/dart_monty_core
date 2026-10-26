@@ -115,6 +115,17 @@ pb.ParentRequest _feedWith(String code, Map<String, MontyValue> inputs) {
   );
 }
 
+/// The artefact checks, in the order the gate runs them: the committed
+/// assets against the sources they are built from, the worker executable
+/// against its build, and the wasm against its download budget. Every script
+/// verifies: none of them rebuilds, re-records the provenance or fetches
+/// anything.
+const List<({String script, List<String> arguments})> _artefactChecks = [
+  (script: 'tool/check_asset_freshness.sh', arguments: <String>[]),
+  (script: 'tool/build_worker.sh', arguments: ['--check']),
+  (script: 'tool/check_worker_wasm_size.sh', arguments: <String>[]),
+];
+
 void main() {
   expectNoWorkersLeftAfterEachTest();
 
@@ -130,6 +141,22 @@ void main() {
         endsWith(workerPackagePath(Abi.current())),
       ),
     );
+  });
+
+  test('the artefacts match their sources', () async {
+    for (final check in _artefactChecks) {
+      final result = await Process.run(
+        'bash',
+        [check.script, ...check.arguments],
+      );
+      expect(
+        result.exitCode,
+        0,
+        reason:
+            'bash ${check.script} ${check.arguments.join(' ')} must pass:\n'
+            '${result.stdout}\n${result.stderr}',
+      );
+    }
   });
 
   test('integers across the i64 range decode exactly', () async {
