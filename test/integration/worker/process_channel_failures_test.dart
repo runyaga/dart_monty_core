@@ -121,12 +121,18 @@ void main() {
 
 /// The replies the fixture sends and the code it exits with.
 ///
-/// The first reply answers the configure request; the second answers the
-/// request that follows it, and the worker leaves at once afterwards.
+/// The first reply answers the configure request; a second one answers the
+/// request that follows it. The worker leaves as soon as it has answered
+/// them all.
 ({List<List<int>> replies, int code}) _script(String scenario) {
   return switch (scenario) {
     'fatal' => (replies: [_ok, _fatal], code: 65),
-    'oom' => (replies: [_ok, <int>[]], code: 65),
+    // The worker leaves as soon as it has answered the configure request,
+    // and never answers the request that follows it: its exit status is
+    // settled before the turn that reads the end of its output, so the
+    // crash that turn reports cannot depend on the order in which the end
+    // of the output and the exit status arrive.
+    'oom' => (replies: [_ok], code: 65),
     // 268435457, one byte above the independent 256 MiB contract.
     'oversize' => (
       replies: [
@@ -182,6 +188,13 @@ Future<void> _fatalWinsOverExit65() async {
 
 Future<void> _memoryErrorOnExit65() async {
   final (pool, session, channel) = await _session('oom');
+  // The worker has left by now, and its exit status is read before the turn
+  // that reads the end of its output. The two arrive in either order, and
+  // the channel reads the status within the grace upstream gives a worker
+  // that is leaving: on a loaded machine that grace can pass before the
+  // status arrives, and the crash the turn reports would name the kill
+  // instead of the exit status.
+  expect(await channel.exitCode, 65);
   await expectLater(
     session.feedRun('1'),
     throwsA(
@@ -191,7 +204,6 @@ Future<void> _memoryErrorOnExit65() async {
           .having((e) => e.toString(), 'text', 'MemoryError: $_memoryText'),
     ),
   );
-  expect(await channel.exitCode, 65);
   await _finished(pool, session, channel);
 }
 
