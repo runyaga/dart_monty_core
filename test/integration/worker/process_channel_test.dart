@@ -5,6 +5,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:dart_monty_core/src/worker/frame.dart';
@@ -33,14 +34,72 @@ pb.ParentRequest _feed(String code) =>
 
 final _configure = pb.ParentRequest(configure: pb.Configure());
 
-/// Waits until [condition] holds, polling; fails the test after 10 s.
-Future<void> _until(bool Function() condition) async {
-  final deadline = DateTime.now().add(const Duration(seconds: 10));
+/// Waits until [condition] holds, polling; fails the test after [timeout].
+Future<void> _until(
+  bool Function() condition, {
+  Duration timeout = const Duration(seconds: 10),
+  String reason = 'condition never held',
+}) async {
+  final deadline = DateTime.now().add(timeout);
   while (!condition()) {
-    if (DateTime.now().isAfter(deadline)) fail('condition never held');
+    if (DateTime.now().isAfter(deadline)) fail(reason);
     await Future<void>.delayed(const Duration(milliseconds: 10));
   }
 }
+
+/// The worker the probe drives, as source.
+///
+/// It waits for the release the test sends, then leaves a descendant
+/// holding stderr open and exits at once.
+///
+/// The wait is what makes the bound measurable: the test decides when the
+/// worker exits, and the descendant's hold on the pipe begins only after
+/// that. The probe passes the directory it works in as the worker's
+/// scenario, so the worker finds the release and the ready marker there.
+const _workerSource = r'''
+import 'dart:io';
+
+Future<void> main(List<String> args) async {
+  final dir = Directory(args.first);
+  File('${dir.path}/ready').writeAsStringSync('ready');
+  while (!File('${dir.path}/release').existsSync()) {
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+  }
+  await Process.start('/bin/sh', [
+    '-c',
+    'exec >/dev/null; sleep 20',
+  ], mode: ProcessStartMode.inheritStdio);
+  exit(0);
+}
+''';
+
+/// Calls [onExit] when [process] has exited.
+Future<void> _onExit(Process process, void Function() onExit) async {
+  await process.exitCode;
+  onExit();
+}
+
+/// The directory the probe and the worker it drives live in.
+///
+/// The probe is the one the repository ships, copied next to the worker it
+/// spawns: the probe resolves the worker next to itself. The worker is the
+/// one above, which waits for the test's release.
+Future<Directory> _probeDirectory() async {
+  final dir = await Directory.systemTemp.createTemp('monty-probe');
+  final probe = File(
+    'test/integration/worker/exit_probe.dart',
+  ).absolute;
+  await probe.copy('${dir.path}/exit_probe.dart');
+  await File('${dir.path}/fake_worker.dart').writeAsString(_workerSource);
+
+  return dir;
+}
+
+/// The package configuration the copied probe resolves its imports with.
+///
+/// The probe runs outside the package, so it needs the configuration the
+/// repository's own probes use.
+String _packageConfig() => File('.dart_tool/package_config.json').absolute.path;
 
 /// The [MontyCrashedError] that [future] fails with.
 ///
@@ -325,19 +384,67 @@ void main() {
     test(
       'a pipe held open by a descendant does not keep this process alive',
       () async {
-        final watch = Stopwatch()..start();
-        final probe = await Process.run(Platform.resolvedExecutable, [
-          File('test/integration/worker/exit_probe.dart').absolute.path,
-          'hold-stderr',
+        final dir = await _probeDirectory();
+        addTearDown(() => dir.deleteSync(recursive: true));
+        // The probe runs outside the package, so it is told where the
+        // package configuration is.
+        final probe = await Process.start(Platform.resolvedExecutable, [
+          '--packages=${_packageConfig()}',
+          '${dir.path}/exit_probe.dart',
+          dir.path,
         ]);
-        expect(probe.stdout, contains('crashed'));
-        expect(probe.exitCode, 0);
+        final out = StringBuffer();
+        final err = StringBuffer();
+        // The probe's own streams: they close when the probe exits, and the
+        // assertions below wait for them, so no output of the probe is
+        // still in flight when they run.
+        final streams = Future.wait([
+          probe.stdout
+              .transform(utf8.decoder)
+              .listen(out.write)
+              .asFuture<void>(),
+          probe.stderr
+              .transform(utf8.decoder)
+              .listen(err.write)
+              .asFuture<void>(),
+        ]);
+        // The worker is up and waiting for the release. Its start-up, and
+        // the probe's, are cold Dart VMs: a loaded runner stretches them
+        // over seconds, and they say nothing about how long the channel
+        // waits for the pipe the descendant holds open.
+        var ended = false;
+        unawaited(_onExit(probe, () => ended = true));
+        await _until(
+          () => File('${dir.path}/ready').existsSync() || ended,
+          timeout: const Duration(minutes: 2),
+          reason: 'the probe never started its worker\n$err',
+        );
+        expect(
+          File('${dir.path}/ready').existsSync(),
+          isTrue,
+          reason: 'the probe exited before its worker was ready\n$err',
+        );
+        // The bound starts here, at the release the test sends: a moment
+        // the test controls, before the worker exits, so the drain that
+        // follows the exit is inside the bound. The descendant's hold
+        // begins only after the release, so a drain that waits for it
+        // fails the bound whatever the scheduling did before.
+        final watch = Stopwatch()..start();
+        File('${dir.path}/release').writeAsStringSync('go');
+        await streams;
+        final code = await probe.exitCode;
+        expect(out.toString(), contains('crashed'));
+        expect(err.toString(), isEmpty);
+        expect(code, 0);
         // The descendant holds stderr for 20 s; the drain gives up after
-        // 1 s. The bound leaves room for two JIT start-ups on a loaded
-        // runner (measured 5.05 s against a 5 s bound in CI) and still fails
-        // well before the descendant lets go.
-        expect(watch.elapsed, lessThan(const Duration(seconds: 15)));
+        // 1 s. The bound leaves room for the drain and for the probe's own
+        // exit on a loaded runner, and still fails well before the
+        // descendant lets go.
+        expect(watch.elapsed, lessThan(const Duration(seconds: 10)));
       },
+      // The probe and the worker are cold Dart VMs: on a loaded runner
+      // their start-up alone takes tens of seconds.
+      timeout: const Timeout(Duration(minutes: 3)),
       testOn: '!windows',
     );
 
