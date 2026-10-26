@@ -25,6 +25,7 @@ part 'os_access_repr.dart';
 /// The namespace has no mounts or filesystem budgets. Compose this handler to
 /// customize individual operations. Seeded paths retain `..` and double roots.
 /// `Path.is_symlink` returns false without reading its path argument.
+/// `Path.scan` reads a subtree in one call, as upstream's does.
 ///
 /// It is one namespace, as upstream's is: a `..` in a path stays inside it, so
 /// a directory seeded under it is not a boundary between the files around it.
@@ -104,6 +105,7 @@ const _fileCalls = {
   'Path.unlink',
   'Path.rmdir',
   'Path.iterdir',
+  'Path.scan',
   'Path.stat',
   'Path.rename',
   'Path.resolve',
@@ -149,6 +151,9 @@ MontyValue _dispatchFile(
 ) {
   // Upstream's `path_is_symlink` never looks at its argument.
   if (op == 'Path.is_symlink') return const MontyBool(false);
+  // A scan names its root as the request spelled it, so it reads the
+  // argument itself rather than the normalized path.
+  if (op == 'Path.scan') return _scan(tree, args, kwargs);
   if (op == 'Path.mkdir') _checkMkdirKeywords(kwargs);
   final path = _path(args.firstOrNull, handleOk: _handleCalls.contains(op));
   final data = args.elementAtOrNull(1);
