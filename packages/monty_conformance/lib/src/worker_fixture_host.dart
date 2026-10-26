@@ -619,10 +619,116 @@ final class WorkerFixtureOs {
         return const MontyNone();
       case 'Path.rename':
         return _rename(path(0), path(1));
+      case 'Path.scan':
+        return _scan(path(0), kwargs);
     }
 
     throw const OsCallNotHandledException();
   }
+
+  /// Upstream's `Path.scan` (monty v1.2.0, `crates/monty-types/src/scan.rs`,
+  /// driven by `crates/monty-datatest/src/main.rs:1131`): the tree below the
+  /// root, as the tuples `(path, is_dir, is_file, is_symlink)` whose paths are
+  /// relative to the root and whose root is the empty path.
+  ///
+  /// All five keywords upstream's `ScanArgs` takes are accepted. Only
+  /// `max_depth` and `follow_symlinks` shape the reply: the reply is the
+  /// TREE, never the matches, because upstream says a host may ignore the
+  /// pattern and answer with everything within `max_depth` -- the sandbox
+  /// runs the selector over the reply itself, so the pattern is a pruning
+  /// hint and not a contract. `case_sensitive` and `recurse_symlinks` matter
+  /// only to a host that prunes with the pattern, so they change nothing
+  /// here.
+  ///
+  /// A root that is not there raises a `FileNotFoundError` naming it, spelled
+  /// as the root was spelled. A root that is a file is described, not listed:
+  /// it is the only entry of the reply.
+  MontyValue _scan(String root, Map<String, MontyValue> kwargs) {
+    final rootIsDir = _isDir(root);
+    final rootIsFile = _files.containsKey(root);
+    if (!rootIsDir && !rootIsFile) throw _notFound(root);
+
+    return MontyList([
+      _scanEntry('', isDir: rootIsDir, isFile: rootIsFile),
+      if (rootIsDir)
+        ..._scanEntries(
+          root,
+          maxDepth: _scanMaxDepth(kwargs['max_depth']),
+          followSymlinks: _scanFlag(kwargs['follow_symlinks']),
+        ),
+    ]);
+  }
+
+  /// The entries below [root], as the tuples of a scan reply.
+  ///
+  /// Only what the root reaches is listed: a directory that is not there has
+  /// no children, so a subtree moved under one is not reached. The root is
+  /// listed at depth 0, so `max_depth` 0 is the root alone and 1 its
+  /// children.
+  List<MontyValue> _scanEntries(
+    String root, {
+    required int? maxDepth,
+    required bool followSymlinks,
+  }) {
+    final entries = <MontyValue>[];
+    final pending = [(root, 0)];
+    while (pending.isNotEmpty) {
+      final (dir, depth) = pending.removeLast();
+      if (maxDepth != null && depth >= maxDepth) continue;
+      for (final child in _children(dir)) {
+        final childIsDir = _isDir(child);
+        entries.add(
+          _scanEntry(
+            _scanRelative(root, child),
+            isDir: childIsDir,
+            isFile: _files.containsKey(child),
+          ),
+        );
+        // A symlinked directory is descended into only when the call says so.
+        // The fixture tree holds no symlink, so both values report the same
+        // tree.
+        if (childIsDir && (followSymlinks || !_isSymlink(child))) {
+          pending.add((child, depth + 1));
+        }
+      }
+    }
+
+    return entries;
+  }
+
+  /// One entry of a scan reply: its path relative to the root, and what it
+  /// is. An entry of this tree is never a symlink, as `Path.is_symlink` says.
+  MontyValue _scanEntry(
+    String path, {
+    required bool isDir,
+    required bool isFile,
+  }) => MontyTuple([
+    MontyString(path),
+    MontyBool(isDir),
+    MontyBool(isFile),
+    const MontyBool(false),
+  ]);
+
+  /// [path] as it is spelled relative to the scan root [root].
+  String _scanRelative(String root, String path) =>
+      root == '/' ? path.substring(1) : path.substring(root.length + 1);
+
+  /// Whether [path] is a symbolic link: the fixture tree holds none, so the
+  /// flag of every entry is false and `recurse_symlinks` changes nothing.
+  bool _isSymlink(String path) => false;
+
+  /// The `max_depth` keyword: absent or `None` means the whole tree, and a
+  /// negative depth is the root alone, as upstream's depth is a `u32`.
+  int? _scanMaxDepth(MontyValue? keyword) => switch (keyword) {
+    MontyInt(:final value) => value < 0 ? 0 : value,
+    _ => null,
+  };
+
+  /// A boolean keyword: absent or `None` means false.
+  bool _scanFlag(MontyValue? keyword) => switch (keyword) {
+    MontyBool(:final value) => value,
+    _ => false,
+  };
 
   /// The paths directly inside directory [p].
   Set<String> _children(String p) => {
