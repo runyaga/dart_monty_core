@@ -76,6 +76,23 @@ pb.ExcData _unicodeBytes(List<int> object, {int start = 0, int end = 1}) =>
       ),
     );
 
+/// A JSON-arm payload, as a TOML error carries it.
+pb.ExcData _tomlData({
+  String msg = 'Invalid value',
+  String? doc,
+  int pos = 0,
+  int lineno = 1,
+  int colno = 1,
+}) => pb.ExcData(
+  json: pb.JsonErrorData(
+    msg: msg,
+    doc: doc,
+    pos: Int64(pos),
+    lineno: Int64(lineno),
+    colno: Int64(colno),
+  ),
+);
+
 /// Whether [error] kept a structured payload.
 bool _kept(MontyError error) => error.exception.attributes.isNotEmpty;
 
@@ -402,6 +419,81 @@ void main() {
       expect(attrs['lineno'], const MontyInt(2));
       expect(attrs['colno'], const MontyInt(5));
       expect(attrs['doc'], const MontyString(''));
+    });
+  });
+
+  group('the TOML JSON arm', () {
+    // `tomllib.TOMLDecodeError` travels in the JSON arm, as
+    // `json.JSONDecodeError` does (upstream's `monty-proto`), so the
+    // sanitizer reads it the same way.
+    const type = 'tomllib.TOMLDecodeError';
+
+    test('a TOML error reads the JSON arm into the five attributes', () {
+      final record = RaisedRecord.fromWire(
+        pb.RaisedException(
+          excType: type,
+          message: 'Invalid value (at line 2, column 8)',
+          data: pb.ExcData(
+            json: pb.JsonErrorData(
+              msg: 'Invalid value',
+              doc: 'a = 1\nb = [1,,]',
+              pos: Int64(13),
+              lineno: Int64(2),
+              colno: Int64(8),
+            ),
+          ),
+        ),
+      );
+      expect(record.excType, type);
+      expect(record.message, 'Invalid value (at line 2, column 8)');
+      expect(record.payload?.attributes, {
+        'msg': const MontyString('Invalid value'),
+        'doc': const MontyString('a = 1\nb = [1,,]'),
+        'pos': const MontyInt(13),
+        'lineno': const MontyInt(2),
+        'colno': const MontyInt(8),
+      });
+    });
+
+    test('a TOML error without its document reads as an empty one', () {
+      // The worker leaves out a document over 64 KiB; the rest of the
+      // payload survives, and the document reads as ''.
+      final record = RaisedRecord.fromWire(
+        pb.RaisedException(
+          excType: type,
+          message: 'Cannot declare (k) twice',
+          data: pb.ExcData(
+            json: pb.JsonErrorData(
+              msg: 'Cannot declare (k) twice',
+              pos: Int64(140004),
+              lineno: Int64(2),
+              colno: Int64(70002),
+            ),
+          ),
+        ),
+      );
+      final attributes = record.payload?.attributes;
+      expect(attributes?['doc'], const MontyString(''));
+      expect(attributes?['msg'], const MontyString('Cannot declare (k) twice'));
+      expect(attributes?['pos'], const MontyInt(140004));
+    });
+
+    test('a payload the sanitizer drops keeps the type and the message', () {
+      final dropped = {
+        'a zero lineno': _tomlData(doc: '[1,', pos: 3, lineno: 0),
+        'a zero colno': _tomlData(doc: '[1,', pos: 3, colno: 0),
+        'an oversized document': _tomlData(doc: 'x' * (_limit + 1)),
+        'an oversized message': _tomlData(msg: 'x' * (_limit + 1)),
+        'a position two past the document': _tomlData(doc: '[1,', pos: 5),
+      };
+      for (final MapEntry(:key, :value) in dropped.entries) {
+        final record = RaisedRecord.fromWire(
+          pb.RaisedException(excType: type, message: 'boom', data: value),
+        );
+        expect(record.payload, isNull, reason: key);
+        expect(record.excType, type, reason: key);
+        expect(record.message, 'boom', reason: key);
+      }
     });
   });
 

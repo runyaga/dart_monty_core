@@ -945,6 +945,18 @@ void main() {
       expect(csvError, isA<MontyRuntimeError>());
       expect(csvError.exception, MontyExceptionValue(csv, 'boom'));
       expect(csvError.toString(), '$csv: boom');
+      // A payload-less TOML error has no payload to rebuild the real
+      // class from, so it decodes as the plain `ValueError` its parent
+      // is; the CSV error, a plain `Exception` subclass, keeps its name.
+      expect(
+        _accepted(
+          () => _decode([exception('tomllib.TOMLDecodeError', 'boom')]),
+          'TOML node',
+        ),
+        isA<MontyExceptionValue>()
+            .having((e) => e.excType, 'excType', 'ValueError')
+            .having((e) => e.message, 'message', 'boom'),
+      );
       // An unknown name is still refused, on every path.
       expect(
         () => _decode([exception('NotAnExc', 'x')]),
