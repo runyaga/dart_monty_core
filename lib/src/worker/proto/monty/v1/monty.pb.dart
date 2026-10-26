@@ -166,6 +166,7 @@ enum MontyNode_Kind {
   repr,
   cycle,
   complex,
+  module,
   notSet
 }
 
@@ -207,6 +208,7 @@ class MontyNode extends $pb.GeneratedMessage {
     $core.String? repr,
     $core.String? cycle,
     Complex? complex,
+    ModuleNode? module,
   }) {
     final result = MontyNode._();
     if (ellipsis != null) result.ellipsis = ellipsis;
@@ -240,6 +242,7 @@ class MontyNode extends $pb.GeneratedMessage {
     if (repr != null) result.repr = repr;
     if (cycle != null) result.cycle = cycle;
     if (complex != null) result.complex = complex;
+    if (module != null) result.module = module;
     return result;
   }
 
@@ -284,6 +287,7 @@ class MontyNode extends $pb.GeneratedMessage {
     29: MontyNode_Kind.repr,
     30: MontyNode_Kind.cycle,
     31: MontyNode_Kind.complex,
+    32: MontyNode_Kind.module,
     0: MontyNode_Kind.notSet
   };
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(
@@ -321,7 +325,8 @@ class MontyNode extends $pb.GeneratedMessage {
       28,
       29,
       30,
-      31
+      31,
+      32
     ])
     ..aOM<Unit>(1, _omitFieldNames ? '' : 'ellipsis',
         subBuilder: Unit.$_createMessage)
@@ -379,6 +384,8 @@ class MontyNode extends $pb.GeneratedMessage {
     ..aOS(30, _omitFieldNames ? '' : 'cycle')
     ..aOM<Complex>(31, _omitFieldNames ? '' : 'complex',
         subBuilder: Complex.$_createMessage)
+    ..aOM<ModuleNode>(32, _omitFieldNames ? '' : 'module',
+        subBuilder: ModuleNode.$_createMessage)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -432,6 +439,7 @@ class MontyNode extends $pb.GeneratedMessage {
   @$pb.TagNumber(29)
   @$pb.TagNumber(30)
   @$pb.TagNumber(31)
+  @$pb.TagNumber(32)
   MontyNode_Kind whichKind() => _MontyNode_KindByTag[$_whichOneof(0)]!;
   @$pb.TagNumber(1)
   @$pb.TagNumber(2)
@@ -464,6 +472,7 @@ class MontyNode extends $pb.GeneratedMessage {
   @$pb.TagNumber(29)
   @$pb.TagNumber(30)
   @$pb.TagNumber(31)
+  @$pb.TagNumber(32)
   void clearKind() => $_clearField($_whichOneof(0));
 
   @$pb.TagNumber(1)
@@ -802,6 +811,19 @@ class MontyNode extends $pb.GeneratedMessage {
   void clearComplex() => $_clearField(31);
   @$pb.TagNumber(31)
   Complex ensureComplex() => $_ensure(30);
+
+  /// A host module: imports as a `module` object whose attributes are its
+  /// attrs, and exports back with the same id.
+  @$pb.TagNumber(32)
+  ModuleNode get module => $_getN(31);
+  @$pb.TagNumber(32)
+  set module(ModuleNode value) => $_setField(32, value);
+  @$pb.TagNumber(32)
+  $core.bool hasModule() => $_has(31);
+  @$pb.TagNumber(32)
+  void clearModule() => $_clearField(32);
+  @$pb.TagNumber(32)
+  ModuleNode ensureModule() => $_ensure(31);
 }
 
 /// Indexes of a container's children (list, tuple, set, frozenset items).
@@ -2123,6 +2145,95 @@ class ClassInstanceNode extends $pb.GeneratedMessage {
   Uuid ensureInstanceId() => $_ensure(1);
 
   /// Eagerly-sent attributes as `(name, value)` node indexes, in order.
+  @$pb.TagNumber(3)
+  NodePairs get attrs => $_getN(2);
+  @$pb.TagNumber(3)
+  set attrs(NodePairs value) => $_setField(3, value);
+  @$pb.TagNumber(3)
+  $core.bool hasAttrs() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearAttrs() => $_clearField(3);
+  @$pb.TagNumber(3)
+  NodePairs ensureAttrs() => $_ensure(2);
+}
+
+/// A host-provided module value.
+class ModuleNode extends $pb.GeneratedMessage {
+  factory ModuleNode({
+    $core.String? name,
+    Uuid? id,
+    NodePairs? attrs,
+  }) {
+    final result = ModuleNode._();
+    if (name != null) result.name = name;
+    if (id != null) result.id = id;
+    if (attrs != null) result.attrs = attrs;
+    return result;
+  }
+
+  ModuleNode._();
+
+  factory ModuleNode.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      ModuleNode()..mergeFromBuffer(data, registry);
+  factory ModuleNode.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      ModuleNode()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'ModuleNode',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'monty.v1'),
+      createEmptyInstance: ModuleNode.$_createMessage)
+    ..aOS(1, _omitFieldNames ? '' : 'name')
+    ..aOM<Uuid>(2, _omitFieldNames ? '' : 'id',
+        subBuilder: Uuid.$_createMessage)
+    ..aOM<NodePairs>(3, _omitFieldNames ? '' : 'attrs',
+        subBuilder: NodePairs.$_createMessage)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ModuleNode clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ModuleNode copyWith(void Function(ModuleNode) updates) =>
+      super.copyWith((message) => updates(message as ModuleNode)) as ModuleNode;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  @$core.Deprecated('Use ModuleNode() / ModuleNode.new instead')
+  static ModuleNode create() => ModuleNode._();
+  static $pb.GeneratedMessage $_createMessage() => ModuleNode._();
+  @$core.override
+  ModuleNode createEmptyInstance() => ModuleNode._();
+  @$core.pragma('dart2js:noInline')
+  static ModuleNode getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<ModuleNode>(ModuleNode.$_createMessage);
+  static ModuleNode? _defaultInstance;
+
+  /// The dotted module name, e.g. "pkg.sub".
+  @$pb.TagNumber(1)
+  $core.String get name => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set name($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasName() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearName() => $_clearField(1);
+
+  /// Identity of the module, generated by the host that defined it.
+  @$pb.TagNumber(2)
+  Uuid get id => $_getN(1);
+  @$pb.TagNumber(2)
+  set id(Uuid value) => $_setField(2, value);
+  @$pb.TagNumber(2)
+  $core.bool hasId() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearId() => $_clearField(2);
+  @$pb.TagNumber(2)
+  Uuid ensureId() => $_ensure(1);
+
+  /// The module's attributes as `(name, value)` node indexes, in order.
   @$pb.TagNumber(3)
   NodePairs get attrs => $_getN(2);
   @$pb.TagNumber(3)
@@ -5942,12 +6053,10 @@ class Print extends $pb.GeneratedMessage {
   $pb.PbList<PrintSegment> get segments => $_getList(0);
 }
 
-/// Suspension: the sandbox called an external function, or — when `object_id`
-/// is set — a method on a host-backed object (the receiver is NOT included in
-/// `args`; the host routes by uuid). The receiver may be a class instance or a
-/// class type: calling a host class arrives as a `__call__` method call on the
-/// class's uuid, and the host's own policy decides whether construction is
-/// allowed. Answer with `ResumeCall`.
+/// Suspension: an external function call, or a host method call when `object_id`
+/// identifies the receiver. `args` excludes the receiver. Calling a host class
+/// or instance invokes `__call__` on its uuid, subject to host policy.
+/// Answer with `ResumeCall`. Host module imports use `OsCall.import`.
 class FunctionCall extends $pb.GeneratedMessage {
   factory FunctionCall({
     $core.String? functionName,
@@ -6837,6 +6946,232 @@ class OsCall_AsyncSleep extends $pb.GeneratedMessage {
   void clearDelay() => $_clearField(1);
 }
 
+/// Path.scan(path, max_depth, follow_symlinks, pattern, ...) — answered with a
+/// list of (relative_path, is_dir, is_file, is_symlink) tuples, root included.
+class OsCall_Scan extends $pb.GeneratedMessage {
+  factory OsCall_Scan({
+    $core.String? path,
+    $core.int? maxDepth,
+    $core.bool? followSymlinks,
+    $core.Iterable<$core.String>? pattern,
+    $core.bool? caseSensitive,
+    $core.bool? recurseSymlinks,
+  }) {
+    final result = OsCall_Scan._();
+    if (path != null) result.path = path;
+    if (maxDepth != null) result.maxDepth = maxDepth;
+    if (followSymlinks != null) result.followSymlinks = followSymlinks;
+    if (pattern != null) result.pattern.addAll(pattern);
+    if (caseSensitive != null) result.caseSensitive = caseSensitive;
+    if (recurseSymlinks != null) result.recurseSymlinks = recurseSymlinks;
+    return result;
+  }
+
+  OsCall_Scan._();
+
+  factory OsCall_Scan.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      OsCall_Scan()..mergeFromBuffer(data, registry);
+  factory OsCall_Scan.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      OsCall_Scan()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'OsCall.Scan',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'monty.v1'),
+      createEmptyInstance: OsCall_Scan.$_createMessage)
+    ..aOS(1, _omitFieldNames ? '' : 'path')
+    ..aI(2, _omitFieldNames ? '' : 'maxDepth', fieldType: $pb.PbFieldType.OU3)
+    ..aOB(3, _omitFieldNames ? '' : 'followSymlinks')
+    ..pPS(4, _omitFieldNames ? '' : 'pattern')
+    ..aOB(5, _omitFieldNames ? '' : 'caseSensitive')
+    ..aOB(6, _omitFieldNames ? '' : 'recurseSymlinks')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  OsCall_Scan clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  OsCall_Scan copyWith(void Function(OsCall_Scan) updates) =>
+      super.copyWith((message) => updates(message as OsCall_Scan))
+          as OsCall_Scan;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  @$core.Deprecated('Use OsCall_Scan() / OsCall_Scan.new instead')
+  static OsCall_Scan create() => OsCall_Scan._();
+  static $pb.GeneratedMessage $_createMessage() => OsCall_Scan._();
+  @$core.override
+  OsCall_Scan createEmptyInstance() => OsCall_Scan._();
+  @$core.pragma('dart2js:noInline')
+  static OsCall_Scan getDefault() =>
+      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<OsCall_Scan>(
+          OsCall_Scan.$_createMessage);
+  static OsCall_Scan? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get path => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set path($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasPath() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearPath() => $_clearField(1);
+
+  /// Deepest entry to return; absent for the whole tree.
+  @$pb.TagNumber(2)
+  $core.int get maxDepth => $_getIZ(1);
+  @$pb.TagNumber(2)
+  set maxDepth($core.int value) => $_setUnsignedInt32(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasMaxDepth() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearMaxDepth() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.bool get followSymlinks => $_getBF(2);
+  @$pb.TagNumber(3)
+  set followSymlinks($core.bool value) => $_setBool(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasFollowSymlinks() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearFollowSymlinks() => $_clearField(3);
+
+  /// Glob pattern parts, a pruning hint; empty for a plain listing.
+  @$pb.TagNumber(4)
+  $pb.PbList<$core.String> get pattern => $_getList(3);
+
+  /// Absent for CPython's default (`case_sensitive=None`).
+  @$pb.TagNumber(5)
+  $core.bool get caseSensitive => $_getBF(4);
+  @$pb.TagNumber(5)
+  set caseSensitive($core.bool value) => $_setBool(4, value);
+  @$pb.TagNumber(5)
+  $core.bool hasCaseSensitive() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearCaseSensitive() => $_clearField(5);
+
+  @$pb.TagNumber(6)
+  $core.bool get recurseSymlinks => $_getBF(5);
+  @$pb.TagNumber(6)
+  set recurseSymlinks($core.bool value) => $_setBool(5, value);
+  @$pb.TagNumber(6)
+  $core.bool hasRecurseSymlinks() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearRecurseSymlinks() => $_clearField(6);
+}
+
+/// The argument of `OsCall.import`.
+class OsCall_Import extends $pb.GeneratedMessage {
+  factory OsCall_Import({
+    $core.String? module,
+  }) {
+    final result = OsCall_Import._();
+    if (module != null) result.module = module;
+    return result;
+  }
+
+  OsCall_Import._();
+
+  factory OsCall_Import.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      OsCall_Import()..mergeFromBuffer(data, registry);
+  factory OsCall_Import.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      OsCall_Import()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'OsCall.Import',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'monty.v1'),
+      createEmptyInstance: OsCall_Import.$_createMessage)
+    ..aOS(1, _omitFieldNames ? '' : 'module')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  OsCall_Import clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  OsCall_Import copyWith(void Function(OsCall_Import) updates) =>
+      super.copyWith((message) => updates(message as OsCall_Import))
+          as OsCall_Import;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  @$core.Deprecated('Use OsCall_Import() / OsCall_Import.new instead')
+  static OsCall_Import create() => OsCall_Import._();
+  static $pb.GeneratedMessage $_createMessage() => OsCall_Import._();
+  @$core.override
+  OsCall_Import createEmptyInstance() => OsCall_Import._();
+  @$core.pragma('dart2js:noInline')
+  static OsCall_Import getDefault() =>
+      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<OsCall_Import>(
+          OsCall_Import.$_createMessage);
+  static OsCall_Import? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get module => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set module($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasModule() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearModule() => $_clearField(1);
+}
+
+/// The argument of `OsCall.import_stubs`, in source order.
+class OsCall_ImportStubs extends $pb.GeneratedMessage {
+  factory OsCall_ImportStubs({
+    $core.Iterable<$core.String>? modules,
+  }) {
+    final result = OsCall_ImportStubs._();
+    if (modules != null) result.modules.addAll(modules);
+    return result;
+  }
+
+  OsCall_ImportStubs._();
+
+  factory OsCall_ImportStubs.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      OsCall_ImportStubs()..mergeFromBuffer(data, registry);
+  factory OsCall_ImportStubs.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      OsCall_ImportStubs()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'OsCall.ImportStubs',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'monty.v1'),
+      createEmptyInstance: OsCall_ImportStubs.$_createMessage)
+    ..pPS(1, _omitFieldNames ? '' : 'modules')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  OsCall_ImportStubs clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  OsCall_ImportStubs copyWith(void Function(OsCall_ImportStubs) updates) =>
+      super.copyWith((message) => updates(message as OsCall_ImportStubs))
+          as OsCall_ImportStubs;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  @$core.Deprecated('Use OsCall_ImportStubs() / OsCall_ImportStubs.new instead')
+  static OsCall_ImportStubs create() => OsCall_ImportStubs._();
+  static $pb.GeneratedMessage $_createMessage() => OsCall_ImportStubs._();
+  @$core.override
+  OsCall_ImportStubs createEmptyInstance() => OsCall_ImportStubs._();
+  @$core.pragma('dart2js:noInline')
+  static OsCall_ImportStubs getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<OsCall_ImportStubs>(
+          OsCall_ImportStubs.$_createMessage);
+  static OsCall_ImportStubs? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $pb.PbList<$core.String> get modules => $_getList(0);
+}
+
 enum OsCall_Call {
   exists,
   isFile,
@@ -6867,6 +7202,9 @@ enum OsCall_Call {
   asyncSleep,
   systemSleep,
   asyncSystemSleep,
+  import,
+  importStubs,
+  scan,
   notSet
 }
 
@@ -6916,6 +7254,9 @@ class OsCall extends $pb.GeneratedMessage {
     OsCall_AsyncSleep? asyncSleep,
     OsCall_Sleep? systemSleep,
     OsCall_AsyncSleep? asyncSystemSleep,
+    OsCall_Import? import,
+    OsCall_ImportStubs? importStubs,
+    OsCall_Scan? scan,
     Arena? values,
     $core.bool? allowEagerAwait,
     SourceRange? position,
@@ -6951,6 +7292,9 @@ class OsCall extends $pb.GeneratedMessage {
     if (asyncSleep != null) result.asyncSleep = asyncSleep;
     if (systemSleep != null) result.systemSleep = systemSleep;
     if (asyncSystemSleep != null) result.asyncSystemSleep = asyncSystemSleep;
+    if (import != null) result.import = import;
+    if (importStubs != null) result.importStubs = importStubs;
+    if (scan != null) result.scan = scan;
     if (values != null) result.values = values;
     if (allowEagerAwait != null) result.allowEagerAwait = allowEagerAwait;
     if (position != null) result.position = position;
@@ -6996,6 +7340,9 @@ class OsCall extends $pb.GeneratedMessage {
     28: OsCall_Call.asyncSleep,
     29: OsCall_Call.systemSleep,
     30: OsCall_Call.asyncSystemSleep,
+    31: OsCall_Call.import,
+    32: OsCall_Call.importStubs,
+    33: OsCall_Call.scan,
     0: OsCall_Call.notSet
   };
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(
@@ -7031,7 +7378,10 @@ class OsCall extends $pb.GeneratedMessage {
       27,
       28,
       29,
-      30
+      30,
+      31,
+      32,
+      33
     ])
     ..aI(1, _omitFieldNames ? '' : 'callId', fieldType: $pb.PbFieldType.OU3)
     ..aOS(2, _omitFieldNames ? '' : 'exists')
@@ -7080,6 +7430,12 @@ class OsCall extends $pb.GeneratedMessage {
         subBuilder: OsCall_Sleep.$_createMessage)
     ..aOM<OsCall_AsyncSleep>(30, _omitFieldNames ? '' : 'asyncSystemSleep',
         subBuilder: OsCall_AsyncSleep.$_createMessage)
+    ..aOM<OsCall_Import>(31, _omitFieldNames ? '' : 'import',
+        subBuilder: OsCall_Import.$_createMessage)
+    ..aOM<OsCall_ImportStubs>(32, _omitFieldNames ? '' : 'importStubs',
+        subBuilder: OsCall_ImportStubs.$_createMessage)
+    ..aOM<OsCall_Scan>(33, _omitFieldNames ? '' : 'scan',
+        subBuilder: OsCall_Scan.$_createMessage)
     ..aOM<Arena>(50, _omitFieldNames ? '' : 'values',
         subBuilder: Arena.$_createMessage)
     ..aOB(51, _omitFieldNames ? '' : 'allowEagerAwait')
@@ -7136,6 +7492,9 @@ class OsCall extends $pb.GeneratedMessage {
   @$pb.TagNumber(28)
   @$pb.TagNumber(29)
   @$pb.TagNumber(30)
+  @$pb.TagNumber(31)
+  @$pb.TagNumber(32)
+  @$pb.TagNumber(33)
   OsCall_Call whichCall() => _OsCall_CallByTag[$_whichOneof(0)]!;
   @$pb.TagNumber(2)
   @$pb.TagNumber(3)
@@ -7166,6 +7525,9 @@ class OsCall extends $pb.GeneratedMessage {
   @$pb.TagNumber(28)
   @$pb.TagNumber(29)
   @$pb.TagNumber(30)
+  @$pb.TagNumber(31)
+  @$pb.TagNumber(32)
+  @$pb.TagNumber(33)
   void clearCall() => $_clearField($_whichOneof(0));
 
   @$pb.TagNumber(1)
@@ -7479,41 +7841,82 @@ class OsCall extends $pb.GeneratedMessage {
   @$pb.TagNumber(30)
   OsCall_AsyncSleep ensureAsyncSystemSleep() => $_ensure(29);
 
+  /// ---- Host modules ----------------------------------------------------
+  /// Requests a missing top-level module; answer with its value.
+  /// `not_found` / `not_handled` raise `ModuleNotFoundError`. Further import
+  /// components use eager attributes or `NameLookup` with `object_id`.
+  @$pb.TagNumber(31)
+  OsCall_Import get import => $_getN(30);
+  @$pb.TagNumber(31)
+  set import(OsCall_Import value) => $_setField(31, value);
+  @$pb.TagNumber(31)
+  $core.bool hasImport() => $_has(30);
+  @$pb.TagNumber(31)
+  void clearImport() => $_clearField(31);
+  @$pb.TagNumber(31)
+  OsCall_Import ensureImport() => $_ensure(30);
+
+  /// Requests stubs before type checking, once per top-level module per session.
+  /// Answer with a dict of dotted module paths to `.pyi` source or None;
+  /// `not_found` / `not_handled` mean no stubs.
+  @$pb.TagNumber(32)
+  OsCall_ImportStubs get importStubs => $_getN(31);
+  @$pb.TagNumber(32)
+  set importStubs(OsCall_ImportStubs value) => $_setField(32, value);
+  @$pb.TagNumber(32)
+  $core.bool hasImportStubs() => $_has(31);
+  @$pb.TagNumber(32)
+  void clearImportStubs() => $_clearField(32);
+  @$pb.TagNumber(32)
+  OsCall_ImportStubs ensureImportStubs() => $_ensure(31);
+
+  /// Path.scan — a subtree for os.walk / os.scandir / Path.walk / Path.glob.
+  @$pb.TagNumber(33)
+  OsCall_Scan get scan => $_getN(32);
+  @$pb.TagNumber(33)
+  set scan(OsCall_Scan value) => $_setField(33, value);
+  @$pb.TagNumber(33)
+  $core.bool hasScan() => $_has(32);
+  @$pb.TagNumber(33)
+  void clearScan() => $_clearField(33);
+  @$pb.TagNumber(33)
+  OsCall_Scan ensureScan() => $_ensure(32);
+
   /// The arena any value-typed argument (`Getenv.default`) indexes.
   @$pb.TagNumber(50)
-  Arena get values => $_getN(30);
+  Arena get values => $_getN(33);
   @$pb.TagNumber(50)
   set values(Arena value) => $_setField(50, value);
   @$pb.TagNumber(50)
-  $core.bool hasValues() => $_has(30);
+  $core.bool hasValues() => $_has(33);
   @$pb.TagNumber(50)
   void clearValues() => $_clearField(50);
   @$pb.TagNumber(50)
-  Arena ensureValues() => $_ensure(30);
+  Arena ensureValues() => $_ensure(33);
 
   /// As on `FunctionCall`: the parent may await a coroutine and answer with
   /// `ResumeFutures` for `call_id`. Only ever set on `async_sleep`, the one
   /// call a future may answer at all.
   @$pb.TagNumber(51)
-  $core.bool get allowEagerAwait => $_getBF(31);
+  $core.bool get allowEagerAwait => $_getBF(34);
   @$pb.TagNumber(51)
-  set allowEagerAwait($core.bool value) => $_setBool(31, value);
+  set allowEagerAwait($core.bool value) => $_setBool(34, value);
   @$pb.TagNumber(51)
-  $core.bool hasAllowEagerAwait() => $_has(31);
+  $core.bool hasAllowEagerAwait() => $_has(34);
   @$pb.TagNumber(51)
   void clearAllowEagerAwait() => $_clearField(51);
 
   /// Where the call expression is in the source; absent as on `FunctionCall`.
   @$pb.TagNumber(52)
-  SourceRange get position => $_getN(32);
+  SourceRange get position => $_getN(35);
   @$pb.TagNumber(52)
   set position(SourceRange value) => $_setField(52, value);
   @$pb.TagNumber(52)
-  $core.bool hasPosition() => $_has(32);
+  $core.bool hasPosition() => $_has(35);
   @$pb.TagNumber(52)
   void clearPosition() => $_clearField(52);
   @$pb.TagNumber(52)
-  SourceRange ensurePosition() => $_ensure(32);
+  SourceRange ensurePosition() => $_ensure(35);
 }
 
 /// Suspension: the sandbox read an undefined name — typically probing whether
