@@ -299,7 +299,7 @@ void main() {
     });
   });
 
-  group('duration budgets: the dump keeps its own (O9)', () {
+  group('duration budgets: the dump may only tighten them', () {
     /// An event reporting the feed and turn budgets given, in micros.
     pb.ChildEvent reporting(pb.ChildEvent event, {int? feed, int? turn}) {
       if (feed != null) event.maxFeedDurationMicros = Int64(feed);
@@ -326,40 +326,54 @@ void main() {
       expect(budgets(SessionBudget(const SessionConfig())), (null, null));
     });
 
-    test('a reply sets a budget only where there is none', () {
-      // update_from: `if self.feed_budget.is_none()`; a budget in force is
-      // never changed, larger or smaller.
+    test('a reply tightens the budgets', () {
+      // update_from: `tighter` keeps the smaller of the budget in force and
+      // the one the reply reports; a budget in force is never loosened, and
+      // a report of zero tightens it to nothing.
+      const five = Duration(microseconds: 5);
       const seven = Duration(microseconds: 7);
+      const one = Duration(microseconds: 1);
       final budget = timed(feed: second);
       final states = <(Duration?, Duration?)>[];
       for (final (feed, turn) in [(5, 7), (10000000, 1)]) {
         budget.admit(reporting(_ok(), feed: feed, turn: turn));
         states.add(budgets(budget));
       }
-      expect(states, [(second, seven), (second, seven)]);
+      expect(states, [(five, seven), (five, one)]);
     });
 
-    test("a load forgets the session's; the Load reply's are adopted", () {
-      final budget = timed(feed: second, turn: second)
-        ..beginLoad()
-        ..admit(reporting(_ok(), feed: 2000000))
-        ..endLoad();
-      expect(budgets(budget), (const Duration(seconds: 2), null));
-    });
+    test(
+      "a load retains the session's ceilings under a looser feed report",
+      () {
+        // upstream's `forget` keeps the duration budgets as the ceilings on
+        // the dump's: a load reporting a longer feed duration, and no turn
+        // duration at all, leaves them alone.
+        final budget = timed(feed: second, turn: second)
+          ..beginLoad()
+          ..admit(reporting(_ok(), feed: 2000000))
+          ..endLoad();
+        expect(budgets(budget), (second, second));
+      },
+    );
 
-    test('a re-announced suspension adopts them too', () {
+    test('a re-announced suspension keeps the feed and adopts the turn', () {
       final budget = timed(feed: second)
         ..beginLoad()
         ..admit(reporting(_call(), turn: 3000))
         ..endLoad();
-      expect(budgets(budget), (null, const Duration(milliseconds: 3)));
+      expect(budgets(budget), (second, const Duration(milliseconds: 3)));
     });
 
-    test("a refused load puts the session's back", () {
+    test("a refused load puts the session's back, then tightens it", () {
+      // The rollback restores the budget as it was before the load, and the
+      // error's own reports then tighten the restored ceilings.
       final budget = timed(feed: second, turn: ms)
         ..beginLoad()
         ..admit(reporting(_error(), feed: 5, turn: 5));
-      expect(budgets(budget), (second, ms));
+      expect(
+        budgets(budget),
+        (const Duration(microseconds: 5), const Duration(microseconds: 5)),
+      );
     });
 
     test('a rejected load restores its feed clock', () {

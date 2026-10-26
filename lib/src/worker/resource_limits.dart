@@ -19,6 +19,24 @@ import 'package:meta/meta.dart';
 /// including every feed and resume. A restored dump can tighten those two
 /// limits but cannot raise the receiving checkout's ceilings. Both counters
 /// restart at load.
+///
+/// A dump's own limits are bounded by the destination's: it may keep a
+/// stricter limit of its own, never a looser one (upstream's
+/// `ResourceTracker::tighten_limits`). Seven limits are restored this way:
+/// [maxMemory], [maxFeedDuration], [maxTurnDuration], [maxTotalSleep],
+/// [gcInterval], [maxRecursionDepth] and [maxSuspensions].
+///
+/// Four of them are optional, and unlimited when absent: memory, feed
+/// duration, turn duration and total sleep. For those, an absent limit on
+/// one side keeps the other side's, and an absent limit on both sides stays
+/// unlimited. Recursion depth and suspensions are never unlimited: an absent
+/// Dart configuration resolves to [defaultMaxRecursionDepth] and
+/// [defaultMaxSuspensions], and a restored limit combines with the
+/// destination's by minimum.
+///
+/// This class holds the configuration and its wire form only: the heap,
+/// garbage-collection and recursion limits are enforced by the interpreter,
+/// not by the session's budgets.
 @immutable
 final class ResourceLimits {
   /// The limits; see each field.
@@ -33,32 +51,49 @@ final class ResourceLimits {
   });
 
   /// The longest one feed may run, its suspensions excluded (upstream
-  /// `max_feed_duration_secs`).
+  /// `max_feed_duration_secs`). Absent means unlimited; a restored dump's
+  /// own limit is bounded by this one, and an absent limit on either side
+  /// keeps the other side's.
   final Duration? maxFeedDuration;
 
   /// The longest one turn may run: a feed, or a resume after a suspension
-  /// (upstream `max_turn_duration_secs`).
+  /// (upstream `max_turn_duration_secs`). Absent means unlimited; a restored
+  /// dump's own limit is bounded by this one, and an absent limit on either
+  /// side keeps the other side's.
   final Duration? maxTurnDuration;
 
   /// The interpreter's heap limit in bytes; past it Python raises
-  /// `MemoryError`, and the session survives.
+  /// `MemoryError`, and the session survives. Absent means unlimited; a
+  /// restored dump's own limit is bounded by this one, and an absent limit
+  /// on either side keeps the other side's.
   final int? maxMemory;
 
-  /// How many allocations pass between garbage collections.
+  /// How many allocations pass between garbage collections. Each side that
+  /// leaves it unset counts as [defaultGcInterval] on its own, and the
+  /// smaller of the two effective intervals wins; both sides unset stay
+  /// unset, and then use [defaultGcInterval].
   final int? gcInterval;
 
-  /// The interpreter's recursion limit. Null keeps 1000 and cannot disable it.
+  /// The interpreter's recursion limit. Null keeps
+  /// [defaultMaxRecursionDepth] and cannot disable it. A restored dump's
+  /// own limit is bounded by this one: each side's effective limit, the
+  /// default where it is unset, and the smaller of the two wins.
   final int? maxRecursionDepth;
 
   /// How many host calls a session may suspend for; past it the feed is
   /// aborted with an uncatchable `RuntimeError` and the session remains
-  /// usable. Null keeps 1000 and cannot disable it.
+  /// usable. Null keeps [defaultMaxSuspensions] and cannot disable it. A
+  /// restored dump's own limit is bounded by this one: each side's
+  /// effective limit, the default where it is unset, and the smaller of the
+  /// two wins.
   final int? maxSuspensions;
 
   /// The most the session's system sleeps may add up to. The parent charges
   /// `system.sleep` and `system.async_sleep` before waiting. A sleep that
   /// would pass this limit aborts the feed with an uncatchable `TimeoutError`
   /// and leaves the session usable (upstream `max_total_sleep_secs`).
+  /// Absent means unlimited; a restored dump's own limit is bounded by this
+  /// one, and an absent limit on either side keeps the other side's.
   final Duration? maxTotalSleep;
 
   @override
@@ -116,6 +151,9 @@ const int defaultMaxRecursionDepth = 1000;
 
 /// Upstream's `DEFAULT_MAX_SUSPENSIONS`.
 const int defaultMaxSuspensions = 1000;
+
+/// Upstream's `DEFAULT_GC_INTERVAL`.
+const int defaultGcInterval = 100000;
 
 /// Upstream's text for a negative duration (Rust's `try_from_secs_f64`).
 const String negativeDurationText =
