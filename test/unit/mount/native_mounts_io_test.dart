@@ -3,6 +3,7 @@
 library;
 
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:dart_monty_core/src/mount/native_mount_service.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart';
@@ -14,6 +15,11 @@ import 'package:test/test.dart';
 // Expectations: design/F/evidence/probes/oracle_probes.out, P01-P08.
 // Protobuf is transport only; no expected result is computed by monty-fs.
 void main() {
+  // One probe runner per suite invocation: it owns this invocation's
+  // snapshot, its temporary directory, and nothing else.
+  final probe = _ProbeRunner();
+  tearDownAll(probe._deleteProbeSnapshot);
+
   test(
     'the lookup route names the discovery path that supplied the symbols',
     () {
@@ -215,11 +221,7 @@ void main() {
       final feed = table([root()]);
       // Other suites may have loaded global symbols already. Check discovery
       // in a fresh VM so @Native's process fallback cannot mask route 2.
-      final lookup = await Process.run(Platform.resolvedExecutable, [
-        'run',
-        'test/unit/mount/native_mount_finalizer_probe.dart',
-        '--lookup-only',
-      ]);
+      final lookup = await probe._runProbe(['--lookup-only']);
       expect(lookup.exitCode, 0, reason: '${lookup.stdout}\n${lookup.stderr}');
       expect(lookup.stdout, contains('mount lookup: package'));
       expect(
@@ -380,11 +382,10 @@ void main() {
     dir = dir.renameSync(destination);
   }, skip: !Platform.isWindows ? 'Windows sharing mode contract' : false);
   test('NativeFinalizer releases unclosed directory capabilities', () async {
-    final result = await Process.run(Platform.resolvedExecutable, [
-      '--enable-vm-service=0',
-      'run',
-      'test/unit/mount/native_mount_finalizer_probe.dart',
-    ]);
+    final result = await probe._runProbe(
+      [],
+      vmOptions: ['--enable-vm-service=0'],
+    );
     expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
     expect(result.stdout, contains('finalized 32 mount roots'));
   }, skip: Platform.isWindows ? 'descriptor probe uses POSIX fcntl' : false);
@@ -433,4 +434,130 @@ String error(NativeMountTable table, pb.OsCall call) {
   final exception = result.error;
 
   return '${exception.excType}: ${exception.message}';
+}
+
+/// The checkout root that owns this package.
+///
+/// The package library's own location is the anchor: the probe, the package
+/// configuration and the worker binaries all live below it. Resolving the
+/// package URI keeps the paths correct no matter which directory the test
+/// runner was started from.
+String _packageRoot() {
+  final library = Isolate.resolvePackageUriSync(
+    Uri.parse('package:dart_monty_core/dart_monty_core.dart'),
+  );
+  if (library == null) {
+    throw StateError(
+      'cannot resolve package:dart_monty_core/dart_monty_core.dart',
+    );
+  }
+  // <root>/lib/dart_monty_core.dart -> <root>/lib -> <root>
+  final root = File.fromUri(library).parent.parent;
+
+  return root.path;
+}
+
+/// Compiles and runs the native mount probe for one suite invocation.
+///
+/// The probe is compiled once per suite invocation, asynchronously, into a
+/// private temporary directory; each probe execution then runs that kernel
+/// snapshot in a fresh Dart VM. Separate test processes compile concurrently:
+/// they share neither output paths nor coordination state, so no lock, cache
+/// or PID protocol is involved.
+final class _ProbeRunner {
+  /// The compilation started by this suite invocation, if any.
+  Future<File>? _snapshot;
+
+  /// The temporary directory holding this invocation's snapshot, if any.
+  Directory? _snapshotDirectory;
+
+  /// The compiled probe snapshot, compiling it at most once per invocation.
+  Future<File> _probeSnapshot() {
+    final pending = _snapshot;
+    if (pending != null) return pending;
+
+    // Recorded before it is awaited, so a second caller reuses the same
+    // compilation instead of starting another one.
+    final compilation = _compileProbe();
+    _snapshot = compilation;
+
+    return compilation;
+  }
+
+  /// Compiles the probe into this invocation's private temporary directory.
+  Future<File> _compileProbe() async {
+    final root = _packageRoot();
+    final directory = await Directory.systemTemp.createTemp('dmfs-probe-');
+    _snapshotDirectory = directory;
+    final snapshot = File('${directory.path}/native_mount_probe.dill');
+    final result = await Process.run(
+      Platform.resolvedExecutable,
+      [
+        'compile',
+        'kernel',
+        '$root/test/unit/mount/native_mount_finalizer_probe.dart',
+        '--packages=$root/.dart_tool/package_config.json',
+        '-o',
+        snapshot.path,
+      ],
+      workingDirectory: root,
+    );
+    if (result.exitCode != 0 || !snapshot.existsSync()) {
+      await _removePartialSnapshot(snapshot);
+      throw StateError(
+        'native mount probe compilation failed '
+        '(exit ${result.exitCode}):\n${result.stdout}\n${result.stderr}',
+      );
+    }
+
+    return snapshot;
+  }
+
+  /// Runs the compiled probe in a fresh VM and returns its result.
+  Future<ProcessResult> _runProbe(
+    List<String> arguments, {
+    List<String> vmOptions = const [],
+  }) async {
+    final root = _packageRoot();
+    final snapshot = await _probeSnapshot();
+
+    return Process.run(
+      Platform.resolvedExecutable,
+      [
+        ...vmOptions,
+        '--packages=$root/.dart_tool/package_config.json',
+        snapshot.path,
+        ...arguments,
+      ],
+      workingDirectory: root,
+    );
+  }
+
+  /// Removes this invocation's temporary directory, once compilation settled.
+  Future<void> _deleteProbeSnapshot() async {
+    final pending = _snapshot;
+    if (pending != null) {
+      // Let a started compilation settle before its directory disappears.
+      try {
+        await pending;
+      } on Object {
+        // The test that asked for the snapshot reports the failure.
+      }
+    }
+    final directory = _snapshotDirectory;
+    if (directory == null) return;
+    if (directory.existsSync()) {
+      await directory.delete(recursive: true);
+    }
+  }
+
+  /// Removes a partial compilation artefact, keeping the original failure.
+  Future<void> _removePartialSnapshot(File snapshot) async {
+    if (!snapshot.existsSync()) return;
+    try {
+      await snapshot.delete();
+    } on FileSystemException {
+      // The suite teardown removes the whole temporary directory.
+    }
+  }
 }
