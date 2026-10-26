@@ -58,6 +58,13 @@ typedef OsHandler =
       Map<String, MontyValue> kwargs,
     );
 
+/// Where an OS call goes before the OS handler: the mount table's own call,
+/// or a route the host injected.
+///
+/// The route answers with the encoded reply, or null when it declines the
+/// call, as the mount table's own call does.
+typedef MountRoute = List<int>? Function(List<int>);
+
 /// Marks a host function as a Python coroutine.
 ///
 /// An eagerly awaited call waits in place. Other calls produce pending
@@ -320,6 +327,28 @@ Duration cappedSleep(double seconds, Duration max) {
       : Duration(microseconds: micros.round());
 }
 
+/// A feed's mount table and the route its OS calls take.
+///
+/// The route is the table's own call, or the one the host injected: a
+/// supplied route replaces the table's call, it does not follow it.
+final class _Mounts {
+  const _Mounts(this.table, this.route);
+
+  /// The feed's overlay and budgets, absent without mounts.
+  final NativeMountTable? table;
+
+  /// Where an OS call goes before the OS handler.
+  final MountRoute? route;
+}
+
+/// The mount table for [mount], and the route its calls take: the injected
+/// [route] when there is one, else the table's own call.
+_Mounts _mountsFor(List<MountDir>? mount, MountRoute? route) {
+  final table = beginMountFeed(mount);
+
+  return _Mounts(table, route ?? table?.call);
+}
+
 /// The host's side of one feed: its external lookup, OS handler and the
 /// coroutines it has started, answering the worker's suspensions as
 /// upstream's async binding does.
@@ -341,10 +370,12 @@ final class HostAnswers {
     this.os,
     this.systemSleepMax,
     this.recorder,
+    this.externalModules = const {},
     HostObjects? objects,
     List<MountDir>? mount,
+    MountRoute? mountRoute,
   }) : objects = objects ?? HostObjects(),
-       _mountTable = beginMountFeed(mount);
+       _mounts = _mountsFor(mount, mountRoute);
 
   /// Callback context for this checkout, absent without instrumentation.
   final TelemetryRecorder? recorder;
@@ -360,11 +391,18 @@ final class HostAnswers {
   /// The OS handler; without one every OS call is declined.
   final OsHandler? os;
 
+  /// The session's host modules, by name: the modules an `import` asks for.
+  ///
+  /// The map is read live, as upstream reads `external_modules`: an entry
+  /// added, replaced or removed after the session opened is seen by the
+  /// next import.
+  final Map<String, ExternalModule> externalModules;
+
   /// The longest system sleep the parent waits; null declines system sleeps.
   final Duration? systemSleepMax;
 
-  /// This feed's overlay and budgets, retained across snapshot resumes.
-  final NativeMountTable? _mountTable;
+  /// This feed's overlay and budgets, and where its OS calls go.
+  final _Mounts _mounts;
 
   /// Coroutines started and not yet delivered, by call id.
   final Set<int> _running = {};
@@ -498,7 +536,7 @@ final class HostAnswers {
     final max = systemSleepMax;
     final slept = parentSleeps && max != null ? _systemSleep(call, max) : null;
     if (slept != null) return slept;
-    final mounted = _mountTable?.call(call.writeToBuffer());
+    final mounted = _mounts.route?.call(call.writeToBuffer());
     if (mounted != null) {
       return pb.ParentRequest(resumeCall: pb.ResumeCall.fromBuffer(mounted));
     }
@@ -540,7 +578,7 @@ final class HostAnswers {
   /// the drive). A sleep the drive still awaits returns at once; one behind
   /// a pending future settles, unread.
   void dispose() {
-    _mountTable?.close();
+    _mounts.table?.close();
     for (final (timer, done) in [..._sleeps]) {
       timer.cancel();
       if (!done.isCompleted) done.complete();

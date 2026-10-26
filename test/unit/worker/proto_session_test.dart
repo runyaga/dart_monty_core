@@ -2,9 +2,16 @@
 // channel: configure and limits, the feed loop's three suspensions, prints,
 // in-band errors, reset, crashes and protocol desync. The replies are the
 // monty-proto messages a worker sends, so this pins the driver's half of the
-// protocol on the VM, dart2js and dart2wasm without a worker.
+// protocol on the VM, dart2js and dart2wasm without a worker. The last test
+// covers the session's host modules: the map is read live, and an import is
+// answered before the mounts and the OS handler see it.
+import 'dart:convert';
+
 import 'package:dart_monty_core/dart_monty_core.dart'
     hide MontyError, MontySyntaxError, MontyTypingError;
+import 'package:dart_monty_core/src/platform/monty_value.dart'
+    show ExternalModule;
+import 'package:dart_monty_core/src/worker/host_answers.dart' show HostAnswers;
 import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/proto_session.dart';
@@ -13,6 +20,7 @@ import 'package:fixnum/fixnum.dart';
 import 'package:test/test.dart';
 
 import '../../_accessors.dart';
+import '_pool_protocol_support.dart';
 import '_scripted_channel.dart';
 
 const pb.PrintStream _stdout = pb.PrintStream.PRINT_STREAM_STDOUT;
@@ -1507,6 +1515,16 @@ void main() {
       expect(ch.isAlive, isFalse);
     });
   });
+
+  test(
+    'session modules stay live and Import precedes mounts and OS handlers',
+    () async {
+      await _liveFeeds();
+      await _lookupAndErrors();
+      await _automaticResume();
+      await _mountPrecedenceAndScan();
+    },
+  );
 }
 
 /// A `complex` node, `1j`.
@@ -1516,3 +1534,707 @@ final pb.MontyNode _complex = pb.MontyNode(
 
 /// What [_complex] decodes to.
 const MontyValue _complexValue = MontyComplex(0, 1);
+
+// ---------------------------------------------------------------------------
+// The session's modules: the map is read live, and an import is answered
+// before the mounts and the OS handler see it.
+//
+// The `import` arm of an OS call is not in the bindings yet, so the worker
+// protocol rejects the call: the test fails on the first import, through
+// the matcher that wants the feed to succeed.
+// ---------------------------------------------------------------------------
+
+/// The module the scenarios import.
+const String _tools = 'tools';
+
+/// A module name that is not an identifier.
+const String _badName = 'bad name';
+
+/// The module whose attribute cannot be converted.
+const String _badValue = 'bad_value';
+
+/// The version a module carries, as the scenarios replace it.
+const int _versionOne = 1;
+
+/// The version the replacement module carries.
+const int _versionTwo = 2;
+
+/// The version the module that comes back carries.
+const int _versionThree = 3;
+
+/// The version the module replaced while a feed is suspended carries.
+const int _versionFive = 5;
+
+/// A version above 2^32, so a module that is not the one asked for can
+/// never pass as it: it is still below 2^53, so it is exact on every
+/// platform, dart2js included.
+const int _versionLarge = 4294967297;
+
+/// The modules a session offers, and the imports it answers.
+///
+/// The map is the session's own: it is kept as it is and read live, so an
+/// entry added, replaced or removed after the session opened is seen by the
+/// next import.
+Future<void> _liveFeeds() async {
+  final modules = {
+    // A name that is not an identifier, and is never asked for: opening the
+    // session and importing another name must not look at it.
+    _badName: ExternalModule({'VERSION': _versionOne}),
+  };
+  final osCalls = <String>[];
+  final answered = <int>[];
+  final done = completeNone();
+  final ended = expecting(pb.ParentRequest_Kind.resumeCall, [done]);
+  final channel = ScriptedChannel([
+    expecting(pb.ParentRequest_Kind.configure, [ok()]),
+    // The first feed: the module is absent.
+    expecting(pb.ParentRequest_Kind.feed, [_importEvent(1, _tools)]),
+    ended,
+    // The second feed: the import, the module that replaced it, and the
+    // module that was removed, all answered within the one feed.
+    expecting(pb.ParentRequest_Kind.feed, [_importEvent(2, _tools)]),
+    (request) {
+      answered.add(request.resumeCall.callId);
+      modules[_tools] = ExternalModule({'VERSION': _versionTwo});
+
+      return [_importEvent(3, _tools)];
+    },
+    (request) {
+      answered.add(request.resumeCall.callId);
+      modules.remove(_tools);
+
+      return [_importEvent(4, _tools)];
+    },
+    ended,
+    // The third feed: the module is back, with another version.
+    expecting(pb.ParentRequest_Kind.feed, [_importEvent(5, _tools)]),
+    ended,
+  ]);
+  final session = await ProtoSession.open(
+    channel,
+    SessionConfig(externalModules: modules),
+  );
+  addTearDown(session.close);
+
+  // The map is the session's own: it is not copied.
+  expect(session.externalModules, same(modules));
+
+  // The module is absent: the import finds nothing, and the name that is
+  // not an identifier is not looked at.
+  await _feedOk(session, 'import tools', osCalls);
+  _expectNotFound(channel, 1, 'import');
+  expect(osCalls, isEmpty, reason: 'the OS handler never sees an import');
+
+  // The module is added after the session opened: the import answers with
+  // it, then with the one that replaced it, then with nothing.
+  modules[_tools] = ExternalModule({'VERSION': _versionOne});
+  await _feedOk(session, 'import tools', osCalls);
+  expect(answered, [2, 3], reason: 'the feed answered both imports');
+  _expectImportedModule(channel, 2, _tools, _versionOne);
+  _expectImportedModule(channel, 3, _tools, _versionTwo);
+  _expectNotFound(channel, 4, 'import');
+  expect(osCalls, isEmpty, reason: 'the OS handler never sees an import');
+
+  // The module was removed while the feed ran: the host's map no longer
+  // holds it.
+  expect(modules.containsKey(_tools), isFalse);
+
+  // The module is added again: the next feed answers with it.
+  modules[_tools] = ExternalModule({'VERSION': _versionThree});
+  await _feedOk(session, 'import tools', osCalls);
+  _expectImportedModule(channel, 5, _tools, _versionThree);
+  expect(osCalls, isEmpty, reason: 'the OS handler never sees an import');
+
+  await _omittedMapsAreOwn();
+}
+
+/// Two sessions without a module map own one each: mutable, and their own.
+Future<void> _omittedMapsAreOwn() async {
+  const open = ProtoSession.open;
+  final sessions = <ProtoSession>[];
+  for (var count = 0; count < 2; count++) {
+    sessions.add(await open(_configured([])));
+  }
+  addTearDown(itemAt(sessions, 0).close);
+  addTearDown(itemAt(sessions, 1).close);
+  final first = itemAt(sessions, 0);
+  final second = itemAt(sessions, 1);
+  expect(first.externalModules, isEmpty);
+  expect(first.externalModules, isNot(same(second.externalModules)));
+  first.externalModules[_tools] = ExternalModule({'VERSION': _versionOne});
+  expect(first.externalModules, hasLength(1));
+  expect(second.externalModules, isEmpty);
+}
+
+/// The lookup of a module name, and the errors an import reports.
+Future<void> _lookupAndErrors() async {
+  final modules = {
+    _tools: ExternalModule({'VERSION': _versionOne}),
+  };
+  final osCalls = <String>[];
+  final done = completeNone();
+  final ended = expecting(pb.ParentRequest_Kind.resumeCall, [done]);
+  final channel = ScriptedChannel([
+    expecting(pb.ParentRequest_Kind.configure, [ok()]),
+    // The name is absent: the import finds no module.
+    expecting(pb.ParentRequest_Kind.feed, [_importEvent(1, _badName)]),
+    ended,
+    // The name is there now, and it is not an identifier.
+    expecting(pb.ParentRequest_Kind.feed, [_importEvent(2, _badName)]),
+    ended,
+    // A valid module still imports after that failure.
+    expecting(pb.ParentRequest_Kind.feed, [_importEvent(3, _tools)]),
+    ended,
+    // A module whose attribute cannot be converted.
+    expecting(pb.ParentRequest_Kind.feed, [_importEvent(4, _badValue)]),
+    ended,
+    // And a valid module still imports after that failure too.
+    expecting(pb.ParentRequest_Kind.feed, [_importEvent(5, _tools)]),
+    ended,
+  ]);
+  final session = await ProtoSession.open(
+    channel,
+    SessionConfig(externalModules: modules),
+  );
+  addTearDown(session.close);
+
+  // The name is absent: the import is not found, and the name is not
+  // checked.
+  await _feedOk(session, 'import bad name', osCalls);
+  _expectNotFound(channel, 1, 'import');
+  expect(osCalls, isEmpty, reason: 'the OS handler never sees an import');
+
+  // The name is there, and it is not an identifier: the import fails, with
+  // the name in the message.
+  modules[_badName] = ExternalModule({'VERSION': _versionOne});
+  await _feedOk(session, 'import bad name', osCalls);
+  _expectError(channel, 2, 'ValueError', _badName);
+  expect(osCalls, isEmpty, reason: 'the OS handler never sees an import');
+
+  // The session is still usable.
+  await _feedOk(session, 'import tools', osCalls);
+  _expectImportedModule(channel, 3, _tools, _versionOne);
+  expect(osCalls, isEmpty, reason: 'the OS handler never sees an import');
+
+  // A module whose attribute cannot be converted fails the import, with
+  // the conversion in the message: the name is valid, so the name is not
+  // what fails.
+  modules[_badValue] = ExternalModule({'bad': Object()});
+  await _feedOk(session, 'import bad value', osCalls);
+  _expectError(channel, 4, 'TypeError', 'Cannot convert');
+  expect(osCalls, isEmpty, reason: 'the OS handler never sees an import');
+
+  // And the session is still usable.
+  await _feedOk(session, 'import tools', osCalls);
+  _expectImportedModule(channel, 5, _tools, _versionOne);
+  expect(osCalls, isEmpty, reason: 'the OS handler never sees an import');
+}
+
+/// The modules a suspended feed sees: the map is read live across a
+/// suspension.
+Future<void> _automaticResume() async {
+  final modules = {
+    _tools: ExternalModule({'VERSION': _versionThree}),
+  };
+  final osCalls = <String>[];
+  final done = completeNone();
+  final ended = expecting(pb.ParentRequest_Kind.resumeCall, [done]);
+  final (session, channel) = await poolB2Session(
+    [
+      expecting(pb.ParentRequest_Kind.feed, [_importEvent(1, _tools)]),
+      ended,
+      expecting(pb.ParentRequest_Kind.feed, [_importEvent(2, _tools)]),
+      ended,
+      expecting(pb.ParentRequest_Kind.feed, [_importEvent(3, _tools)]),
+      ended,
+    ],
+    config: SessionConfig(externalModules: modules),
+  );
+  await _resumeWithReplacedModule(session, channel, modules, osCalls);
+  await _resumeWithRemovedModule(session, channel, modules, osCalls);
+  await _feedAfterResume(session, channel, modules, osCalls);
+}
+
+/// The module is replaced while the feed is suspended: the resume answers
+/// with the module the session holds now.
+Future<void> _resumeWithReplacedModule(
+  MontySession session,
+  ScriptedChannel channel,
+  Map<String, ExternalModule> modules,
+  List<String> osCalls,
+) async {
+  final snapshot = await _suspendedOnImport(session, _recording(osCalls));
+  expect(snapshot.functionName, 'import');
+  expect(snapshot.isOsFunction, isTrue);
+  modules[_tools] = ExternalModule({'VERSION': _versionFive});
+  final resumed = await _outcome(snapshot.resumeAuto);
+  _expectNoError(resumed, 'the feed');
+  expect(resumed.value, isA<MontyComplete>(), reason: 'the feed completes');
+  _expectImportedModule(channel, snapshot.callId, _tools, _versionFive);
+  expect(osCalls, isEmpty, reason: 'the OS handler never sees an import');
+}
+
+/// The module is gone while the feed is suspended: the import finds
+/// nothing.
+Future<void> _resumeWithRemovedModule(
+  MontySession session,
+  ScriptedChannel channel,
+  Map<String, ExternalModule> modules,
+  List<String> osCalls,
+) async {
+  final snapshot = await _suspendedOnImport(session, _recording(osCalls));
+  modules.remove(_tools);
+  final resumed = await _outcome(snapshot.resumeAuto);
+  _expectNoError(resumed, 'the feed');
+  expect(resumed.value, isA<MontyComplete>(), reason: 'the feed completes');
+  _expectNotFound(channel, snapshot.callId, 'import');
+  expect(osCalls, isEmpty, reason: 'the OS handler never sees an import');
+}
+
+/// The session is still usable after the resumes.
+Future<void> _feedAfterResume(
+  MontySession session,
+  ScriptedChannel channel,
+  Map<String, ExternalModule> modules,
+  List<String> osCalls,
+) async {
+  modules[_tools] = ExternalModule({'VERSION': _versionThree});
+  final outcome = await _outcome(
+    () => session.feedRun('import tools', os: _recording(osCalls)),
+  );
+  _expectNoError(outcome, 'the feed');
+  _expectImportedModule(channel, 3, _tools, _versionThree);
+  expect(osCalls, isEmpty, reason: 'the OS handler never sees an import');
+}
+
+/// An import is answered before the mounts and the OS handler see it.
+Future<void> _mountPrecedenceAndScan() async {
+  final modules = {
+    _tools: ExternalModule({'VERSION': _versionLarge}),
+    _badName: ExternalModule({'VERSION': _versionOne}),
+    _badValue: ExternalModule({'bad': Object()}),
+  };
+  final mountCalls = <List<int>>[];
+  final osCalls = <(String, List<MontyValue>)>[];
+  final order = <String>[];
+  final mountsAfterImport = <int>[];
+  final handlersAfterImport = <int>[];
+  final one = hasLength(1);
+  final channel = ScriptedChannel([
+    expecting(pb.ParentRequest_Kind.configure, [ok()]),
+    expecting(pb.ParentRequest_Kind.feed, [_importEvent(1, _tools)]),
+    (request) {
+      mountsAfterImport.add(mountCalls.length);
+      handlersAfterImport.add(osCalls.length);
+
+      return [_importEvent(2, 'absent')];
+    },
+    (request) {
+      mountsAfterImport.add(mountCalls.length);
+      handlersAfterImport.add(osCalls.length);
+
+      return [_importEvent(3, _badName)];
+    },
+    (request) {
+      mountsAfterImport.add(mountCalls.length);
+      handlersAfterImport.add(osCalls.length);
+
+      return [_importEvent(4, _badValue)];
+    },
+    (request) {
+      mountsAfterImport.add(mountCalls.length);
+      handlersAfterImport.add(osCalls.length);
+
+      return [_scanEvent(5, '/data')];
+    },
+    expecting(pb.ParentRequest_Kind.resumeCall, [completeNone()]),
+  ]);
+  final session = await ProtoSession.open(
+    channel,
+    SessionConfig(externalModules: modules),
+  );
+  addTearDown(session.close);
+  final host = HostAnswers(
+    externalModules: session.externalModules,
+    os: (name, args, _) {
+      order.add('os');
+      osCalls.add((name, args));
+
+      return const MontyList([]);
+    },
+    mountRoute: (bytes) {
+      order.add('mount');
+      mountCalls.add(bytes);
+
+      return null;
+    },
+  );
+
+  final driven = await _outcome(
+    () => session.drive(session.prepareFeed('import tools', const {}), host),
+  );
+  _expectNoError(driven, 'the feed');
+
+  // Every import was answered before the mounts and the OS handler saw it.
+  expect(
+    mountsAfterImport,
+    [0, 0, 0, 0],
+    reason: 'an import never reaches the mounts',
+  );
+  expect(
+    handlersAfterImport,
+    [0, 0, 0, 0],
+    reason: 'an import never reaches the OS handler',
+  );
+
+  // The imports answered as they must.
+  _expectImportedModule(channel, 1, _tools, _versionLarge);
+  _expectNotFound(channel, 2, 'import');
+  _expectError(channel, 3, 'ValueError', _badName);
+  _expectError(channel, 4, 'TypeError', 'Cannot convert');
+
+  // The scan goes to the mounts, which decline it, and then to the OS
+  // handler.
+  expect(mountCalls, one, reason: 'the scan reaches the mounts');
+  expect(osCalls, one, reason: 'the scan reaches the handler');
+  final handled = onlyItem(osCalls);
+  expect(handled.$1, 'Path.scan');
+  expect(handled.$2, [MontyPath('/data')]);
+  expect(order, ['mount', 'os'], reason: 'the mounts come first');
+
+  // The scan's answer is an empty list, under the call's own id.
+  final answer = _answerFor(channel, 5);
+  expect(
+    answer.result.whichKind(),
+    pb.ExtFunctionResult_Kind.returnValue,
+    reason: 'the scan returns a value',
+  );
+  final nodes = answer.values.nodes;
+  final root = answer.result.returnValue;
+  expect(root, inInclusiveRange(0, nodes.length - 1));
+  final listed = itemAt(nodes, root);
+  expect(listed.hasList(), isTrue, reason: 'the scan returns a list');
+  expect(listed.list.items, isEmpty);
+  expect(answer.callId, 5);
+}
+
+/// Feeds [code] on [session], which must succeed, and fails the test when
+/// it does not: the failure is the outcome, not a thrown exception.
+Future<void> _feedOk(
+  ProtoSession session,
+  String code,
+  List<String> osCalls,
+) async {
+  final outcome = await _outcome(
+    () => session.feed(code, onOsCall: _recording(osCalls)),
+  );
+  _expectNoError(outcome, 'the feed');
+}
+
+/// The snapshot the feed suspended on: it must be the import.
+Future<FunctionSnapshot> _suspendedOnImport(
+  MontySession session,
+  OsHandler os,
+) async {
+  final outcome = await _outcome(
+    () => session.feedStart('import tools', os: os),
+  );
+  _expectNoError(outcome, 'the feed');
+  expect(
+    outcome.value,
+    isA<FunctionSnapshot>(),
+    reason: 'the import suspends the feed',
+  );
+
+  return switch (outcome.value) {
+    final FunctionSnapshot found => found,
+    _ => fail('the import suspends the feed'),
+  };
+}
+
+/// An OS handler that records every call's name in [calls] and answers
+/// `None`.
+OsHandler _recording(List<String> calls) => (name, _, _) {
+  calls.add(name);
+
+  return const MontyNone();
+};
+
+/// The outcome of an operation: the value it returned, or the error it
+/// threw.
+///
+/// Only the operation's own failure is caught, so the assertions that read
+/// the outcome fail on their own.
+Future<_Outcome> _outcome(Future<Object?> Function() operation) async {
+  try {
+    return (value: await operation(), error: null);
+  } on Object catch (error) {
+    return (value: null, error: error);
+  }
+}
+
+/// The outcome of an operation that must not have failed: the error, when
+/// there is one, is what the test reports.
+void _expectNoError(_Outcome outcome, String what) {
+  expect(
+    outcome.error,
+    isNull,
+    reason: '$what must not fail: ${outcome.error}',
+  );
+}
+
+/// What an operation under test returned, or the error it threw.
+typedef _Outcome = ({Object? value, Object? error});
+
+/// The reply the channel recorded for the call [callId].
+pb.ResumeCall _answerFor(ScriptedChannel channel, int callId) {
+  final answers = [
+    for (final request in channel.requests)
+      if (request.hasResumeCall() && request.resumeCall.callId == callId)
+        request.resumeCall,
+  ];
+  expect(answers, hasLength(1), reason: 'one reply for the call $callId');
+
+  return onlyItem(answers);
+}
+
+/// The answer to the call [callId] finds no module: the name [name] is the
+/// one upstream reports.
+void _expectNotFound(ScriptedChannel channel, int callId, String name) {
+  final answer = _answerFor(channel, callId);
+  expect(
+    answer.result.whichKind(),
+    pb.ExtFunctionResult_Kind.notFound,
+    reason: 'the call $callId finds no module',
+  );
+  expect(answer.result.notFound, name, reason: 'the call $callId');
+}
+
+/// The answer to the call [callId] is the module [name], whose `VERSION`
+/// attribute is [version].
+void _expectImportedModule(
+  ScriptedChannel channel,
+  int callId,
+  String name,
+  int version,
+) {
+  final answer = _answerFor(channel, callId);
+  expect(
+    answer.result.whichKind(),
+    pb.ExtFunctionResult_Kind.returnValue,
+    reason: 'the call $callId returns the module',
+  );
+  final nodes = answer.values.nodes;
+  final root = answer.result.returnValue;
+  final inArena = inInclusiveRange(0, nodes.length - 1);
+  expect(root, inArena, reason: 'the module is in the arena');
+  final module = _moduleIn(nodes, root);
+  expect(module.name, name, reason: 'the call $callId');
+  final versions = [
+    for (final (key, value) in module.attrs)
+      if (_nodeString(nodes, key) == 'VERSION') value,
+  ];
+  expect(versions, hasLength(1), reason: 'the module has one VERSION');
+  final index = onlyItem(versions);
+  expect(index, inArena, reason: 'the version is in the arena');
+  final value = itemAt(nodes, index);
+  expect(value.hasInt_5(), isTrue, reason: 'VERSION is an integer');
+  // The version is compared as a whole number, so the comparison is exact
+  // on every platform, dart2js included.
+  expect(
+    intOfNode(value),
+    BigInt.from(version),
+    reason: 'the module is the one the session holds',
+  );
+}
+
+/// The answer to the call [callId] fails with the exception [excType], whose
+/// message mentions [detail].
+void _expectError(
+  ScriptedChannel channel,
+  int callId,
+  String excType,
+  String detail,
+) {
+  final answer = _answerFor(channel, callId);
+  expect(
+    answer.result.whichKind(),
+    pb.ExtFunctionResult_Kind.error,
+    reason: 'the call $callId fails',
+  );
+  final error = answer.result.error;
+  expect(error.excType, excType, reason: 'the call $callId');
+  expect(error.message, contains(detail), reason: 'the call $callId');
+}
+
+/// The module the node at [index] carries: its name and its attributes, as
+/// the indexes of their nodes in the same arena.
+_Module _moduleIn(List<pb.MontyNode> nodes, int index) {
+  final body = _wireBytes(itemAt(nodes, index).writeToBuffer(), 32);
+  expect(body, isNotEmpty, reason: 'the node carries a module');
+  final name = _wireBytes(body, 1);
+  expect(name, isNotEmpty, reason: 'the module has a name');
+  final attrs = _wireBytes(body, 3);
+  expect(attrs, isNotEmpty, reason: 'the module has attributes');
+  final pairs = <(int, int)>[];
+  for (final pair in _wireBytesAll(attrs, 1)) {
+    pairs.add((_wireVarint(pair, 1), _wireVarint(pair, 2)));
+  }
+
+  return _Module(utf8.decode(name), pairs);
+}
+
+/// The module a reply carries: its name and its attributes, as the indexes
+/// of their nodes in the reply's arena.
+final class _Module {
+  const _Module(this.name, this.attrs);
+
+  /// The module's dotted name.
+  final String name;
+
+  /// The module's attributes, as the (key, value) node indexes.
+  final List<(int, int)> attrs;
+}
+
+/// The string the node at [index] carries, or null when it carries none.
+String? _nodeString(List<pb.MontyNode> nodes, int index) {
+  if (index < 0 || index >= nodes.length) return null;
+  final node = itemAt(nodes, index);
+
+  return node.hasStr() ? node.str : null;
+}
+
+/// The `ChildEvent` of the OS call [id] whose body is [arm].
+pb.ChildEvent _osCall(int id, List<int> arm) => pb.ChildEvent.fromBuffer(
+  _bytesField(3, [..._varintField(1, id), ...arm]),
+);
+
+/// The `ChildEvent` of an `import` of the module [module]: the `import` arm
+/// is field 31 of an `OsCall`, as a v1.2.0 worker sends it.
+pb.ChildEvent _importEvent(int id, String module) =>
+    _osCall(id, _bytesField(31, _stringField(1, module)));
+
+/// The `ChildEvent` of a `Path.scan` of [path]: the `scan` arm is field 33
+/// of an `OsCall`.
+pb.ChildEvent _scanEvent(int id, String path) =>
+    _osCall(id, _bytesField(33, _stringField(1, path)));
+
+/// The tag of the field [number], with the wire type [wire].
+List<int> _tag(int number, int wire) => _varint((number << 3) | wire);
+
+/// A varint, as the wire carries it.
+List<int> _varint(int value) {
+  final out = <int>[];
+  var rest = value;
+  do {
+    var byte = rest & 0x7f;
+    rest >>= 7;
+    if (rest != 0) byte |= 0x80;
+    out.add(byte);
+  } while (rest != 0);
+
+  return out;
+}
+
+/// A varint field [number] holding [value].
+List<int> _varintField(int number, int value) => [
+  ..._tag(number, 0),
+  ..._varint(value),
+];
+
+/// A length-delimited field [number] holding [bytes].
+List<int> _bytesField(int number, List<int> bytes) => [
+  ..._tag(number, 2),
+  ..._varint(bytes.length),
+  ...bytes,
+];
+
+/// A length-delimited field [number] holding the UTF-8 of [text].
+List<int> _stringField(int number, String text) =>
+    _bytesField(number, utf8.encode(text));
+
+/// One field of a protobuf message: its number, its wire type and its
+/// value: the bytes of a length-delimited field, the number of a varint
+/// one.
+typedef _Field = ({int number, int wireType, List<int> bytes, int value});
+
+/// The fields of the protobuf message [bytes], in the order they appear.
+List<_Field> _wireFields(List<int> bytes) {
+  final fields = <_Field>[];
+  var offset = 0;
+  while (offset < bytes.length) {
+    final tag = _wireVarintAt(bytes, offset);
+    offset += tag.length;
+    final number = tag.value >> 3;
+    final wireType = tag.value & 7;
+    if (wireType == 0) {
+      final value = _wireVarintAt(bytes, offset);
+      offset += value.length;
+      fields.add((
+        number: number,
+        wireType: wireType,
+        bytes: const [],
+        value: value.value,
+      ));
+    } else if (wireType == 2) {
+      final length = _wireVarintAt(bytes, offset);
+      offset += length.length;
+      final value = bytes.sublist(offset, offset + length.value);
+      offset += length.value;
+      fields.add((
+        number: number,
+        wireType: wireType,
+        bytes: value,
+        value: 0,
+      ));
+    } else {
+      throw StateError('unsupported wire type $wireType');
+    }
+  }
+
+  return fields;
+}
+
+/// The varint at [offset] in [bytes]: its value and the bytes it took.
+({int value, int length}) _wireVarintAt(List<int> bytes, int offset) {
+  var value = 0;
+  var shift = 0;
+  var read = 0;
+  while (offset + read < bytes.length) {
+    final byte = itemAt(bytes, offset + read);
+    value |= (byte & 0x7f) << shift;
+    read++;
+    if (byte < 0x80) return (value: value, length: read);
+    shift += 7;
+  }
+
+  throw StateError('a truncated varint');
+}
+
+/// The bytes of the length-delimited field [number] in the message [bytes],
+/// or an empty list when the message does not carry it.
+List<int> _wireBytes(List<int> bytes, int number) {
+  for (final field in _wireFields(bytes)) {
+    if (field.number == number && field.wireType == 2) return field.bytes;
+  }
+
+  return const [];
+}
+
+/// The bytes of every length-delimited field [number] in the message
+/// [bytes], in the order they appear.
+List<List<int>> _wireBytesAll(List<int> bytes, int number) => [
+  for (final field in _wireFields(bytes))
+    if (field.number == number && field.wireType == 2) field.bytes,
+];
+
+/// The number of the varint field [number] in the message [bytes], or zero
+/// when the message does not carry it: a proto3 default is left out of the
+/// wire.
+int _wireVarint(List<int> bytes, int number) {
+  for (final field in _wireFields(bytes)) {
+    if (field.number == number && field.wireType == 0) return field.value;
+  }
+
+  return 0;
+}

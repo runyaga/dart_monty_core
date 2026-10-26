@@ -666,6 +666,7 @@ HostAnswers _hostFor(
   List<MountDir>? mount,
 ) => HostAnswers(
   externalLookup: externalLookup ?? const {},
+  externalModules: session.externalModules,
   os: os,
   mount: mount,
   systemSleepMax: config.systemSleepMax,
