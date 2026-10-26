@@ -111,7 +111,11 @@ void main() {
     });
 
     test('a JSON error: msg, doc, pos, lineno, colno', () {
-      final e = _read('json.JSONDecodeError', _jsonData());
+      final e = _read(
+        'json.JSONDecodeError',
+        _jsonData(),
+        'Expecting value: line 1 column 7 (char 6)',
+      );
       expect(e.excType, 'json.JSONDecodeError');
       expect(_attrs(e), {
         'msg': const MontyString('Expecting value'),
@@ -126,6 +130,7 @@ void main() {
       final e = _read(
         'json.JSONDecodeError',
         _jsonData(doc: null, pos: Int64(2000001), colno: 2000002),
+        'Expecting value: line 1 column 7 (char 6)',
       );
       final attrs = _attrs(e);
       expect(attrs['doc'], const MontyString(''));
@@ -135,7 +140,11 @@ void main() {
 
     test('an unsigned position past 2^53 reads as a big int', () {
       final huge = Int64.parseHex('ffffffffffffffff');
-      final e = _read('json.JSONDecodeError', _jsonData(doc: null, pos: huge));
+      final e = _read(
+        'json.JSONDecodeError',
+        _jsonData(doc: null, pos: huge),
+        'Expecting value: line 1 column 7 (char 6)',
+      );
       expect(
         _attrs(e)['pos'],
         MontyBigInt((BigInt.one << 64) - BigInt.one),
@@ -174,7 +183,14 @@ void main() {
     }
 
     test('a payload of the other kind: ValueError', () {
-      expect(_read('UnicodeDecodeError', _jsonData()).excType, 'ValueError');
+      expect(
+        _read(
+          'UnicodeDecodeError',
+          _jsonData(),
+          'Expecting value: line 1 column 7 (char 6)',
+        ).excType,
+        'ValueError',
+      );
       expect(
         _read('json.JSONDecodeError', _bytesData([0xff])).excType,
         'ValueError',
@@ -455,54 +471,111 @@ void main() {
       );
     });
 
-    test('a JSON msg or doc over 64 KiB of UTF-8', () {
-      expect(
-        _read('json.JSONDecodeError', _jsonData(msg: 'x' * (cap + 1))).excType,
-        'ValueError',
-      );
-      expect(
-        _read(
-          'json.JSONDecodeError',
-          _jsonData(doc: '€' * (cap ~/ 3 + 1), pos: Int64()),
-        ).excType,
-        'ValueError',
-      );
-    });
+    test(
+      'a JSON msg longer than its message, or a doc over 64 KiB of UTF-8',
+      () {
+        // The outer message bounds `msg` (here the one-byte 'm'); the
+        // document has a cap of its own.
+        expect(
+          _read(
+            'json.JSONDecodeError',
+            _jsonData(msg: 'x' * (cap + 1)),
+          ).excType,
+          'ValueError',
+        );
+        expect(
+          _read(
+            'json.JSONDecodeError',
+            _jsonData(doc: '€' * (cap ~/ 3 + 1), pos: Int64()),
+            'Expecting value: line 1 column 7 (char 6)',
+          ).excType,
+          'ValueError',
+        );
+
+        // Both readers bound `msg` the same way, the message counted in
+        // UTF-8 bytes: the wire record, and the fake replay of a host
+        // answer.
+        (bool, bool) kept(String? message, String msg) {
+          final raised = pb.RaisedException(
+            excType: 'json.JSONDecodeError',
+            message: message,
+            data: _jsonData(doc: null, msg: msg, pos: Int64()),
+          );
+
+          return (
+            RaisedRecord.fromWire(raised).payload != null,
+            exceptionOf(raised).attributes.isNotEmpty,
+          );
+        }
+
+        // Without a message, the 64 KiB cap alone bounds `msg`: at it
+        // kept, one byte over dropped.
+        expect(kept(null, 'x' * cap), (true, true));
+        expect(kept(null, 'x' * (cap + 1)), (false, false));
+        // An empty message is a carried one: only an empty `msg` fits.
+        expect(kept('', ''), (true, true));
+        expect(kept('', 'x'), (false, false));
+        // The bound counts UTF-8 bytes, not characters.
+        expect(kept('é', 'xx'), (true, true));
+        expect(kept('é', 'xxx'), (false, false));
+        expect(kept('x', 'é'), (false, false));
+      },
+    );
 
     test('a zero lineno or colno', () {
+      // The message is long enough that the `msg` check passes, so the
+      // coordinate is what rejects the payload.
       expect(
-        _read('json.JSONDecodeError', _jsonData(lineno: 0)).excType,
+        _read(
+          'json.JSONDecodeError',
+          _jsonData(lineno: 0),
+          'Expecting value: line 1 column 7 (char 6)',
+        ).excType,
         'ValueError',
       );
       expect(
-        _read('json.JSONDecodeError', _jsonData(colno: 0)).excType,
+        _read(
+          'json.JSONDecodeError',
+          _jsonData(colno: 0),
+          'Expecting value: line 1 column 7 (char 6)',
+        ).excType,
         'ValueError',
       );
     });
 
-    test('pos past the document, counted in characters; at its end, kept', () {
-      // '€€' is 2 characters and 6 UTF-8 bytes.
-      expect(
-        _read(
-          'json.JSONDecodeError',
-          _jsonData(doc: '€€', pos: Int64(3)),
-        ).excType,
-        'ValueError',
-      );
-      expect(
-        _read(
-          'json.JSONDecodeError',
-          _jsonData(doc: '€€', pos: Int64(2)),
-        ).excType,
-        'json.JSONDecodeError',
-      );
-    });
+    test(
+      'pos in the document or one past its characters, kept; past, dropped',
+      () {
+        // '€€' is 2 characters and 6 UTF-8 bytes: pos 2 is inside, 3 one
+        // past its characters and 4 two past.
+        for (final pos in [Int64(2), Int64(3)]) {
+          expect(
+            _read(
+              'json.JSONDecodeError',
+              _jsonData(doc: '€€', pos: pos),
+              'Expecting value: line 1 column 7 (char 6)',
+            ).excType,
+            'json.JSONDecodeError',
+          );
+        }
+        expect(
+          _read(
+            'json.JSONDecodeError',
+            _jsonData(doc: '€€', pos: Int64(4)),
+            'Expecting value: line 1 column 7 (char 6)',
+          ).excType,
+          'ValueError',
+        );
+      },
+    );
 
     test('a dropped payload is no protocol violation', () {
+      // The message is long enough that the `msg` check passes, so the
+      // payload is dropped by the zero coordinate, not the message.
       final error = raisedError(
         pb.RaisedException(
           excType: 'json.JSONDecodeError',
-          message: 'm',
+          message: 'Expecting value: line 1 column 7 (char 6)',
           data: _jsonData(lineno: 0),
         ),
       );
