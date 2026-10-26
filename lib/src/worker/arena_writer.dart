@@ -43,6 +43,12 @@
 /// exception message with an unpaired surrogate is converted lossily
 /// instead, and a time zone name with one is dropped.
 ///
+/// A dict, set or frozenset whose key or member Python could not hash is
+/// refused too, as Python's constructor would refuse to build it: a list, a
+/// dict, a set, a class proxy, and a host wrapper (upstream's `ClassType`
+/// and `ClassInstance` are dataclasses, so Python cannot hash them, though
+/// the Dart wrappers are hashable by identity).
+///
 /// A [MontyStdTypeProxy] whose kind is neither `'function'` nor `'type'`
 /// throws [ArgumentError].
 ///
@@ -583,12 +589,20 @@ List<MontyValue> _hashMembers(MontyValue v) => switch (v) {
 };
 
 /// The Python type name of [v] when it cannot be hashed at all.
+///
+/// The host wrappers join the containers here: upstream's `ClassType` and
+/// `ClassInstance` are dataclasses, so Python cannot hash them and cannot
+/// build a container holding one as a key. The Dart wrappers are hashable
+/// (identity, `host-wrapper-identity-eq`), so the writer refuses such a
+/// container itself, with Python's own `TypeError`.
 String? _unhashableType(MontyValue v) => switch (v) {
   MontyList() => 'list',
   MontyDict() => 'dict',
   MontySet() => 'set',
   MontyClassProxy() => 'MontyClassProxy',
   MontyClassTypeProxy() => 'MontyClassTypeProxy',
+  ClassType() => 'ClassType',
+  ClassInstance() => 'ClassInstance',
   _ => null,
 };
 
