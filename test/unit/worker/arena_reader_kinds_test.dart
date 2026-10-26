@@ -191,11 +191,12 @@ void main() {
         _decode([exception('ValueError')]),
         MontyExceptionValue('ValueError', ''),
       );
-      // A value node carries no payload, and these three need one.
+      // A value node carries no payload, and these four need one.
       for (final type in [
         'UnicodeDecodeError',
         'UnicodeEncodeError',
         'json.JSONDecodeError',
+        'tomllib.TOMLDecodeError',
       ]) {
         expect(
           _decode([exception(type, 'm')]),

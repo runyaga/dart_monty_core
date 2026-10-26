@@ -158,11 +158,12 @@ void main() {
     });
   });
 
-  group('without its data a Unicode or JSON error reads as ValueError', () {
+  group('without its data a Unicode, JSON or TOML error is a ValueError', () {
     for (final type in [
       'UnicodeDecodeError',
       'UnicodeEncodeError',
       'json.JSONDecodeError',
+      'tomllib.TOMLDecodeError',
     ]) {
       test('$type with no payload', () {
         final error = raisedError(
