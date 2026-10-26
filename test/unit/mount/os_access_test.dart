@@ -30,6 +30,7 @@ void main() {
   _open();
   _directories();
   _renames();
+  _scan();
   _defaults();
 }
 
@@ -1095,4 +1096,456 @@ void _upstreamArguments() {
       );
     });
   });
+}
+
+// Upstream's `Path.scan` — the one OS call behind `os.scandir`, `os.walk`,
+// `Path.walk` and `Path.glob` — as this namespace must answer it.
+//
+// WHERE THE EXPECTED VALUES COME FROM: upstream's scan contract at monty
+// v1.2.0 (`crates/monty-python/python/pydantic_monty/os_access.py:552-609`
+// and `crates/monty-types/src/scan.rs`), the host's own tests
+// (`crates/monty-python/tests/test_os_access.py:1183-1207`) and the arguments
+// the worker sends (`crates/monty-python/tests/test_os_access_raw.py:726`).
+// The reply is a sequence of (path, is_dir, is_file, is_symlink) entries
+// whose paths are relative to the root, '' being the root itself. A root that
+// is not there is a FileNotFoundError naming it, spelled as the root was
+// spelled; the empty root is the ValueError an empty path raises. Only
+// `max_depth` and `follow_symlinks` shape the reply: a pattern is a hint,
+// so the reply is the tree and the sandbox runs the selector over it.
+//
+// The namespace has no scan handler yet, so the call is declined. The stub
+// below answers a declined call with a wrong value rather than letting the
+// decline escape, so this test fails on its first assertion instead of on an
+// exception; once the handler lands, the same call reaches it.
+void _scan() {
+  test(
+    'OSAccess scans current trees with depth and resource bounds',
+    () async {
+      /// The five keywords upstream's `ScanArgs` takes, all of them on every
+      /// call: a handler that reads them all must find them all.
+      Map<String, MontyValue> keywords({
+        MontyValue maxDepth = const MontyNone(),
+        bool followSymlinks = false,
+        MontyValue pattern = const MontyNone(),
+        MontyValue caseSensitive = const MontyNone(),
+        bool recurseSymlinks = false,
+      }) => {
+        'max_depth': maxDepth,
+        'follow_symlinks': MontyBool(followSymlinks),
+        'pattern': pattern,
+        'case_sensitive': caseSensitive,
+        'recurse_symlinks': MontyBool(recurseSymlinks),
+      };
+
+      /// The scan call the worker makes: the root, and the five keywords
+      /// upstream's `ScanArgs` takes as kwargs.
+      ///
+      /// The stub: a call this namespace has no handler for is declined, and
+      /// a declined call would fail this test with an exception rather than
+      /// with an assertion. So the decline is answered with a wrong value —
+      /// an empty reply, where the tree is not empty.
+      Future<MontyValue> scan(
+        OSAccess namespace,
+        MontyValue root, {
+        Map<String, MontyValue> kwargs = const {},
+      }) async {
+        try {
+          return await namespace(
+            'Path.scan',
+            [root],
+            {
+              ...keywords(),
+              ...kwargs,
+            },
+          );
+        } on OsCallNotHandledException {
+          return const MontyList([]);
+        }
+      }
+
+      /// One of an entry's flags: a boolean, strictly.
+      bool boolFlag(MontyValue flagValue, String name) => switch (flagValue) {
+        MontyBool(:final value) => value,
+        final other => fail(
+          'the $name of a scan entry is a boolean, got $other',
+        ),
+      };
+
+      /// One scan entry, read as upstream encodes it: the path relative to
+      /// the root, and what the entry is.
+      (String, bool, bool, bool) entry(List<MontyValue> parts) =>
+          switch (parts) {
+            [final path, final isDir, final isFile, final isSymlink] => (
+              switch (path) {
+                MontyString(:final value) => value,
+                final other => fail(
+                  'the path of a scan entry is a string, got $other',
+                ),
+              },
+              boolFlag(isDir, 'is_dir'),
+              boolFlag(isFile, 'is_file'),
+              boolFlag(isSymlink, 'is_symlink'),
+            ),
+            final other => fail(
+              'a scan entry is (path, is_dir, is_file, is_symlink), got $other',
+            ),
+          };
+
+      /// The entries of a tree reply, sorted by path: the order they come in
+      /// is not part of the contract, the entries are.
+      List<(String, bool, bool, bool)> entries(MontyValue reply) {
+        final items = switch (reply) {
+          MontyList(:final items) || MontySet(:final items) => items,
+          final other => fail(
+            'a scan reply is a sequence of entries, got $other',
+          ),
+        };
+
+        return [
+          for (final item in items)
+            switch (item) {
+              MontyTuple(:final items) ||
+              MontyList(:final items) => entry(items),
+              MontyNamedTuple(:final values) => entry(values),
+              final other => fail('a scan entry is a tuple, got $other'),
+            },
+        ]..sort((left, right) => left.$1.compareTo(right.$1));
+      }
+
+      /// The entries a scan of [root] reports.
+      Future<List<(String, bool, bool, bool)>> scanned(
+        OSAccess namespace,
+        String root, {
+        Map<String, MontyValue> kwargs = const {},
+      }) async => entries(
+        await scan(namespace, MontyPath(root), kwargs: kwargs),
+      );
+
+      /// The entries of the tree at [root], asserted to be [expected].
+      Future<void> expectTree(
+        OSAccess namespace,
+        String root,
+        List<(String, bool, bool, bool)> expected,
+        String reason,
+      ) async => expect(
+        await scanned(namespace, root),
+        equals(expected),
+        reason: reason,
+      );
+
+      /// The deepest entry of a reply, counted in levels below the root.
+      int deepest(List<(String, bool, bool, bool)> found) => found.fold(
+        0,
+        (deepestSoFar, entry) {
+          final levels = entry.$1.isEmpty ? 0 : entry.$1.split('/').length;
+
+          return levels > deepestSoFar ? levels : deepestSoFar;
+        },
+      );
+
+      // The keywords of a scan one level deep.
+      final oneLevel = keywords(maxDepth: const MontyInt(1));
+
+      // The tree the scans below read: two files, an empty directory, and a
+      // package with a file and a subdirectory of its own.
+      final fs = OSAccess(
+        files: [
+          MemoryFile('/test/a.txt', 'a'),
+          MemoryFile('/test/b.py', 'b'),
+          MemoryFile('/test/pkg/c.py', 'c'),
+          MemoryFile('/test/pkg/sub/d.py', 'd'),
+        ],
+      );
+      await fs('Path.mkdir', [MontyPath('/test/empty')], {});
+
+      // The root of a directory is the root itself, and every entry below it
+      // is named by its path relative to it.
+      const rootEntry = ('', true, false, false);
+      final children = [
+        ('a.txt', false, true, false),
+        ('b.py', false, true, false),
+        ('empty', true, false, false),
+        ('pkg', true, false, false),
+      ];
+      final grandchildren = [
+        ('pkg/c.py', false, true, false),
+        ('pkg/sub', true, false, false),
+      ];
+      final greatGrandchildren = [
+        ('pkg/sub/d.py', false, true, false),
+      ];
+      final wholeTree = [
+        rootEntry,
+        ...children,
+        ...grandchildren,
+        ...greatGrandchildren,
+      ];
+
+      // The whole tree, when no depth is asked for.
+      expect(
+        await scanned(fs, '/test'),
+        equals(wholeTree),
+        reason: 'the entries of the whole tree',
+      );
+
+      // A depth is the depth of the deepest entry: 0 is the root alone, 1
+      // its children, 2 their children.
+      expect(
+        await scanned(
+          fs,
+          '/test',
+          kwargs: keywords(maxDepth: const MontyInt(0)),
+        ),
+        equals([rootEntry]),
+        reason: 'the entries at depth 0',
+      );
+      expect(
+        await scanned(
+          fs,
+          '/test',
+          kwargs: oneLevel,
+        ),
+        equals([rootEntry, ...children]),
+        reason: 'the entries at depth 1',
+      );
+      expect(
+        await scanned(
+          fs,
+          '/test',
+          kwargs: keywords(maxDepth: const MontyInt(2)),
+        ),
+        equals([rootEntry, ...children, ...grandchildren]),
+        reason: 'the entries at depth 2',
+      );
+
+      // Both values of `follow_symlinks`: the tree holds no link, so both
+      // report the same tree.
+      for (final follow in [false, true]) {
+        expect(
+          await scanned(
+            fs,
+            '/test',
+            kwargs: keywords(followSymlinks: follow),
+          ),
+          equals(wholeTree),
+          reason: 'the tree with follow_symlinks=$follow',
+        );
+      }
+
+      // A pattern is a hint, not a filter: the reply is the tree, and the
+      // sandbox runs the selector over it. The flags that go with a pattern
+      // change nothing here either.
+      expect(
+        await scanned(
+          fs,
+          '/test',
+          kwargs: keywords(
+            followSymlinks: true,
+            pattern: const MontyList([MontyString('*.txt')]),
+            caseSensitive: const MontyBool(false),
+            recurseSymlinks: true,
+          ),
+        ),
+        equals(wholeTree),
+        reason: 'the tree with a glob hint',
+      );
+
+      // The root arrives as a path or as a string; both name the same tree.
+      expect(
+        entries(await scan(fs, const MontyString('/test'))),
+        equals(wholeTree),
+        reason: 'the tree named by a string',
+      );
+
+      // An empty directory is a root of its own, and its tree is the root
+      // alone.
+      expect(
+        await scanned(fs, '/test/empty'),
+        equals([rootEntry]),
+        reason: 'the entries of an empty directory',
+      );
+
+      // A file is described, not listed: the root of the scan is the file
+      // itself.
+      expect(
+        await scanned(fs, '/test/a.txt'),
+        equals([('', false, true, false)]),
+        reason: 'the entries of a file',
+      );
+
+      // A scan reads the tree as it is now: a file written after a scan is
+      // in the next one.
+      final written = OSAccess(files: [MemoryFile('/test/a.txt', 'a')]);
+      await expectTree(
+        written,
+        '/test',
+        [rootEntry, ('a.txt', false, true, false)],
+        'the tree before the write',
+      );
+      await call(
+        written,
+        'Path.write_text',
+        '/test/new.txt',
+        const MontyString('n'),
+      );
+      await expectTree(
+        written,
+        '/test',
+        [
+          rootEntry,
+          ('a.txt', false, true, false),
+          ('new.txt', false, true, false),
+        ],
+        'the tree after the write',
+      );
+
+      // A directory renamed under the same root is the next scan's business
+      // too: the root is scanned before and after the rename.
+      final renamed = OSAccess(files: [MemoryFile('/test/pkg/f', 'f')]);
+      await expectTree(
+        renamed,
+        '/test',
+        [
+          rootEntry,
+          ('pkg', true, false, false),
+          ('pkg/f', false, true, false),
+        ],
+        'the tree before the rename',
+      );
+      await call(renamed, 'Path.rename', '/test/pkg', MontyPath('/test/pkg2'));
+      await expectTree(
+        renamed,
+        '/test',
+        [
+          rootEntry,
+          ('pkg2', true, false, false),
+          ('pkg2/f', false, true, false),
+        ],
+        'the tree after the rename',
+      );
+
+      // A `..` in a path is a name, not a way up: the namespace keeps it
+      // literal, so the directory seeded under it is the one a scan finds.
+      final dotted = OSAccess(files: [MemoryFile('/test/../f', 'x')]);
+      expect(
+        await scanned(dotted, '/test/..'),
+        equals([rootEntry, ('f', false, true, false)]),
+        reason: 'the entries of a literal dotdot directory',
+      );
+      expect(
+        await scanned(
+          dotted,
+          '/test',
+          kwargs: oneLevel,
+        ),
+        equals([rootEntry, ('..', true, false, false)]),
+        reason: 'the entries of the directory holding the dotdot',
+      );
+
+      // A double slash is a root of its own: the tree seeded under it is not
+      // the tree under the single slash.
+      final doubled = OSAccess(files: [MemoryFile('//double/f', 'x')]);
+      expect(
+        await scanned(doubled, '//double'),
+        equals([rootEntry, ('f', false, true, false)]),
+        reason: 'the entries of a double root',
+      );
+      await expectLater(
+        scan(doubled, MontyPath('/double')),
+        raises(
+          'FileNotFoundError',
+          "[Errno 2] No such file or directory: '/double'",
+        ),
+      );
+
+      // A root that is not there names it as it was spelled: the request
+      // keeps its `//`, its `.` and its trailing slash.
+      await expectLater(
+        scan(fs, const MontyString('/test//./nope/')),
+        raises(
+          'FileNotFoundError',
+          "[Errno 2] No such file or directory: '/test//./nope/'",
+        ),
+      );
+
+      // The empty root is the ValueError an empty path raises.
+      await expectLater(
+        scan(fs, const MontyString('')),
+        raises(
+          'ValueError',
+          'not enough values to unpack (expected at least 1, got 0)',
+        ),
+      );
+
+      // Following links with no depth stops 64 levels down, as upstream's
+      // does, so that a link cycle ends. This tree holds no link, so only
+      // the depth tells the two values of `follow_symlinks` apart.
+      final deep = OSAccess(
+        files: [
+          MemoryFile(
+            '/deep/${List.generate(70, (index) => 'd$index').join('/')}/f',
+            'x',
+          ),
+        ],
+      );
+      final followed = await scanned(
+        deep,
+        '/deep',
+        kwargs: keywords(followSymlinks: true),
+      );
+      expect(followed.length, 65, reason: 'the entries of a followed scan');
+      expect(
+        deepest(followed),
+        64,
+        reason: 'the deepest entry of a followed scan',
+      );
+      final notFollowed = await scanned(
+        deep,
+        '/deep',
+        // The default does not follow links.
+      );
+      expect(
+        notFollowed.length,
+        72,
+        reason: 'the entries of a scan that does not follow',
+      );
+      expect(
+        deepest(notFollowed),
+        71,
+        reason: 'the deepest entry of a scan that does not follow',
+      );
+
+      // A scan that would return more than a hundred thousand entries stops
+      // with a RuntimeError, as upstream's does.
+      final many = OSAccess(
+        files: [
+          for (var index = 0; index < 100001; index++)
+            MemoryFile('/test/f$index', ''),
+        ],
+      );
+      await expectLater(
+        scan(many, MontyPath('/test')),
+        raises('RuntimeError', 'directory scan exceeded 100000 entries'),
+      );
+
+      // A scan that would estimate more than a hundred million bytes of path
+      // data stops with a RuntimeError. The tree is deep and its names are
+      // long, so the estimate passes the limit well before the last level.
+      final wide = OSAccess(
+        files: [
+          MemoryFile(
+            '/deep/${List.generate(500, (index) => 'n' * 1000).join('/')}/f',
+            'x',
+          ),
+        ],
+      );
+      await expectLater(
+        scan(wide, MontyPath('/deep')),
+        raises(
+          'RuntimeError',
+          'directory scan exceeded 100000000 bytes of path data',
+        ),
+      );
+    },
+  );
 }
