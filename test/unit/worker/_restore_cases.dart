@@ -60,7 +60,21 @@ SessionConfig _sessionConfig(Map<String, Object> settings) {
   final feed = seconds('max_feed_duration_secs');
   final turn = seconds('max_turn_duration_secs');
   final sleep = seconds('max_total_sleep_secs');
-  final limited = [suspensions, feed, turn, sleep].any((v) => v != null);
+  // The memory limit, the GC interval and the recursion depth are limits
+  // too: a zero is a limit, not the absence of one, so only a missing
+  // setting leaves one unset.
+  final memory = settings['max_memory'] as int?;
+  final gcInterval = settings['gc_interval'] as int?;
+  final recursionDepth = settings['max_recursion_depth'] as int?;
+  final limited = [
+    suspensions,
+    feed,
+    turn,
+    sleep,
+    memory,
+    gcInterval,
+    recursionDepth,
+  ].any((v) => v != null);
 
   return SessionConfig(
     scriptName: settings['script_name'] as String? ?? 'main.py',
@@ -71,6 +85,9 @@ SessionConfig _sessionConfig(Map<String, Object> settings) {
             maxFeedDuration: feed,
             maxTurnDuration: turn,
             maxTotalSleep: sleep,
+            maxMemory: memory,
+            gcInterval: gcInterval,
+            maxRecursionDepth: recursionDepth,
           )
         : null,
   );
