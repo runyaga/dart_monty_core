@@ -338,6 +338,20 @@ final Set<String> builtinTypeNames = {
 /// Every name `ExcType::from_str` accepts.
 final Set<String> exceptionTypeNames = _excNames.split(' ').toSet();
 
+/// The exception types whose real class needs a payload a value node does
+/// not carry, and the parent type such a value is built as instead.
+///
+/// Upstream rebuilds these classes from the exception's payload
+/// (`monty-proto/src/python/exceptions.rs`); a value node carries none, so
+/// the value is the plain parent, a `ValueError`. `_csv.Error` is a direct
+/// `Exception` subclass upstream and keeps its own name.
+const Map<String, String> exceptionParentsWithoutPayload = {
+  'UnicodeDecodeError': 'ValueError',
+  'UnicodeEncodeError': 'ValueError',
+  'json.JSONDecodeError': 'ValueError',
+  'tomllib.TOMLDecodeError': 'ValueError',
+};
+
 /// Every name `BuiltinsFunctions::from_str` accepts.
 final Set<String> builtinFunctionNames = _functionNames.split(' ').toSet();
 
@@ -366,12 +380,13 @@ const String _excNames =
     'OverflowError ZeroDivisionError LookupError IndexError KeyError '
     'RuntimeError NotImplementedError RecursionError AttributeError '
     'FrozenInstanceError NameError UnboundLocalError ValueError '
-    'UnicodeDecodeError UnicodeEncodeError json.JSONDecodeError ImportError '
+    'UnicodeDecodeError UnicodeEncodeError json.JSONDecodeError '
+    'tomllib.TOMLDecodeError ImportError '
     'ModuleNotFoundError OSError FileNotFoundError FileExistsError '
     'IsADirectoryError NotADirectoryError PermissionError '
     'io.UnsupportedOperation TimeoutError AssertionError MemoryError '
     'StopIteration SyntaxError TypeError re.PatternError binascii.Error '
-    'binascii.Incomplete';
+    'binascii.Incomplete _csv.Error';
 
 const String _functionNames =
     'abs all any bin chr divmod enumerate filter getattr hasattr hash hex id '
