@@ -339,16 +339,15 @@ void main() {
   //
   // WHERE THE EXPECTED VALUES COME FROM: upstream's scan contract at monty
   // v1.2.0 (crates/monty-types/src/scan.rs, crates/monty-fs/tests/scan.rs,
-  // crates/monty-datatest/src/main.rs:1131). The reply is a sequence of
-  // (path, is_dir, is_file, is_symlink) entries whose paths are relative to
-  // the root, '' being the root itself; a root that is not there is a
+  // crates/monty-datatest/src/main.rs:1131). The reply is the TREE: a list
+  // of (path, is_dir, is_file, is_symlink) entries whose paths are relative
+  // to the root, '' being the root itself; a root that is not there is a
   // FileNotFoundError naming it, spelled as the root was spelled.
   //
-  // The fixture host has no scan handler yet, so the call is declined. The
-  // stub below answers a declined call with a wrong value rather than
-  // letting the decline escape, so this test fails on its first assertion
-  // instead of on an exception; once the handler lands, the same call
-  // reaches it.
+  // The tree is the whole answer: a host may ignore the pattern and reply
+  // with everything within `max_depth`, because the sandbox runs the
+  // selector over the reply itself. So the pattern is a pruning hint and
+  // not a contract, and a reply that is the tree answers every call.
   test(
     'WorkerFixtureOs scans reachable trees and preserves root errors',
     () async {
@@ -370,29 +369,18 @@ void main() {
 
       /// The scan call the worker makes: the root as a `MontyPath`, the five
       /// keywords upstream's `ScanArgs` takes as kwargs.
-      ///
-      /// The stub: a call the fixture host has no handler for is declined, and
-      /// a declined call would fail this test with an exception rather than
-      /// with an assertion. So the decline is answered with a wrong value — an
-      /// empty reply, where the tree is not empty.
       Future<MontyValue> scan(
         WorkerFixtureOs fixture,
         String root, {
         Map<String, MontyValue> kwargs = const {},
-      }) async {
-        try {
-          return await fixture.call(
-            'Path.scan',
-            [MontyPath(root)],
-            {
-              ...keywords(),
-              ...kwargs,
-            },
-          );
-        } on OsCallNotHandledException {
-          return const MontyList([]);
-        }
-      }
+      }) async => await fixture.call(
+        'Path.scan',
+        [MontyPath(root)],
+        {
+          ...keywords(),
+          ...kwargs,
+        },
+      );
 
       /// One of an entry's flags: a boolean, strictly.
       bool boolFlag(MontyValue flagValue, String name) => switch (flagValue) {
@@ -422,12 +410,13 @@ void main() {
             ),
           };
 
-      /// The entries of a tree reply.
+      /// The entries of a tree reply: the reply is the TREE — a list of
+      /// entries — and never the matches a pattern would produce.
       List<(String, bool, bool, bool)> entries(MontyValue reply) {
         final replyItems = switch (reply) {
-          MontyList(:final items) || MontySet(:final items) => items,
+          MontyList(:final items) => items,
           final other => fail(
-            'a scan reply is a sequence of entries, got $other',
+            'a scan reply is a list of entries, got $other',
           ),
         };
 
@@ -441,21 +430,6 @@ void main() {
             },
         ];
       }
-
-      /// The paths a reply names: a tree reply names them in its entries, a
-      /// glob reply in its matches.
-      List<String> paths(MontyValue reply) => switch (reply) {
-        MontyDict(:final pairs) => [
-          for (final (_, matchList) in pairs)
-            if (matchList is MontyList)
-              for (final match in matchList.items)
-                switch (match) {
-                  MontyString(:final value) => value,
-                  final other => fail('a glob match is a path, got $other'),
-                },
-        ],
-        _ => [for (final scanned in entries(reply)) scanned.$1],
-      };
 
       // The two trees the fixture host serves: upstream's `/virtual` and the
       // `/mnt` mount. Both have the same shape — four files, and a `subdir`
@@ -478,8 +452,7 @@ void main() {
             ? WorkerFixtureOs.mounted()
             : WorkerFixtureOs.virtual();
 
-        /// The entries of a scan, sorted by path: the order the reply comes in
-        /// is not part of the contract, the entries are.
+        /// The entries of a scan.
         Future<List<(String, bool, bool, bool)>> scanned(
           WorkerFixtureOs host,
           String scanRoot, {
@@ -495,16 +468,17 @@ void main() {
             ),
           );
 
-          return [...entries(reply)]
-            ..sort((left, right) => left.$1.compareTo(right.$1));
+          return entries(reply);
         }
 
+        /// The entries of a scan, compared by path: the order the reply comes
+        /// in is not part of the contract, the entries are.
         void expectEntries(
           String scanRoot,
           List<(String, bool, bool, bool)> actual,
           List<(String, bool, bool, bool)> expected,
         ) => expect(
-          actual,
+          [...actual]..sort((left, right) => left.$1.compareTo(right.$1)),
           equals(
             [...expected]..sort((left, right) => left.$1.compareTo(right.$1)),
           ),
@@ -642,7 +616,7 @@ void main() {
         );
 
         // All five keywords at once, a pattern among them: a pattern is a
-        // pruning hint, so the reply must at least name what it matches.
+        // pruning hint, so the reply is the whole tree, the root included.
         final globbed = await scan(
           fixture,
           root,
@@ -652,7 +626,16 @@ void main() {
             recurseSymlinks: true,
           ),
         );
-        expect(paths(globbed), contains('empty.txt'));
+        expectEntries(
+          root,
+          entries(globbed),
+          [
+            rootEntry,
+            ...children,
+            ...grandchildren,
+            ...greatGrandchildren,
+          ],
+        );
       }
     },
   );
