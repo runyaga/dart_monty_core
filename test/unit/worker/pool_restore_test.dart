@@ -1,7 +1,12 @@
 // A committed restore consumes freshness even when its runtime error preserves
 // the checkout (pool-and-lifetimes.md, restore failure paths).
+//
+// The restore oracle's own cases run here too, on a real worker: the runner
+// in _restore_cases.dart builds the session settings with its seven-setting
+// adapter, so a regression in that forwarding fails in this file as well.
 import 'dart:typed_data';
 
+import 'package:collection/collection.dart';
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/worker/monty.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
@@ -11,7 +16,53 @@ import 'package:test/test.dart';
 import '_pool_protocol_support.dart';
 import '_pool_support.dart';
 import '_restore_cases.dart';
+import '_restore_oracle.g.dart';
 import '_scripted_channel.dart';
+
+/// The outcome the committed oracle records for the last step of [id].
+String? _recordedOutcome(String id) {
+  final steps = restoreOracle[id]?.steps ?? const [];
+
+  return steps.lastOrNull?.outcome;
+}
+
+/// A matcher for the timeout a duration ceiling of [limit] produced in
+/// [scope]: the error the feed raised, with the time it took left out.
+Matcher _ceiling(String scope, String limit) => allOf(
+  startsWith('MontyRuntimeError: TimeoutError: $scope time limit exceeded: '),
+  endsWith(' > $limit'),
+);
+
+/// The restore oracle's own cases on a real worker: the runner in
+/// _restore_cases.dart builds their session settings with its seven-setting
+/// adapter, so a regression in that forwarding fails here too. The cases
+/// keep their ids, so the runner picks them up.
+void _registerRestoreOracleWorkerTests() {
+  group('the restore oracle on a real worker', () {
+    restoreOracleTests('pool restore', startMonty);
+  }, testOn: 'vm');
+}
+
+/// The committed oracle's duration scenarios: a restored session keeps the
+/// duration ceiling its destination was configured with, so the two
+/// scenarios whose destination named one must record that ceiling, and not
+/// the value the feed returned while the ceiling was forgotten.
+void _registerRetainedDurationCeilingTests() {
+  test('restore oracle records retained feed and turn duration ceilings', () {
+    final feed = _recordedOutcome('feed_duration_forgotten');
+    final turn = _recordedOutcome('turn_duration_forgotten');
+    expect(
+      feed,
+      _ceiling('feed', '10ms'),
+      reason: 'the feed ceiling the destination kept',
+    );
+    expect(
+      turn,
+      _ceiling('turn', '10ms'),
+      reason: 'the turn ceiling the destination kept',
+    );
+  });
+}
 
 Future<void> _restoredSleep(String mode) async {
   final timers = PoolTimers();
@@ -94,6 +145,8 @@ Future<void> _wrongDumpKind(bool snapshot) async {
 
 void main() {
   registerSessionConfigMemoryGcRecursionTests();
+  _registerRestoreOracleWorkerTests();
+  _registerRetainedDurationCeilingTests();
   for (final mode in ['system', 'call_host', 'zero']) {
     test(
       'restored waits and charges keep $mode checkout cap',
