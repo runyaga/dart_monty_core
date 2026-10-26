@@ -56,7 +56,9 @@ final class RaisedRecord {
     raised.excType,
     raised.hasMessage() ? raised.message : null,
     List.unmodifiable(raised.traceback.map(TracebackFrame.fromWire)),
-    payload: raised.hasData() ? payloadOf(raised.data) : null,
+    payload: raised.hasData()
+        ? payloadOf(raised.data, raised.hasMessage() ? raised.message : null)
+        : null,
   );
 
   /// The exception a host raised, [raised] built on this side and never
@@ -391,25 +393,33 @@ final class ExcPayload {
   final Map<String, MontyValue> attributes;
 }
 
-/// The largest `object`, `encoding`, `reason`, `msg` or `doc`, in UTF-8
-/// bytes or bytes, a payload may carry (upstream's
-/// `UnicodeErrorData::MAX_OBJECT_LEN` and `JsonErrorData::MAX_DOC_LEN`).
+/// The largest `object`, `encoding`, `reason` or `doc`, in UTF-8 bytes or
+/// bytes, a payload may carry (upstream's `UnicodeErrorData::MAX_OBJECT_LEN`
+/// and `JsonErrorData::MAX_DOC_LEN`); for a JSON error's `msg`, the bound
+/// only when the wire carries no outer message (see [payloadOf]).
 const int maxPayloadLength = 64 * 1024;
 
 /// [data] sanitised as upstream's conversion does
 /// (`monty-proto/src/convert/exception.rs`, `sanitize_unicode_data`,
-/// `sanitize_json_data`): null, the payload dropped, when a string or object
-/// is over [maxPayloadLength], when a Unicode error's range is not a
-/// non-empty slice of its object (bytes for a `bytes` object, characters for
-/// a `str`), when a JSON error's `lineno` or `colno` is 0, or when its `pos`
-/// is past its document. Never a rejection: the exception keeps its type and
-/// message. An error without the right payload carries a plain `ValueError`
-/// while the renderer retains the original exception type.
-ExcPayload? payloadOf(pb.ExcData data) => switch (data.whichKind()) {
-  pb.ExcData_Kind.unicode => _unicodePayload(data.unicode),
-  pb.ExcData_Kind.json => _jsonPayload(data.json),
-  pb.ExcData_Kind.notSet => null,
-};
+/// `sanitize_json_data`), [message] the outer message the same exception
+/// carries, or null when the wire has none: null, the payload dropped, when
+/// a string or object is over [maxPayloadLength], when a JSON error's `msg`
+/// is longer than that message's UTF-8 bytes -- a present message bounds
+/// `msg`, an empty one too, and only an absent one falls back to
+/// [maxPayloadLength] -- when a Unicode error's range is not a non-empty
+/// slice of its object (bytes for a `bytes` object, characters for a `str`),
+/// when a JSON error's `lineno` or `colno` is 0, or when its `pos` is more
+/// than one character past its document (at its end, and one past it, are
+/// both kept; a document the sender dropped leaves `pos` unchecked).
+/// Never a rejection: the exception keeps its type and message. An error
+/// without the right payload carries a plain `ValueError` while the renderer
+/// retains the original exception type.
+ExcPayload? payloadOf(pb.ExcData data, [String? message]) =>
+    switch (data.whichKind()) {
+      pb.ExcData_Kind.unicode => _unicodePayload(data.unicode),
+      pb.ExcData_Kind.json => _jsonPayload(data.json, message),
+      pb.ExcData_Kind.notSet => null,
+    };
 
 ExcPayload? _unicodePayload(pb.UnicodeErrorData data) {
   if (utf8Length(data.encoding) > maxPayloadLength ||
@@ -447,12 +457,19 @@ ExcPayload? _unicodePayload(pb.UnicodeErrorData data) {
   });
 }
 
-ExcPayload? _jsonPayload(pb.JsonErrorData data) {
-  if (utf8Length(data.msg) > maxPayloadLength) return null;
+ExcPayload? _jsonPayload(pb.JsonErrorData data, String? message) {
+  // `msg` prefixes the outer message, so it may be no longer than it; only
+  // without one does the document cap bound it.
+  final msgBound = message == null ? maxPayloadLength : utf8Length(message);
+  if (utf8Length(data.msg) > msgBound) return null;
   final doc = data.hasDoc() ? data.doc : null;
   if (doc != null && utf8Length(doc) > maxPayloadLength) return null;
   if (data.lineno.isZero || data.colno.isZero) return null;
-  if (doc != null && _bounded(data.pos, doc.runes.length) == null) return null;
+  // `pos` may equal the document's length (errors at end of input) or
+  // exceed it by one (`tomllib` reports an escape cut off one past it).
+  if (doc != null && _bounded(data.pos, doc.runes.length + 1) == null) {
+    return null;
+  }
 
   return _jsonAttributes(data);
 }

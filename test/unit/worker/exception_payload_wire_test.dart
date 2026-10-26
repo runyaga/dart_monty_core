@@ -44,10 +44,15 @@ Map<String, MontyValue> _attrs({
 pb.RaisedException _host(Map<String, MontyValue> attributes) =>
     raisedException('json.JSONDecodeError', 'boom', attributes);
 
-/// An inbound Unicode error carrying [data].
-MontyError _inbound(String type, pb.ExcData? data) => raisedError(
-  pb.RaisedException(excType: type, message: 'boom', data: data),
-);
+/// An inbound error carrying [data], raised under [message].
+MontyError _inbound(String type, pb.ExcData? data, [String? message]) =>
+    raisedError(
+      pb.RaisedException(
+        excType: type,
+        message: message ?? 'boom',
+        data: data,
+      ),
+    );
 
 pb.ExcData _unicodeStr({
   String object = 'abc',
@@ -411,6 +416,7 @@ void main() {
             colno: Int64(5),
           ),
         ),
+        'Expecting value: line 2 column 5 (char 3)',
       );
       final attrs = error.exception.attributes;
       expect(error.exception.excType, 'json.JSONDecodeError');
