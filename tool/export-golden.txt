@@ -16,6 +16,7 @@ CollectStreams
 CollectString
 ExternalException
 ExternalFuture
+ExternalModule
 ExternalResult
 ExternalReturnValue
 ExternalSettledResult
@@ -197,6 +198,16 @@ final class ClassType<T extends Object> extends MontyValue
   ClassType.policies: final field ({Object? allowedMethods, Object? eagerAttrs, Object? lazyAttrs})
   ClassType.toString: method() -> String
   ClassType.value: final field HostClass<T>
+final class ExternalModule
+  ExternalModule.==: operator(Object other) -> bool
+  ExternalModule.attrValue: method(String name) -> Object?
+  ExternalModule.attrs: getter -> Map<String, Object?>
+  ExternalModule.hashCode: getter -> int
+  ExternalModule.id: final field String
+  ExternalModule.new: constructor(Map<Object?, Object?> attrs, {String? stubs, String? id})
+  ExternalModule.publicAttrs: getter -> Map<String, Object?>
+  ExternalModule.stubs: final field String?
+  ExternalModule.toString: method() -> String
 final class HostClass<T extends Object>
   HostClass.attributes: final field Map<String, Object Function()>
   HostClass.construct: final field T Function(List<MontyValue>, Map<String, MontyValue>)?

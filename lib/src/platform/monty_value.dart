@@ -8,7 +8,13 @@ import 'package:dart_monty_core/src/platform/value_graph_budget.dart';
 import 'package:dart_monty_core/src/worker/monty_snapshot.dart'
     show ExternalException;
 import 'package:dart_monty_core/src/worker/python_rules.dart'
-    show hasUnpairedSurrogate, parseFileMode, purePosixPath, pythonRepr;
+    show
+        hasUnpairedSurrogate,
+        isValidIdentifier,
+        moduleNameError,
+        parseFileMode,
+        purePosixPath,
+        pythonRepr;
 import 'package:meta/meta.dart';
 
 part 'monty_value_scalars.dart';

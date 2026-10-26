@@ -6,8 +6,6 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dart_monty_core/dart_monty_core.dart';
-import 'package:dart_monty_core/src/platform/monty_value.dart'
-    show ExternalModule;
 import 'package:dart_monty_core/src/worker/arena_reader.dart';
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
 import 'package:dart_monty_core/src/worker/host_objects.dart';

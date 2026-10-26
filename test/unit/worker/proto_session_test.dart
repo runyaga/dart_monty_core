@@ -9,8 +9,6 @@ import 'dart:convert';
 
 import 'package:dart_monty_core/dart_monty_core.dart'
     hide MontyError, MontySyntaxError, MontyTypingError;
-import 'package:dart_monty_core/src/platform/monty_value.dart'
-    show ExternalModule;
 import 'package:dart_monty_core/src/worker/host_answers.dart' show HostAnswers;
 import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;

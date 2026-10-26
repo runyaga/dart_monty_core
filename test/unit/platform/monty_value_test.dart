@@ -7,15 +7,15 @@
 @Tags(['unit'])
 library;
 
+import 'dart:collection';
 import 'dart:typed_data';
 
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart'
-    show
-        ExternalModule,
-        MontyValueInternal,
-        montyClassProxy,
-        montyClassTypeProxy;
+    show MontyValueInternal, montyClassProxy, montyClassTypeProxy;
+import 'package:dart_monty_core/src/worker/python_rules.dart'
+    show isIdentifier, isValidIdentifier, moduleNameError, sandboxModuleNames;
+import 'package:meta/meta.dart';
 import 'package:test/test.dart';
 
 /// Upstream's `add`, one of the TOOLS functions.
@@ -1029,6 +1029,712 @@ void main() {
           ),
         ),
       );
+
+      // the module's own rules, pinned here.
+      _moduleIdRules();
+      _moduleNameRules();
+      _moduleAttributeRules();
+      _moduleEqualityRules();
+      _moduleHashRules();
+      _moduleTextRules();
     },
   );
+}
+
+// ---------------------------------------------------------------------------
+// ExternalModule: the rules the module model pins
+// ---------------------------------------------------------------------------
+
+/// A map that holds one key twice, as a Python `str` subclass can: the
+/// duplicate check must see the second spelling of the name.
+class _RepeatedKeyMap extends MapBase<String, Object?> {
+  const _RepeatedKeyMap(this._entries);
+
+  final List<MapEntry<String, Object?>> _entries;
+
+  @override
+  Iterable<MapEntry<String, Object?>> get entries => _entries;
+
+  @override
+  Iterable<String> get keys => _entries.map((entry) => entry.key);
+
+  @override
+  Object? operator [](Object? key) {
+    for (final entry in _entries) {
+      if (entry.key == key) return entry.value;
+    }
+
+    return null;
+  }
+
+  @override
+  void operator []=(String key, Object? value) {
+    throw UnimplementedError('the fixture is read only');
+  }
+
+  @override
+  Object? remove(Object? key) {
+    throw UnimplementedError('the fixture is read only');
+  }
+
+  @override
+  void clear() {
+    throw UnimplementedError('the fixture is read only');
+  }
+}
+
+/// A value with an equality of its own: a module compares it as that value
+/// says, never as a structure.
+@immutable
+class _EqualValue {
+  const _EqualValue(this.tag);
+
+  /// What the two instances a test compares share.
+  final int tag;
+
+  @override
+  bool operator ==(Object other) => other is _EqualValue && other.tag == tag;
+
+  @override
+  int get hashCode => tag.hashCode;
+
+  @override
+  String toString() => '_EqualValue($tag)';
+}
+
+/// An iterable that is equal to any other one, and that must not be walked
+/// to be compared: asking for its iterator fails.
+@immutable
+class _EqualIterable extends Iterable<Object?> {
+  const _EqualIterable(this.tag);
+
+  /// What the two instances a test compares share.
+  final int tag;
+
+  @override
+  Iterator<Object?> get iterator =>
+      throw StateError('the iterator must not be requested');
+
+  @override
+  bool operator ==(Object other) => other is _EqualIterable && other.tag == tag;
+
+  @override
+  int get hashCode => tag.hashCode;
+
+  @override
+  String toString() => '_EqualIterable($tag)';
+}
+
+/// A value whose hash fails: a module never hashes its values.
+@immutable
+class _ThrowingHash {
+  const _ThrowingHash();
+
+  @override
+  int get hashCode => throw StateError('the hash must not be read');
+
+  @override
+  bool operator ==(Object other) => identical(this, other);
+}
+
+/// A value whose equality fails: a module is still equal to itself.
+@immutable
+class _ThrowingEquality {
+  const _ThrowingEquality();
+
+  @override
+  bool operator ==(Object other) =>
+      throw StateError('the equality must not be read');
+
+  @override
+  int get hashCode => 1;
+}
+
+/// A value whose text fails: a module never formats its values.
+@immutable
+class _ThrowingText {
+  const _ThrowingText();
+
+  @override
+  String toString() => throw StateError('the text must not be read');
+
+  @override
+  bool operator ==(Object other) => identical(this, other);
+
+  @override
+  int get hashCode => 1;
+}
+
+/// The two characters Python's `repr` writes for a newline.
+const _newline = r'\n';
+
+/// A tag the two instances of a fixture share.
+///
+/// A call, not a literal: the two instances must be distinct objects, and a
+/// literal would make them one.
+int _runtimeTag() => 1;
+
+/// A module's identity: an omitted id is a fresh uuid4, a given one is
+/// canonical whatever its case, and an invalid one is refused before the
+/// attributes are looked at.
+void _moduleIdRules() {
+  final looksLikeUuid4 = matches(_uuid4);
+  final fresh = ExternalModule({'VERSION': 1});
+  final other = ExternalModule({'VERSION': 1});
+  expect(fresh.id, looksLikeUuid4);
+  expect(other.id, looksLikeUuid4);
+  expect(fresh.id, isNot(other.id));
+
+  const supplied = '0A1B2C3D-4E5F-4A6B-8C9D-0E1F2A3B4C5D';
+  expect(
+    ExternalModule({'VERSION': 1}, id: supplied).id,
+    supplied.toLowerCase(),
+  );
+
+  final notAUuid = throwsA(
+    isA<ArgumentError>().having(
+      (e) => e.message,
+      'message',
+      contains('not a uuid'),
+    ),
+  );
+  expect(() => ExternalModule({'VERSION': 1}, id: 'not-a-uuid'), notAUuid);
+
+  // The id is checked before the attributes, so an invalid id is reported
+  // even when the attributes are invalid too.
+  expect(() => ExternalModule({1: 1}, id: 'not-a-uuid'), notAUuid);
+
+  // The stubs are none, empty and arbitrary text: three different modules,
+  // each keeping its own text.
+  final none = ExternalModule({'VERSION': 1});
+  final empty = ExternalModule({'VERSION': 1}, stubs: '');
+  final text = ExternalModule({'VERSION': 1}, stubs: 'def f() -> int: ...\n');
+  expect(none.stubs, isNull);
+  expect(empty.stubs, '');
+  expect(text.stubs, 'def f() -> int: ...\n');
+  expect(none == empty, isFalse);
+  expect(empty == none, isFalse);
+  expect(empty == text, isFalse);
+  expect(text == empty, isFalse);
+}
+
+/// The names a host module may not take: an invalid one first, then one the
+/// sandbox provides itself.
+void _moduleNameRules() {
+  // A keyword is an identifier, but not a valid one.
+  expect(isIdentifier('class'), isTrue);
+  expect(isValidIdentifier('class'), isFalse);
+  expect(isValidIdentifier('tools'), isTrue);
+
+  // The sandbox's own module names, listed here apart from the rule's own
+  // list.
+  const reserved = {
+    'asyncio',
+    'base64',
+    'binascii',
+    'bisect',
+    'collections',
+    'copy',
+    'csv',
+    'dataclasses',
+    'datetime',
+    'functools',
+    'gc',
+    'hashlib',
+    'itertools',
+    'json',
+    'math',
+    'os',
+    'pathlib',
+    'posixpath',
+    'random',
+    're',
+    'sys',
+    'time',
+    'tomllib',
+    'typing',
+    'unicodedata',
+  };
+  expect(reserved, hasLength(25));
+  expect(sandboxModuleNames, reserved);
+  for (final name in reserved) {
+    final error = moduleNameError(name);
+    expect(error, isNotNull, reason: name);
+    expect(error, contains('cannot be replaced'), reason: name);
+  }
+
+  // An invalid name is reported before a reserved one.
+  expect(
+    moduleNameError('a.b'),
+    'module name "a.b" is not a valid identifier',
+  );
+  expect(
+    moduleNameError('for'),
+    'module name "for" is not a valid identifier',
+  );
+  expect(
+    moduleNameError('os.path'),
+    'module name "os.path" is not a valid identifier',
+  );
+
+  // The name is escaped as Rust escapes it.
+  expect(
+    moduleNameError('a"b'),
+    r'module name "a\"b" is not a valid identifier',
+  );
+  expect(
+    moduleNameError('a\nb'),
+    r'module name "a\nb" is not a valid identifier',
+  );
+
+  // A name only the type checker uses may still name a host module.
+  expect(moduleNameError('abc'), isNull);
+  expect(moduleNameError('__future__'), isNull);
+  expect(moduleNameError('tools'), isNull);
+}
+
+/// The attributes a module holds: the checks at construction, the copies the
+/// getters hand out and the conversion when one is read.
+void _moduleAttributeRules() {
+  final argError = isA<ArgumentError>();
+
+  // A key that is not a string.
+  expect(
+    () => ExternalModule({1: _add}),
+    throwsA(
+      argError.having(
+        (e) => e.message,
+        'message',
+        'ExternalModule attrs must have str keys, not int',
+      ),
+    ),
+  );
+
+  // A key that is not an identifier: empty, dotted, digit-leading and a
+  // hard keyword.
+  const invalidKeys = {
+    '': "''",
+    'a.b': "'a.b'",
+    '1sub': "'1sub'",
+    'for': "'for'",
+  };
+  for (final invalid in invalidKeys.entries) {
+    expect(
+      () => ExternalModule({invalid.key: _add}),
+      throwsA(
+        argError.having(
+          (e) => e.message,
+          'message',
+          'ExternalModule attrs must have identifier keys, '
+              'not ${invalid.value}',
+        ),
+      ),
+      reason: invalid.key,
+    );
+  }
+
+  // A key seen twice: the map holds two spellings of one name.
+  const twice = _RepeatedKeyMap([
+    MapEntry('add', 1),
+    MapEntry('add', 2),
+  ]);
+  expect(twice.entries.length, 2);
+  expect(
+    () => ExternalModule(twice),
+    throwsA(
+      argError.having(
+        (e) => e.message,
+        'message',
+        "ExternalModule attrs has the key 'add' twice",
+      ),
+    ),
+  );
+
+  // The duplicate wins over the reserved name: the second 'os' entry holds
+  // a module, which would be refused under that name on its own.
+  final reservedTwice = _RepeatedKeyMap([
+    const MapEntry('os', 1),
+    MapEntry('os', ExternalModule({'VERSION': 1})),
+  ]);
+  expect(reservedTwice.entries.length, 2);
+  expect(
+    () => ExternalModule(reservedTwice),
+    throwsA(
+      argError.having(
+        (e) => e.message,
+        'message',
+        "ExternalModule attrs has the key 'os' twice",
+      ),
+    ),
+  );
+
+  // A nested module under a name the sandbox provides itself.
+  expect(
+    () => ExternalModule({
+      'os': ExternalModule({'VERSION': 1}),
+    }),
+    throwsA(
+      argError.having(
+        (e) => e.message,
+        'message',
+        'ExternalModule attrs[\'os\']: module "os" is provided by the '
+            'sandbox or its type checker and cannot be replaced',
+      ),
+    ),
+  );
+
+  // Names that are accepted: a Unicode identifier, a protected one, the
+  // soft keywords, and a name only the type checker uses.
+  expect(
+    () => ExternalModule({
+      'café': 1,
+      '_secret': 2,
+      'match': 3,
+      'type': 4,
+    }),
+    returnsNormally,
+  );
+
+  // An ordinary value under a reserved name is fine: only a nested module
+  // is imported by its name.
+  expect(() => ExternalModule({'os': 1, 'json': 'text'}), returnsNormally);
+
+  // A nested module under a name only the type checker uses.
+  expect(
+    () => ExternalModule({
+      'abc': ExternalModule({'VERSION': 1}),
+    }),
+    returnsNormally,
+  );
+
+  // The copies the getters hand out are fresh and mutable, and the module
+  // itself does not change.
+  final given = <String, Object?>{'a': 1, '_b': 2};
+  final module = ExternalModule(given);
+  given['a'] = 99;
+  given['c'] = 3;
+  expect(module.attrs, {'a': 1, '_b': 2});
+
+  final firstAttrs = module.attrs;
+  final secondAttrs = module.attrs;
+  expect(identical(firstAttrs, secondAttrs), isFalse);
+  firstAttrs['a'] = 100;
+  expect(module.attrs['a'], 1);
+  expect(secondAttrs['a'], 1);
+
+  final firstPublic = module.publicAttrs;
+  final secondPublic = module.publicAttrs;
+  expect(identical(firstPublic, secondPublic), isFalse);
+  firstPublic['a'] = 100;
+  expect(module.publicAttrs['a'], 1);
+  expect(secondPublic['a'], 1);
+  expect(module.publicAttrs, {'a': 1});
+
+  // The public attributes keep the insertion order and drop the protected
+  // ones.
+  final ordered = ExternalModule({'z': 1, 'a': 2, '_m': 3});
+  expect(ordered.publicAttrs.keys, ['z', 'a']);
+  expect(ordered.attrs.keys, ['z', 'a', '_m']);
+
+  // The copies are shallow: the values are the very objects given.
+  final nested = <String, Object?>{'inner': 1};
+  final holder = ExternalModule({'nested': nested});
+  expect(holder.attrs['nested'], same(nested));
+  nested['inner'] = 2;
+  expect(holder.attrs['nested'], same(nested));
+  expect(
+    (holder.attrs['nested']! as Map<String, Object?>)['inner'],
+    2,
+  );
+
+  // A value is read as the sandbox sees it.
+  expect(module.attrValue('missing'), isNull);
+  expect(module.attrValue('_b'), isNull);
+  expect(ExternalModule({'x': null}).attrValue('x'), const MontyNone());
+  expect(ExternalModule({'n': 3}).attrValue('n'), const MontyInt(3));
+
+  // A nested module is the module itself.
+  final sub = ExternalModule({'VERSION': 1});
+  expect(ExternalModule({'pkg': sub}).attrValue('pkg'), same(sub));
+
+  // A value the sandbox cannot hold is accepted at construction and fails
+  // only when it is read.
+  final odd = Object();
+  final unconvertible = ExternalModule({'odd': odd});
+  expect(unconvertible.attrs['odd'], same(odd));
+  expect(
+    () => unconvertible.attrValue('odd'),
+    throwsA(
+      argError.having(
+        (e) => e.message,
+        'message',
+        contains('Cannot convert'),
+      ),
+    ),
+  );
+}
+
+/// Two modules are equal when their ids, stubs and attributes match; every
+/// attribute value is compared with its own `==`.
+void _moduleEqualityRules() {
+  const uid = '9e107669-c31b-4d0f-8b76-2f0e2a4b5a03';
+
+  // The same attributes, the same id and the same stubs.
+  final base = ExternalModule(
+    {
+      'add': _add,
+      'VERSION': 3,
+    },
+    stubs: _addStub,
+    id: uid,
+  );
+  final twin = ExternalModule(
+    {
+      'add': _add,
+      'VERSION': 3,
+    },
+    stubs: _addStub,
+    id: uid,
+  );
+  expect(base == twin, isTrue);
+  expect(twin == base, isTrue);
+
+  // The attributes in another order are the same attributes.
+  final reordered = ExternalModule(
+    {
+      'VERSION': 3,
+      'add': _add,
+    },
+    stubs: _addStub,
+    id: uid,
+  );
+  expect(base == reordered, isTrue);
+  expect(reordered == base, isTrue);
+
+  // Another id, another stub.
+  final otherId = ExternalModule({
+    'add': _add,
+    'VERSION': 3,
+  }, stubs: _addStub);
+  expect(base == otherId, isFalse);
+  expect(otherId == base, isFalse);
+  final otherStubs = ExternalModule(
+    {
+      'add': _add,
+      'VERSION': 3,
+    },
+    stubs: '',
+    id: uid,
+  );
+  expect(base == otherStubs, isFalse);
+  expect(otherStubs == base, isFalse);
+
+  // A changed value, a missing key, an added key.
+  final changed = ExternalModule(
+    {
+      'add': _add,
+      'VERSION': 4,
+    },
+    stubs: _addStub,
+    id: uid,
+  );
+  expect(base == changed, isFalse);
+  expect(changed == base, isFalse);
+  final dropped = ExternalModule({'add': _add}, stubs: _addStub, id: uid);
+  expect(base == dropped, isFalse);
+  expect(dropped == base, isFalse);
+  final added = ExternalModule(
+    {
+      'add': _add,
+      'VERSION': 3,
+      'x': 1,
+    },
+    stubs: _addStub,
+    id: uid,
+  );
+  expect(base == added, isFalse);
+  expect(added == base, isFalse);
+
+  // A protected key counts as well.
+  final protectedBase = ExternalModule({'_p': 1}, id: uid);
+  final protectedChanged = ExternalModule({'_p': 2}, id: uid);
+  final protectedDropped = ExternalModule({}, id: uid);
+  expect(protectedBase == protectedChanged, isFalse);
+  expect(protectedChanged == protectedBase, isFalse);
+  expect(protectedBase == protectedDropped, isFalse);
+  expect(protectedDropped == protectedBase, isFalse);
+
+  // A null value is compared like any other: a matching null does not end
+  // the comparison.
+  final nulls = ExternalModule({'a': null, 'b': 1}, id: uid);
+  final nullsOther = ExternalModule({'a': null, 'b': 2}, id: uid);
+  final nullsRenamed = ExternalModule({'a': null, 'c': 1}, id: uid);
+  final nullsSame = ExternalModule({'b': 1, 'a': null}, id: uid);
+  expect(nulls == nullsOther, isFalse);
+  expect(nullsOther == nulls, isFalse);
+  expect(nulls == nullsRenamed, isFalse);
+  expect(nullsRenamed == nulls, isFalse);
+  expect(nulls == nullsSame, isTrue);
+  expect(nullsSame == nulls, isTrue);
+
+  // A list or a map attribute matches the very same object, never one with
+  // the same contents.
+  final list = <Object?>[1, 2];
+  final map = <String, Object?>{'a': 1};
+  final holdsList = ExternalModule({'x': list}, id: uid);
+  final holdsSameList = ExternalModule({'x': list}, id: uid);
+  final holdsOtherList = ExternalModule({
+    'x': <Object?>[1, 2],
+  }, id: uid);
+  expect(identical(list, <Object?>[1, 2]), isFalse);
+  expect(holdsList == holdsSameList, isTrue);
+  expect(holdsSameList == holdsList, isTrue);
+  expect(holdsList == holdsOtherList, isFalse);
+  expect(holdsOtherList == holdsList, isFalse);
+
+  final holdsMap = ExternalModule({'x': map}, id: uid);
+  final holdsSameMap = ExternalModule({'x': map}, id: uid);
+  final holdsOtherMap = ExternalModule({
+    'x': <String, Object?>{'a': 1},
+  }, id: uid);
+  expect(identical(map, <String, Object?>{'a': 1}), isFalse);
+  expect(holdsMap == holdsSameMap, isTrue);
+  expect(holdsSameMap == holdsMap, isTrue);
+  expect(holdsMap == holdsOtherMap, isFalse);
+  expect(holdsOtherMap == holdsMap, isFalse);
+
+  // A value with an equality of its own decides, as that value says. The
+  // two instances are distinct, and their own equality says they match.
+  final tag = _runtimeTag();
+  final one = _EqualValue(tag);
+  final two = _EqualValue(tag);
+  expect(identical(one, two), isFalse);
+  final holdsOne = ExternalModule({'x': one}, id: uid);
+  final holdsTwo = ExternalModule({'x': two}, id: uid);
+  expect(holdsOne == holdsTwo, isTrue);
+  expect(holdsTwo == holdsOne, isTrue);
+
+  // An iterable is not walked to be compared: its own equality says so.
+  final holdsIterable = ExternalModule({'x': _EqualIterable(tag)}, id: uid);
+  final holdsOtherIterable = ExternalModule({
+    'x': _EqualIterable(tag),
+  }, id: uid);
+  expect(holdsIterable == holdsOtherIterable, isTrue);
+  expect(holdsOtherIterable == holdsIterable, isTrue);
+
+  // A nested module is compared by its own equality.
+  final subOne = ExternalModule({'VERSION': 1}, id: uid);
+  final subTwo = ExternalModule({'VERSION': 1}, id: uid);
+  final subOther = ExternalModule({'VERSION': 2}, id: uid);
+  final holdsSub = ExternalModule({'pkg': subOne}, id: uid);
+  final holdsSameSub = ExternalModule({'pkg': subTwo}, id: uid);
+  final holdsOtherSub = ExternalModule({'pkg': subOther}, id: uid);
+  expect(holdsSub == holdsSameSub, isTrue);
+  expect(holdsSameSub == holdsSub, isTrue);
+  expect(holdsSub == holdsOtherSub, isFalse);
+  expect(holdsOtherSub == holdsSub, isFalse);
+
+  // A module is not another object.
+  expect(base == Object(), isFalse);
+  expect(Object() == base, isFalse);
+
+  // A module is equal to itself whatever its attributes hold: the
+  // comparison never reaches the values.
+  final nan = ExternalModule({'x': double.nan}, id: uid);
+  expect(nan == nan, isTrue);
+  final failing = ExternalModule({'x': const _ThrowingEquality()}, id: uid);
+  expect(failing == failing, isTrue);
+}
+
+/// The hash of a module: the id, the stubs and the attribute names, never
+/// the values.
+void _moduleHashRules() {
+  const uid = '9e107669-c31b-4d0f-8b76-2f0e2a4b5a03';
+
+  final base = ExternalModule(
+    {
+      'a': 1,
+      'b': 2,
+    },
+    stubs: _addStub,
+    id: uid,
+  );
+  final reordered = ExternalModule(
+    {
+      'b': 2,
+      'a': 1,
+    },
+    stubs: _addStub,
+    id: uid,
+  );
+  expect(base == reordered, isTrue);
+  expect(base.hashCode, reordered.hashCode);
+  expect(
+    base.hashCode,
+    Object.hash(uid, _addStub, Object.hashAllUnordered(['a', 'b'])),
+  );
+
+  // Equal modules work as set members and as map keys.
+  expect({base, reordered}.length, 1);
+  expect({base, reordered}.contains(reordered), isTrue);
+  expect({base: 'value'}[reordered], 'value');
+
+  // The hash never reads a value, so a value whose hash fails is no
+  // trouble.
+  final failing = ExternalModule({'x': const _ThrowingHash()}, id: uid);
+  expect(() => failing.hashCode, returnsNormally);
+  expect(
+    failing.hashCode,
+    Object.hash(uid, null, Object.hashAllUnordered(['x'])),
+  );
+
+  // The values do not count: two modules that differ only in a value share
+  // the hash.
+  final changed = ExternalModule(
+    {
+      'a': 1,
+      'b': 3,
+    },
+    stubs: _addStub,
+    id: uid,
+  );
+  expect(changed.hashCode, base.hashCode);
+}
+
+/// The text of a module: the number of attributes, the stubs and the id.
+void _moduleTextRules() {
+  const uid = '9e107669-c31b-4d0f-8b76-2f0e2a4b5a03';
+
+  expect(
+    ExternalModule({'a': 1}, id: uid).toString(),
+    "ExternalModule(1 attrs, stubs=None, id=UUID('$uid'))",
+  );
+  expect(
+    ExternalModule({'a': 1, 'b': 2}, id: uid).toString(),
+    "ExternalModule(2 attrs, stubs=None, id=UUID('$uid'))",
+  );
+  expect(
+    ExternalModule({'a': 1}, stubs: '', id: uid).toString(),
+    "ExternalModule(1 attrs, stubs='', id=UUID('$uid'))",
+  );
+  expect(
+    ExternalModule(
+      {
+        'a': 1,
+      },
+      stubs: 'def add(a: int, b: int) -> int: ...\n',
+      id: uid,
+    ).toString(),
+    "ExternalModule(1 attrs, stubs='def add(a: int, b: int) -> int: ..."
+    "$_newline', id=UUID('$uid'))",
+  );
+  expect(
+    ExternalModule({'a': 1}, stubs: "it's\n", id: uid).toString(),
+    'ExternalModule(1 attrs, stubs="it\'s$_newline", id=UUID(\'$uid\'))',
+  );
+
+  // The text never reads a value, so a value whose text fails is no
+  // trouble.
+  final failing = ExternalModule({'x': const _ThrowingText()}, id: uid);
+  expect(failing.toString, returnsNormally);
 }
