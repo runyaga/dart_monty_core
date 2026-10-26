@@ -529,7 +529,7 @@ final class WorkerFixtureOs {
         final file = _files[p];
         if (file == null) throw _noFile(p);
         try {
-          return MontyString(utf8.decode(file.$1));
+          return MontyString(_decodeText(file.$1));
         } on FormatException catch (e) {
           throw ExternalException(
             'UnicodeDecodeError',
@@ -780,6 +780,18 @@ final class WorkerFixtureOs {
       ..addAll(dirs.map(moved));
 
     return const MontyNone();
+  }
+
+  /// The file's text: UTF-8, with a leading byte order mark kept — Dart's
+  /// decoder eats it and Python's `read_text` does not, so it goes back on,
+  /// the same compensation `OSAccess`'s text read makes.
+  String _decodeText(Uint8List bytes) {
+    final decoded = utf8.decode(bytes);
+
+    return switch (bytes) {
+      [0xEF, 0xBB, 0xBF, ...] => '\uFEFF$decoded',
+      _ => decoded,
+    };
   }
 
   /// CPython's `UnicodeDecodeError` text for the byte at [offset] that
