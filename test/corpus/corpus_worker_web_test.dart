@@ -92,6 +92,16 @@ void main() {
   manifestTests();
   adjudicatorSelfTests();
 
+  // The four upstream fixtures that import a module the host supplies, on
+  // the Web Worker: the same four the native entry point runs.
+  hostModuleTests(
+    _backend,
+    () async => startMonty(
+      corpusPoolOptions,
+      open: open(forceNoJspi: false),
+    ),
+  );
+
   group('corpus', () {
     test('the upstream 1.1.0 corpus', () async {
       final target = CorpusTarget(

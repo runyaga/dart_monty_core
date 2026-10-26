@@ -72,7 +72,87 @@ void corpusTests(CorpusTarget target) {
     () => runCorpusChecks(target),
     timeout: const Timeout(Duration(minutes: 15)),
   );
+  hostModuleTests(target.label, target.startPool);
   adjudicatorSelfTests();
+}
+
+/// The upstream fixtures that import a module the sandbox does not have, so
+/// the host answers the import with the module itself (`tools`).
+///
+/// Between them they cover the module's own functions, its submodule
+/// (`tools.nested.VERSION`), the futures its async tools return and the
+/// failure one raises, and the two ways an import can fail: a module the host
+/// does not have, and a name the module does not have.
+///
+/// Pinned by upstream v1.2.0:
+/// `up/crates/monty/test_cases/import__host.py`,
+/// `up/crates/monty/test_cases/import__host_async.py`,
+/// `up/crates/monty/test_cases/import__host_not_found.py` and
+/// `up/crates/monty/test_cases/import__host_cannot_import.py`.
+const hostImportFixtures = [
+  'import__host.py',
+  'import__host_async.py',
+  'import__host_not_found.py',
+  'import__host_cannot_import.py',
+];
+
+/// Registers the host-module corpus test: the four upstream fixtures that
+/// import a module the host supplies, run on the pool [startPool] starts.
+///
+/// [label] names the backend, for the failure messages.
+void hostModuleTests(String label, Future<Monty> Function() startPool) {
+  test(
+    'corpus harness supplies tools modules and preserves async fixture '
+    'outcomes',
+    () => runHostModuleChecks(label, startPool),
+    timeout: const Timeout(Duration(minutes: 5)),
+  );
+}
+
+/// Runs the four host-import fixtures on the pool [startPool] starts and
+/// judges them against upstream's own outcomes.
+///
+/// The pool is closed in a `finally`, whether the fixtures passed or failed.
+Future<void> runHostModuleChecks(
+  String label,
+  Future<Monty> Function() startPool,
+) async {
+  final run = await _runAll(startPool, only: hostImportFixtures.toSet());
+
+  // All four ran, once each: the corpus holds them and the runner ran each
+  // of them, so a verdict is a verdict on the fixture and not on nothing.
+  expect(
+    run.executed.toSet(),
+    hostImportFixtures.toSet(),
+    reason: 'the four host-import fixtures must each run ($label)',
+  );
+  expect(
+    run.executed,
+    hasLength(hostImportFixtures.length),
+    reason: 'each host-import fixture must run exactly once ($label)',
+  );
+
+  // Each met the outcome its own directives state: the module's functions
+  // and `tools.nested.VERSION`, the awaited futures and the failure they
+  // raise, and the two import errors' tracebacks. A harness fault is a
+  // failure too, so it cannot pass as a fixture's outcome.
+  expect(
+    run.failures,
+    isEmpty,
+    reason:
+        'every host-import fixture must meet the outcome upstream states '
+        '($label):\n${run.failures}',
+  );
+
+  // No divergence is recorded for them: they are expected to pass, so a
+  // manifest entry for one of them would be a new divergence.
+  expect(
+    workerCorpusExpected
+        .where((e) => hostImportFixtures.contains(e.file))
+        .map((e) => e.file),
+    isEmpty,
+    reason: 'the host-import fixtures must not be listed as divergences',
+  );
 }
 
 /// The manifest is well formed.
