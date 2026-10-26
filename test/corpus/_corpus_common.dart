@@ -67,7 +67,7 @@ final class CorpusTarget {
 void corpusTests(CorpusTarget target) {
   manifestTests();
   test(
-    'the upstream 1.1.0 corpus meets its directives, or is a listed '
+    'the upstream 1.2.0 corpus meets its directives, or is a listed '
     'divergence (${target.label})',
     () => runCorpusChecks(target),
     timeout: const Timeout(Duration(minutes: 15)),
@@ -161,7 +161,7 @@ void manifestTests() {
 
   test('the manifest is well formed', () {
     expect(manifestProblems(fixtureCorpusV1.keys), isEmpty);
-    expect(fixtureCorpusV1, hasLength(643));
+    expect(fixtureCorpusV1, hasLength(695));
   });
 
   test(
