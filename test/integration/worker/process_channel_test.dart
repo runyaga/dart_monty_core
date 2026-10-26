@@ -532,26 +532,43 @@ void main() {
   group('bounded read-ahead', () {
     const limit = ProcessChannel.readAheadLimit;
 
-    /// Waits until [channel]'s read-ahead has not changed for 300 ms, so a
-    /// reader that keeps reading has had the time to show it.
-    Future<int> settled(ProcessChannel channel) async {
-      final deadline = DateTime.now().add(const Duration(seconds: 30));
-      var last = -1;
-      var stableSince = DateTime.now();
-      while (DateTime.now().isBefore(deadline)) {
-        final now = channel.readAhead.now;
-        if (now != last) {
-          last = now;
-          stableSince = DateTime.now();
-        } else if (now > 0 &&
-            DateTime.now().difference(stableSince) >
-                const Duration(milliseconds: 300)) {
-          return now;
+    /// Waits until the channel has stopped reading at the limit.
+    ///
+    /// The pause is what "the read-ahead settled" means here: the channel
+    /// holds what it read, and what it did not read still waits in the
+    /// pipe. A quiet period is NOT that state. The read-ahead counts whole
+    /// frames only, so while a frame larger than the limit is still
+    /// arriving it does not move at all, and a quiet period in the middle
+    /// of such a frame reads as a settled read-ahead that never held the
+    /// frame. On a loaded runner the frame takes longer than any quiet
+    /// period, and the test then measured the frames before it.
+    Future<void> pausedAtLimit(ProcessChannel channel) async {
+      final deadline = DateTime.now().add(const Duration(seconds: 60));
+      while (!channel.readAhead.paused) {
+        if (DateTime.now().isAfter(deadline)) {
+          fail('the channel never stopped reading at the limit');
         }
         await Future<void>.delayed(const Duration(milliseconds: 20));
       }
+    }
 
-      return fail('the read-ahead never settled (last: $last bytes)');
+    /// Waits until the channel's read-ahead holds [bytes] or more.
+    ///
+    /// The read-ahead only grows while the channel reads, so this ends
+    /// when the channel has read that much, and fails when it never does:
+    /// a condition, where a quiet period is only a guess.
+    Future<int> heldOver(ProcessChannel channel, int bytes) async {
+      final deadline = DateTime.now().add(const Duration(seconds: 60));
+      while (DateTime.now().isBefore(deadline)) {
+        final now = channel.readAhead.now;
+        if (now >= bytes) return now;
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+
+      return fail(
+        'the read-ahead never reached $bytes '
+        '(now: ${channel.readAhead.now} bytes)',
+      );
     }
 
     /// The `#<n>:` numbers of [texts], in order.
@@ -566,8 +583,10 @@ void main() {
         (await channel.turn(_configure)).whichKind(),
         pb.ChildEvent_Kind.ok,
       );
-      // 32 MiB arrive with no turn reading them.
-      final held = await settled(channel);
+      // 32 MiB arrive with no turn reading them: the channel stops at the
+      // limit, holding what it read.
+      await pausedAtLimit(channel);
+      final held = channel.readAhead.now;
       expect(held, greaterThanOrEqualTo(limit));
       final bounded = lessThan(limit + (1 << 20));
       expect(channel.readAhead.peak, bounded);
@@ -599,7 +618,8 @@ void main() {
         );
         // Paused at the limit: the worker is blocked writing, so it reads no
         // stdin until the parent reads stdout again.
-        expect(await settled(channel), greaterThanOrEqualTo(limit));
+        await pausedAtLimit(channel);
+        expect(channel.readAhead.now, greaterThanOrEqualTo(limit));
         final printed = <pb.Print>[];
         final end = await channel
             .turn(_feed('#' * (2 << 20)), onPrint: printed.add)
@@ -619,8 +639,12 @@ void main() {
       expect(await channel.exitCode, 0);
       // Those Prints were in the pipe or the queue at the exit, so the
       // drain read them; it reads what the pipe held, no more.
+      final held = await heldOver(
+        channel,
+        descendantReadyPrints * floodPrintLength,
+      );
       expect(
-        await settled(channel),
+        held,
         greaterThanOrEqualTo(descendantReadyPrints * floodPrintLength),
       );
       // The drain ends at most a grace after the exit; the peak is read
@@ -643,7 +667,10 @@ void main() {
       // 3 MiB, then an 8 MiB frame in 64 KiB pieces: it must finish, not
       // stall half-read; the 2 MiB after it wait.
       const before = bigFramePrefixPrints * (floodPrintLength + 8);
-      final held = await settled(channel);
+      // The channel stops reading once the frame that crossed the limit is
+      // whole: the big frame is held, and the frames after it still wait.
+      await pausedAtLimit(channel);
+      final held = channel.readAhead.now;
       expect(held, greaterThan(before + bigPrintLength));
       expect(
         channel.readAhead.peak,
