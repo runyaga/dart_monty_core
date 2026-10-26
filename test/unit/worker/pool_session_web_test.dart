@@ -11,6 +11,7 @@ library;
 import 'dart:async';
 import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
+import 'dart:typed_data';
 
 import 'package:dart_monty_core/dart_monty_core.dart'
     hide MontyError, MontySyntaxError, MontyTypingError;
@@ -42,6 +43,21 @@ const _limits = SessionConfig(
   limits: ResourceLimits(maxMemory: 64 * 1024 * 1024),
 );
 
+/// The limits the dumped session runs under: roomy, as upstream's test
+/// dumps it (monty v1.2.0,
+/// `up/crates/monty-proto/tests/dispatch.rs:485`).
+const _dumpLimits = ResourceLimits(
+  maxMemory: 64 * 1024 * 1024,
+  maxSuspensions: 20,
+);
+
+/// The limits the restoring worker is configured with: tighter than the
+/// dump's, so the restored session runs under them.
+const _restoreLimits = ResourceLimits(
+  maxMemory: 10 * 1024 * 1024,
+  maxSuspensions: 3,
+);
+
 /// What a test passes as `printCallback` when it does not look at prints.
 void _ignore(String stream, String text) => _ignored++;
 
@@ -68,6 +84,116 @@ external JSObject get _console;
   return (logged, errored);
 }
 
+/// The dump of a session: an idle one, or a suspended one, as upstream's
+/// test dumps both kinds and loads both back (monty v1.2.0,
+/// `up/crates/monty-proto/tests/dispatch.rs:485`).
+Future<Uint8List> _dumpOf(Monty pool, {required bool suspended}) async {
+  final session = await pool.checkoutWith(
+    const SessionConfig(scriptName: 'saved.py', limits: _dumpLimits),
+  );
+  try {
+    if (!suspended) {
+      await session.feedRun('x = 42', printCallback: _ignore);
+
+      return await session.dump();
+    }
+    final snapshot = await session.feedStart(
+      'x = 42\nf(x)',
+      externalLookup: {
+        'f': MontyHostFunction('f', (args, kwargs) => const MontyInt(0)),
+      },
+      printCallback: _ignore,
+    );
+    expect(snapshot, isA<FunctionSnapshot>());
+    final call = snapshot as FunctionSnapshot;
+
+    return await call.dump();
+  } finally {
+    await session.close();
+  }
+}
+
+/// The restored session runs on under the tighter limits: the dump's own
+/// values are there, and the suspension budget is the configured one.
+Future<void> _expectTheRestoredSession(
+  MontySession session,
+  Uint8List dump, {
+  required bool suspended,
+}) async {
+  if (suspended) {
+    final snapshot = await session.loadSnapshot(dump);
+    expect(snapshot, isA<FunctionSnapshot>());
+    final call = snapshot as FunctionSnapshot;
+    expect(call.functionName, 'f');
+    expect(call.scriptName, 'saved.py');
+    final done = await call.resume(const ExternalReturnValue(MontyInt(0)));
+    expect(done, isA<MontyComplete>());
+  } else {
+    await session.loadSession(dump);
+    expect(
+      await session.feedRun('x', printCallback: _ignore),
+      const MontyInt(42),
+    );
+  }
+  // The capped budget: the restored session may not make more suspensions
+  // than the tighter configuration allows.
+  await expectLater(
+    session.feedRun(
+      'f()\nf()\nf()\nf()',
+      externalLookup: {
+        'f': MontyHostFunction('f', (args, kwargs) => const MontyInt(0)),
+      },
+      printCallback: _ignore,
+    ),
+    throwsA(
+      isA<MontyRuntimeError>().having(
+        (e) => e.exception.message,
+        'message',
+        'suspension limit 3 exceeded',
+      ),
+    ),
+  );
+}
+
+/// The idle and suspended restore clamping, as upstream's
+/// `restore_caps_idle_and_suspended_resource_limits` states it (monty
+/// v1.2.0, `up/crates/monty-proto/tests/dispatch.rs:485`): a dump made
+/// with roomy limits is restored into a worker configured with tighter
+/// ones, and the restored session runs on under the tighter limits.
+///
+/// Both dumps travel the browser boundary: [start] starts the worker that
+/// makes the dump and the worker that loads it back, so the budget the
+/// restored session runs under is the one the worker reports for the
+/// restore, not a host-side figure read off a configuration.
+void restoreClampTests(String label, StartPool start) {
+  for (final suspended in [false, true]) {
+    final kind = suspended ? 'a suspended' : 'an idle';
+    test('a load caps the limits of $kind dump ($label)', () async {
+      final pool = await start(const PoolOptions(maxProcesses: 1));
+      try {
+        final dump = await _dumpOf(pool, suspended: suspended);
+        final restored = await pool.checkoutWith(
+          const SessionConfig(
+            scriptName: 'saved.py',
+            limits: _restoreLimits,
+          ),
+        );
+        try {
+          await _expectTheRestoredSession(
+            restored,
+            dump,
+            suspended: suspended,
+          );
+        } finally {
+          await restored.close();
+        }
+      } finally {
+        await pool.close();
+      }
+    });
+  }
+}
+
 void main() {
   memoryFsSessionTests(_backend, startMonty);
   boundarySessionTests(_backend, startMonty);
@@ -76,6 +202,10 @@ void main() {
     () => startMonty(const PoolOptions(maxProcesses: 1)),
   );
   restoreOracleTests(
+    _backend,
+    startMonty,
+  );
+  restoreClampTests(
     _backend,
     startMonty,
   );
