@@ -506,13 +506,10 @@ String _pyReprRune(int rune, String quote) {
 /// converted at construction; [attrValue] converts one when it is read, the
 /// moment an import would.
 ///
-/// Two are equal, as upstream's `__eq__`, when their ids, attrs and stubs
-/// all match; the hash agrees.
-///
-/// STUB: every member below returns a wrong value, checks nothing and never
-/// throws. The real behaviour is pinned by monty_value_test.dart's
-/// 'ExternalModule copies attributes and validates names identity and
-/// stubs'.
+/// Two are equal, as upstream's `__eq__`, when their ids, stubs and
+/// attributes match: the attribute values are compared with each value's own
+/// Dart `==`, never structurally, so a `List` or `Map` attribute matches
+/// only the very same object.
 final class ExternalModule {
   /// Creates a module from a shallow copy of [attrs].
   ///
@@ -525,13 +522,12 @@ final class ExternalModule {
   /// that names the key and says the module is provided by the sandbox and
   /// cannot be replaced. [id] must be a uuid, canonical whatever its case;
   /// a random version 4 one is made when it is absent, as a class id is.
-  //
-  // The stub stores the attrs given and a blank id; the real one copies,
-  // checks keys and makes a uuid4, so no const constructor can serve.
-  // ignore: prefer-declaring-const-constructor
+  ///
+  /// The id is checked before the attributes, so an invalid id is reported
+  /// even when the attributes are invalid too.
   ExternalModule(Map<Object?, Object?> attrs, {this.stubs, String? id})
-    : _given = attrs,
-      id = id ?? '';
+    : id = id == null ? _uuid4() : _checkedId(id),
+      _attrs = _checkedAttrs(attrs);
 
   /// The module's `.pyi` source, `null` when it has none.
   final String? stubs;
@@ -540,28 +536,123 @@ final class ExternalModule {
   /// of the module carries it.
   final String id;
 
-  /// The attrs given at construction, kept only so the stub's [toString]
-  /// can count them; the copy, the checks and the conversions are not
-  /// implemented yet.
-  final Map<Object?, Object?> _given;
+  /// The module's attributes, copied once at construction and never changed
+  /// after. The values are the very objects given, so the copy is shallow.
+  final Map<String, Object?> _attrs;
 
   /// A copy of the module's attributes, protected ones included. Editing it,
   /// or the map given at construction, changes neither the module nor the
   /// next copy read; the values are the very objects given.
-  Map<String, Object?> get attrs => {};
+  Map<String, Object?> get attrs => Map.of(_attrs);
 
   /// The public attributes, in insertion order: every attribute whose name
   /// does not start with `_`.
-  Map<String, Object?> get publicAttrs => {};
+  Map<String, Object?> get publicAttrs {
+    final public = <String, Object?>{};
+    for (final entry in _attrs.entries) {
+      if (!entry.key.startsWith('_')) public[entry.key] = entry.value;
+    }
+
+    return public;
+  }
 
   /// The attribute [name] as the sandbox sees it: `null` when [name] is
   /// absent or protected (its name starts with `_`), a nested
   /// [ExternalModule] as itself, and any other value converted now —
   /// deferred from construction — by `MontyValue.fromDart`.
-  Object? attrValue(String name) => MontyString(name);
+  Object? attrValue(String name) {
+    if (name.startsWith('_')) return null;
+    if (!_attrs.containsKey(name)) return null;
+    final value = _attrs[name];
+
+    return value is ExternalModule ? value : MontyValue.fromDart(value);
+  }
+
+  /// Equal to another [ExternalModule] when the ids, the stubs and the
+  /// attributes match: the same attribute names, protected ones included,
+  /// and for each of them values that are equal by their own `==`.
+  ///
+  /// A module is equal to itself whatever its attributes hold, as upstream's
+  /// is (Python compares one dict with itself).
+  @override
+  // The module is immutable in shape: its attributes are copied once and
+  // never change. The values they hold are the host's own objects, which
+  // the module cannot make immutable, so the class is not @immutable.
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    if (other is! ExternalModule) return false;
+    if (id != other.id) return false;
+    if (stubs != other.stubs) return false;
+    if (_attrs.length != other._attrs.length) return false;
+    for (final entry in _attrs.entries) {
+      if (!other._attrs.containsKey(entry.key)) return false;
+      if (entry.value != other._attrs[entry.key]) return false;
+    }
+
+    return true;
+  }
+
+  /// A hash over the id, the stubs and the attribute names, never over the
+  /// attribute values: two equal modules have the same hash, but two
+  /// modules that differ only in a value may share one.
+  @override
+  // The hash follows the equality above, which the class cannot be
+  // @immutable for.
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode =>
+      Object.hash(id, stubs, Object.hashAllUnordered(_attrs.keys));
 
   /// Upstream's `__repr__`:
   /// `ExternalModule(<attrs>, stubs=<stubs or None>, id=UUID('<id>'))`.
   @override
-  String toString() => 'ExternalModule(${_given.length} attrs)';
+  String toString() {
+    final stubsText = switch (stubs) {
+      null => 'None',
+      final value => pythonRepr(value),
+    };
+
+    return 'ExternalModule(${_attrs.length} attrs, stubs=$stubsText, '
+        "id=UUID('$id'))";
+  }
+
+  /// The module's attributes, copied and checked as upstream's constructor
+  /// checks them: string keys, no key twice, identifier keys (a keyword is
+  /// not one), and a nested module only under a key that may name a host
+  /// module.
+  ///
+  /// The checks run in upstream's order, so a key seen twice is reported as
+  /// such even when it is not an identifier.
+  static Map<String, Object?> _checkedAttrs(Map<Object?, Object?> attrs) {
+    final copy = <String, Object?>{};
+    for (final entry in attrs.entries) {
+      final key = entry.key;
+      if (key is! String) {
+        throw ArgumentError(
+          'ExternalModule attrs must have str keys, not ${key.runtimeType}',
+        );
+      }
+      if (copy.containsKey(key)) {
+        throw ArgumentError(
+          'ExternalModule attrs has the key ${pythonRepr(key)} twice',
+        );
+      }
+      if (!isValidIdentifier(key)) {
+        throw ArgumentError(
+          'ExternalModule attrs must have identifier keys, '
+          'not ${pythonRepr(key)}',
+        );
+      }
+      final value = entry.value;
+      if (value is ExternalModule) {
+        final error = moduleNameError(key);
+        if (error != null) {
+          throw ArgumentError("ExternalModule attrs['$key']: $error");
+        }
+      }
+      copy[key] = value;
+    }
+
+    return Map.unmodifiable(copy);
+  }
 }

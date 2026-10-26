@@ -25,6 +25,14 @@ final RegExp _identifier = RegExp(
   unicode: true,
 );
 
+/// Whether [name] is a name Python accepts as an identifier: [isIdentifier]
+/// and not a hard keyword.
+///
+/// Upstream's `is_identifier` (ruff's, used by `monty-types`) refuses the
+/// keywords as well, so a keyword is not a valid identifier there either.
+bool isValidIdentifier(String name) =>
+    isIdentifier(name) && !pythonKeywords.contains(name);
+
 /// `keyword.kwlist`, which has not changed since Python 3.7.
 const Set<String> pythonKeywords = {
   'False', 'None', 'True', 'and', 'as', 'assert', 'async', 'await', //
@@ -33,6 +41,60 @@ const Set<String> pythonKeywords = {
   'nonlocal', 'not', 'or', 'pass', 'raise', 'return', 'try', 'while', 'with',
   'yield',
 };
+
+/// The module names the sandbox provides itself, so a host module may not
+/// take their names.
+///
+/// Upstream's `SANDBOX_MODULE_NAMES` (`monty-types` `type_checking.rs`): an
+/// import of one of these never reaches the host, so a host module under
+/// such a name would never be imported. The names the type checker alone
+/// uses (`CHECKER_MODULE_NAMES`) are not here: a host may provide those at
+/// runtime.
+const Set<String> sandboxModuleNames = {
+  'asyncio',
+  'base64',
+  'binascii',
+  'bisect',
+  'collections',
+  'copy',
+  'csv',
+  'dataclasses',
+  'datetime',
+  'functools',
+  'gc',
+  'hashlib',
+  'itertools',
+  'json',
+  'math',
+  'os',
+  'pathlib',
+  'posixpath',
+  'random',
+  're',
+  'sys',
+  'time',
+  'tomllib',
+  'typing',
+  'unicodedata',
+};
+
+/// Why [name] cannot name a host module, or null when it can.
+///
+/// Upstream's `validate_module_name` (`monty-types` `type_checking.rs`): a
+/// name that is not an identifier is refused first, then one the sandbox
+/// provides itself. The messages are upstream's, with the name rendered as
+/// Rust's `{:?}` renders it.
+String? moduleNameError(String name) {
+  if (!isValidIdentifier(name)) {
+    return 'module name ${rustDebug(name)} is not a valid identifier';
+  }
+  if (sandboxModuleNames.contains(name)) {
+    return 'module ${rustDebug(name)} is provided by the sandbox or its type '
+        'checker and cannot be replaced';
+  }
+
+  return null;
+}
 
 /// Why `collections.namedtuple(name, fields)._make(values)` would raise for
 /// a named tuple [typeName] with [fieldNames] and [valueCount] values, or
