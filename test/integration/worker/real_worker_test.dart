@@ -300,6 +300,74 @@ void main() {
     });
     expect(_offlineUpstreamPinValidationSucceeds(), isTrue);
   });
+
+  test('migration test floors and change fragment match completed suites', () {
+    // The monty v1.2.0 migration registered its suites -- the pin test above
+    // passes -- but nothing followed through: the two floors that count those
+    // suites still hold the values they were locked at before it, and
+    // changes/ holds no fragment for the upgrade. A floor is raised when a
+    // suite grows, never lowered to make a run pass, and a lib/ change lands
+    // with its changes/<slug>.md.
+
+    final unitFloor = _gateSuiteFloor('unit_tests');
+    expect(
+      unitFloor,
+      greaterThan(_lockedUnitTestsFloor),
+      reason:
+          'tool/gate.sh still reads "sf unit_tests '
+          '$_lockedUnitTestsFloor"; the migration grew the suite this floor '
+          'counts, so the floor moves up with it',
+    );
+    expect(
+      unitFloor,
+      greaterThanOrEqualTo(_lockedUnitTestsFloor),
+      reason:
+          'the unit_tests floor never drops below its locked baseline of '
+          '$_lockedUnitTestsFloor',
+    );
+
+    final webFloor = _workerWebFloor();
+    expect(
+      webFloor,
+      greaterThan(_lockedWorkerWebFloor),
+      reason:
+          'tool/test_worker_web.sh still reads "FLOOR='
+          '$_lockedWorkerWebFloor"; the migration grew the web suites this '
+          'floor counts, so the floor moves up with it',
+    );
+    expect(
+      webFloor,
+      greaterThanOrEqualTo(_lockedWorkerWebFloor),
+      reason:
+          'the worker web floor never drops below its locked baseline of '
+          '$_lockedWorkerWebFloor',
+    );
+
+    final observed = _observedSuiteCounts();
+    expect(
+      unitFloor,
+      lessThan(_observedCount(observed, 'unit_tests')),
+      reason:
+          'a raised floor still sits under the observed unit_tests '
+          'count, so ordinary churn does not trip it',
+    );
+    expect(
+      webFloor,
+      lessThan(_observedCount(observed, 'worker_web')),
+      reason:
+          'a raised floor still sits under the observed worker_web '
+          'count, so ordinary churn does not trip it',
+    );
+
+    expect(
+      _migrationChangeFragment(),
+      isNotEmpty,
+      reason:
+          'the release upgrade, protocol/imports, Scan, open behavior, '
+          'restore limits, exception codecs and BOM correction are '
+          'user-visible and belong in a changes/<slug>.md fragment',
+    );
+  });
 }
 
 /// The value of a `2**n` expression in [code], as Python computes it.
@@ -388,4 +456,118 @@ String _pinString(String key) {
   }
 
   return value;
+}
+
+// The migration follow-through readers below report what the tree holds, not
+// what it should hold: the two floors the completed monty v1.2.0
+// registrations were supposed to raise, the observed counts those floors must
+// stay under, and the changes/<slug>.md fragment recording the upgrade. So
+// 'migration test floors and change fragment match completed suites' fails
+// while any of the three is still missing.
+
+/// The unit_tests floor as it was locked when the monty v1.2.0 migration
+/// began: `sf unit_tests 3211`, tool/gate.sh:270.
+const int _lockedUnitTestsFloor = 3211;
+
+/// The worker web floor as it was locked when the monty v1.2.0 migration
+/// began: `FLOOR=566`, tool/test_worker_web.sh:44.
+const int _lockedWorkerWebFloor = 566;
+
+/// Every topic a `changes/<slug>.md` fragment for the monty v1.2.0 migration
+/// must describe, matched case-insensitively by [_migrationChangeFragment]:
+/// the release upgrade, protocol/imports, Scan, open behavior, restore
+/// limits, exception codecs and BOM correction.
+const List<String> _migrationFragmentTopics = [
+  '1.2.0',
+  'protocol',
+  'import',
+  'scan',
+  'open',
+  'restore',
+  'limit',
+  'exception',
+  'codec',
+  'bom',
+];
+
+/// The count tool/gate.sh asserts under its [suite] step -- the number in
+/// its `sf <suite> <count>` line -- or a failure naming the missing line.
+int _gateSuiteFloor(String suite) {
+  final gate = File('tool/gate.sh').readAsStringSync();
+  final match = RegExp(
+    '^sf\\s+$suite\\s+(\\d+)',
+    multiLine: true,
+  ).firstMatch(gate);
+  final count = match?[1];
+  if (count == null) {
+    fail('tool/gate.sh registers no "sf $suite <count>" floor');
+  }
+
+  return int.parse(count);
+}
+
+/// The count tool/test_worker_web.sh asserts under each compiler run -- the
+/// value of its `FLOOR=` line -- or a failure naming the missing assignment.
+int _workerWebFloor() {
+  final script = File('tool/test_worker_web.sh').readAsStringSync();
+  final match = RegExp(
+    r'^FLOOR=(\d+)',
+    multiLine: true,
+  ).firstMatch(script);
+  final count = match?[1];
+  if (count == null) {
+    fail('tool/test_worker_web.sh sets no FLOOR= floor');
+  }
+
+  return int.parse(count);
+}
+
+/// The observed complete-suite counts the raised floors must stay under,
+/// keyed by suite ('unit_tests', 'worker_web').
+///
+/// STUB: the monty v1.2.0 suites' final counts are not recorded in this
+/// bundle and must not be invented, so this returns an empty record, which
+/// is wrong for every suite; the `lessThan` assertions fail until the
+/// measured counts replace it. It never throws.
+Map<String, int> _observedSuiteCounts() => const {};
+
+/// The observed count recorded for [suite] in [observed], or a failure
+/// naming the suite nothing was recorded for.
+int _observedCount(Map<String, int> observed, String suite) {
+  final count = observed[suite];
+  if (count == null) {
+    fail('no observed complete-suite count is recorded for "$suite"');
+  }
+
+  return count;
+}
+
+/// The `changes/<slug>.md` fragment recording the monty v1.2.0 migration,
+/// or a failure naming what is missing: a markdown file directly under
+/// changes/ (README excluded, as tool/check_changelog_fragments.sh does not
+/// assemble it) whose text covers every topic in [_migrationFragmentTopics].
+String _migrationChangeFragment() {
+  final fragments = <String>[
+    if (Directory('changes').existsSync())
+      for (final entity in Directory('changes').listSync())
+        if (entity is File &&
+            entity.path.endsWith('.md') &&
+            entity.path != 'changes/README.md')
+          entity.path,
+  ];
+  for (final path in fragments) {
+    final text = File(path).readAsStringSync().toLowerCase();
+    final missing = [
+      for (final topic in _migrationFragmentTopics)
+        if (!text.contains(topic)) topic,
+    ];
+    if (missing.isEmpty) {
+      return path;
+    }
+  }
+
+  fail(
+    'no changes/<slug>.md fragment describes the monty v1.2.0 migration; one '
+    'must cover: ${_migrationFragmentTopics.join(', ')}',
+  );
 }
