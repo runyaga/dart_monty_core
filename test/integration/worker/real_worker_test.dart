@@ -24,6 +24,11 @@ import 'package:dart_monty_core/src/worker/wire_scalars.dart';
 import 'package:dart_monty_core/src/worker/worker_locator.dart';
 import 'package:dart_monty_core/src/worker/worker_manifest.dart';
 import 'package:fixnum/fixnum.dart';
+// The corpus manifest is imported from the conformance package's src/ on
+// purpose: its public library also exports the generated corpus, and this
+// test MEASURES the corpus rather than importing it.
+import 'package:monty_conformance/src/worker_corpus_manifest.dart';
+import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import '../../_accessors.dart';
@@ -410,6 +415,13 @@ void main() {
           'user-visible and belong in a changes/<slug>.md fragment',
     );
   });
+
+  test(
+    'v1.2.0 corpus scorecards and capability records match measured '
+    'results',
+    _corpusScorecardAcceptance,
+    timeout: const Timeout(Duration(minutes: 120)),
+  );
 }
 
 /// The value of a `2**n` expression in [code], as Python computes it.
@@ -1015,4 +1027,1281 @@ String _packageVersion(String path) {
   ).firstMatch(text);
 
   return cargo?.group(1) ?? '';
+}
+
+// ---------------------------------------------------------------------------
+// The v1.2.0 corpus scorecard acceptance.
+//
+// The corpus suite prints a scorecard per backend; the corpus manifest, the
+// pin, the generated corpus and the capability records state what that run
+// must have measured. This acceptance measures the corpus on all three
+// backends, checks the records against the measurement, and reports every
+// difference it finds.
+//
+// Nothing here updates a record, regenerates a fixture, builds an artefact
+// or skips a prerequisite: a missing checkout, a stale record and a failing
+// leg are reported, never worked around.
+// ---------------------------------------------------------------------------
+
+/// The upstream release this acceptance measures: the pin's version.
+const String _upstreamVersion = '1.2.0';
+
+/// The upstream release's tag.
+const String _upstreamTag = 'v1.2.0';
+
+/// How many fixtures the pinned corpus holds.
+const int _pinnedCorpusFiles = 695;
+
+/// The upstream corpus' path in the checkout, as the pin records it.
+const String _corpusPath = 'crates/monty/test_cases';
+
+/// The upstream pin record.
+const String _pinPath = 'tool/upstream/upstream-pin.json';
+
+/// The generated corpus: the file the corpus generator writes.
+const String _generatedCorpusPath =
+    'packages/monty_conformance/lib/src/fixture_corpus_v1.dart';
+
+/// The frozen capability manifest.
+const String _capabilityManifestPath = 'tool/upstream/capability-manifest.json';
+
+/// The capability manifest's checker.
+const String _capabilityChecker = 'tool/check_capability_manifest.py';
+
+/// The generator of the corpus the corpus suite runs.
+const String _corpusGenerator = 'tool/generate_fixture_corpus_v1.dart';
+
+/// One measured corpus leg: the backend the corpus ran on, the platform its
+/// tests ran on and the compiler a browser leg compiled with.
+final class _CorpusLeg {
+  /// Creates a [_CorpusLeg].
+  const _CorpusLeg({
+    required this.label,
+    required this.platform,
+    required this.compiler,
+    required this.profile,
+  });
+
+  /// The label the corpus suite prints in its scorecard.
+  final String label;
+
+  /// The platform the corpus suite runs on: `vm`, `chrome` or `firefox`.
+  final String platform;
+
+  /// The compiler a browser leg compiles with; null on the native leg.
+  final String? compiler;
+
+  /// The manifest profile the leg's failures are judged against.
+  final WorkerCorpusProfile profile;
+}
+
+/// The three legs the acceptance measures, in order: the native worker on
+/// the VM, the Web Worker compiled by dart2js in Chrome and the Web Worker
+/// compiled by dart2wasm in Firefox.
+const List<_CorpusLeg> _corpusLegs = [
+  _CorpusLeg(
+    label: 'native',
+    platform: 'vm',
+    compiler: null,
+    profile: WorkerCorpusProfile.native,
+  ),
+  _CorpusLeg(
+    label: 'dart2js',
+    platform: 'chrome',
+    compiler: 'dart2js',
+    profile: WorkerCorpusProfile.browser,
+  ),
+  _CorpusLeg(
+    label: 'dart2wasm',
+    platform: 'firefox',
+    compiler: 'dart2wasm',
+    profile: WorkerCorpusProfile.browser,
+  ),
+];
+
+/// What a command run measured: its exit status, its output and what went
+/// wrong, if anything did.
+final class _CommandResult {
+  /// Creates a [_CommandResult].
+  const _CommandResult({
+    required this.command,
+    this.exitCode,
+    this.stdout = '',
+    this.stderr = '',
+    this.failure,
+  });
+
+  /// The command line that was run.
+  final String command;
+
+  /// The exit status; null when the process never ran.
+  final int? exitCode;
+
+  /// The standard output, decoded.
+  final String stdout;
+
+  /// The standard error, decoded.
+  final String stderr;
+
+  /// Why the run did not complete, when it did not.
+  final String? failure;
+
+  /// Whether the command ran to the end and exited 0.
+  bool get ok => exitCode == 0 && failure == null;
+}
+
+/// What a command's process produced: its status, its two streams and what
+/// went wrong while collecting them.
+typedef _CommandOutput = ({
+  int status,
+  String stdout,
+  String stderr,
+  List<String> diagnostics,
+});
+
+/// The upstream checkout the acceptance measures against, and the cleanup
+/// that removes it when this test made it. The cleanup is null for a
+/// checkout this test did not make: that one is not this test's to remove.
+typedef _UpstreamCheckout = ({String path, void Function()? cleanup});
+
+/// The pin's record of the corpus tree: its git tree hash and its file
+/// count.
+typedef _PinnedTree = ({String gitTree, int files});
+
+/// The versions the two documents name: the README's banner and the
+/// generated corpus' header.
+typedef _DocumentedVersions = ({String? readme, String? generated});
+
+/// What the capability checker measured: its offline run and its online
+/// run.
+typedef _CapabilityRuns = ({_CommandResult offline, _CommandResult online});
+
+/// One measured corpus leg: the leg and what its run measured.
+typedef _LegRun = ({_CorpusLeg leg, _CommandResult result});
+
+/// A measured corpus scorecard: the counts the corpus run printed.
+final class _Scorecard {
+  /// Creates a [_Scorecard].
+  const _Scorecard({
+    required this.label,
+    required this.total,
+    required this.passed,
+    required this.divergent,
+    required this.listed,
+    required this.jspi,
+  });
+
+  /// The backend the scorecard names.
+  final String label;
+
+  /// How many fixtures ran.
+  final int total;
+
+  /// How many of them passed.
+  final int passed;
+
+  /// How many of them failed.
+  final int divergent;
+
+  /// How many failures the manifest lists for the leg's profile.
+  final int listed;
+
+  /// Whether the browser had JSPI; null on the native worker.
+  final bool? jspi;
+}
+
+/// The repository root: the directory that holds the pubspec, the pin and
+/// the corpus generator.
+String _repositoryRoot() {
+  var directory = Directory.current.absolute;
+  while (true) {
+    if (File(p.join(directory.path, 'pubspec.yaml')).existsSync() &&
+        File(p.join(directory.path, _pinPath)).existsSync()) {
+      return directory.path;
+    }
+    final parent = directory.parent;
+    if (parent.path == directory.path) {
+      return Directory.current.absolute.path;
+    }
+    directory = parent;
+  }
+}
+
+/// The time left until [deadline], never negative.
+Duration _remaining(DateTime deadline) {
+  final left = deadline.difference(DateTime.now());
+
+  return left.isNegative ? Duration.zero : left;
+}
+
+/// The tail of [text], for a problem message.
+String _tail(String text, {int limit = 2000}) {
+  final trimmed = text.trim();
+  if (trimmed.length <= limit) {
+    return trimmed;
+  }
+
+  return '...${trimmed.substring(trimmed.length - limit)}';
+}
+
+/// Runs [executable] with [arguments] from the repository root and measures
+/// it: the exit status, the output and whatever went wrong.
+///
+/// A process that cannot be started, one that outlives [timeout] and one
+/// whose output cannot be drained within it are failures with a diagnostic,
+/// never a silent success. The timeout bounds the process AND its output:
+/// a child that exits but holds its pipes open is a failed run, not a
+/// successful one.
+Future<_CommandResult> _runCommand(
+  String executable,
+  List<String> arguments, {
+  Duration? timeout,
+  Map<String, String>? environment,
+}) async {
+  final command = '$executable ${arguments.join(' ')}';
+  final Process process;
+  try {
+    process = await Process.start(
+      executable,
+      arguments,
+      workingDirectory: _repositoryRoot(),
+      environment: environment,
+    );
+  } on Exception catch (error) {
+    return _CommandResult(
+      command: command,
+      failure: 'could not start $executable: $error',
+    );
+  }
+
+  final output = await _collectOutput(process, timeout);
+
+  return _CommandResult(
+    command: command,
+    exitCode: output.status,
+    stdout: output.stdout,
+    stderr: output.stderr,
+    failure: output.diagnostics.isEmpty ? null : output.diagnostics.join('; '),
+  );
+}
+
+/// Collects a process' status and its two streams, within [timeout].
+///
+/// The deadline covers the process AND the streams: a child that exits and
+/// leaves its pipes open is a timeout, not a success.
+Future<_CommandOutput> _collectOutput(
+  Process process,
+  Duration? timeout,
+) async {
+  final diagnostics = <String>[];
+  final stdoutBytes = <int>[];
+  final stderrBytes = <int>[];
+  final stdoutDone = Completer<void>();
+  final stderrDone = Completer<void>();
+  _collectStream(
+    process.stdout,
+    stdoutBytes,
+    stdoutDone,
+    'stdout',
+    diagnostics,
+  );
+  _collectStream(
+    process.stderr,
+    stderrBytes,
+    stderrDone,
+    'stderr',
+    diagnostics,
+  );
+
+  final deadline = timeout == null ? null : DateTime.now().add(timeout);
+  final exit = await _awaitExit(process, deadline, timeout, diagnostics);
+  if (exit.timedOut) {
+    process.kill(ProcessSignal.sigkill);
+  }
+
+  await _drain(stdoutDone, 'stdout', deadline, exit.timedOut, diagnostics);
+  await _drain(stderrDone, 'stderr', deadline, exit.timedOut, diagnostics);
+
+  return (
+    status: exit.status,
+    stdout: _decode(stdoutBytes, 'stdout', diagnostics),
+    stderr: _decode(stderrBytes, 'stderr', diagnostics),
+    diagnostics: diagnostics,
+  );
+}
+
+/// Waits for the process to exit, within the deadline: its status and
+/// whether it timed out.
+Future<({int status, bool timedOut})> _awaitExit(
+  Process process,
+  DateTime? deadline,
+  Duration? timeout,
+  List<String> diagnostics,
+) async {
+  if (deadline == null) {
+    return (status: await process.exitCode, timedOut: false);
+  }
+  try {
+    final status = await process.exitCode.timeout(_remaining(deadline));
+
+    return (status: status, timedOut: false);
+  } on TimeoutException {
+    diagnostics.add(
+      'the command did not finish within ${timeout?.inSeconds}s',
+    );
+
+    return (status: -1, timedOut: true);
+  }
+}
+
+/// Collects one of a process' output streams into [bytes], and completes
+/// [done] when the stream ends or fails.
+void _collectStream(
+  Stream<List<int>> stream,
+  List<int> bytes,
+  Completer<void> done,
+  String name,
+  List<String> diagnostics,
+) {
+  stream.listen(
+    bytes.addAll,
+    onError: (Object error) {
+      diagnostics.add('the $name stream failed: $error');
+      _complete(done);
+    },
+    onDone: () => _complete(done),
+  );
+}
+
+/// Completes [done] once, whatever happened to the stream behind it.
+void _complete(Completer<void> done) {
+  if (!done.isCompleted) {
+    done.complete();
+  }
+}
+
+/// Waits for [done] -- the end of one output stream -- within the command's
+/// deadline, and records what went wrong when it does not.
+Future<void> _drain(
+  Completer<void> done,
+  String stream,
+  DateTime? deadline,
+  bool killed,
+  List<String> diagnostics,
+) async {
+  if (deadline == null) {
+    await done.future;
+
+    return;
+  }
+  final budget = killed ? const Duration(seconds: 5) : _remaining(deadline);
+  try {
+    await done.future.timeout(budget);
+  } on TimeoutException {
+    diagnostics.add('the $stream stream did not end within the timeout');
+  }
+}
+
+/// The decoded bytes of one output stream. A stream that is not valid UTF-8
+/// is a failure, not a silently mangled text.
+String _decode(List<int> bytes, String stream, List<String> diagnostics) {
+  try {
+    return utf8.decode(bytes);
+  } on FormatException catch (error) {
+    diagnostics.add('the $stream stream is not valid UTF-8: ${error.message}');
+
+    return utf8.decode(bytes, allowMalformed: true);
+  }
+}
+
+/// The upstream checkout the acceptance measures against.
+///
+/// An explicit MONTY_CHECKOUT is honoured as it is: an invalid one is a
+/// problem, not a reason to measure something else. Otherwise the `up`
+/// directory is used when it is a Git checkout of the pinned commit, and a
+/// temporary checkout of the pinned commit is fetched when it is not: a
+/// directory of upstream source files alone does not establish a Git
+/// identity, and the supplied checkout is never altered.
+Future<_UpstreamCheckout?> _upstreamCheckout(
+  Map<String, Object?> pin,
+  List<String> problems,
+) async {
+  final explicit = Platform.environment['MONTY_CHECKOUT']?.trim();
+  if (explicit != null && explicit.isNotEmpty) {
+    final directory = Directory(explicit);
+    if (!directory.existsSync()) {
+      problems.add('MONTY_CHECKOUT points at $explicit, which does not exist');
+
+      return null;
+    }
+    final reason = _checkoutPinProblem(directory.path, pin);
+    if (reason != null) {
+      problems.add('MONTY_CHECKOUT points at $explicit: $reason');
+
+      return null;
+    }
+
+    return (path: directory.absolute.path, cleanup: null);
+  }
+
+  final supplied = Directory(p.join(_repositoryRoot(), 'up'));
+  if (supplied.existsSync()) {
+    final reason = _checkoutPinProblem(supplied.path, pin);
+    if (reason == null) {
+      return (path: supplied.absolute.path, cleanup: null);
+    }
+  }
+
+  return _fetchUpstreamCommit(pin, problems);
+}
+
+/// Why [path] is not a Git checkout of the pinned commit; null when it is.
+String? _checkoutPinProblem(String path, Map<String, Object?> pin) {
+  final head = _gitOutput(path, ['rev-parse', 'HEAD']);
+  if (head == null) {
+    return 'it is not a Git checkout';
+  }
+  final commit = pin['commit'];
+  if (commit is! String || head != commit) {
+    return 'its HEAD is $head, not the pinned $commit';
+  }
+  final tree = _pinnedTree(pin);
+  final gitTree = _gitOutput(path, ['rev-parse', 'HEAD:$_corpusPath']);
+  if (tree == null || gitTree != tree.gitTree) {
+    return 'its $_corpusPath tree is $gitTree, not the pinned ${tree?.gitTree}';
+  }
+
+  return null;
+}
+
+/// The output of a git command run in [path], or null when it failed.
+String? _gitOutput(String path, List<String> arguments) {
+  try {
+    final result = Process.runSync('git', ['-C', path, ...arguments]);
+    if (result.exitCode != 0) {
+      return null;
+    }
+    final stdout = result.stdout;
+    if (stdout is! String) {
+      return null;
+    }
+
+    return stdout.trim();
+  } on Exception {
+    return null;
+  }
+}
+
+/// Fetches the pinned commit into a temporary checkout and returns it. The
+/// checkout is removed by its cleanup, and the pin is never changed.
+Future<_UpstreamCheckout?> _fetchUpstreamCommit(
+  Map<String, Object?> pin,
+  List<String> problems,
+) async {
+  final upstream = pin['upstream'];
+  final commit = pin['commit'];
+  if (upstream is! String || commit is! String) {
+    problems.add('the upstream pin records no upstream URL and commit');
+
+    return null;
+  }
+
+  final directory = await Directory.systemTemp.createTemp('monty-upstream-');
+  final path = directory.path;
+  void cleanup() {
+    if (directory.existsSync()) {
+      directory.deleteSync(recursive: true);
+    }
+  }
+
+  if (!await _prepareTemporaryCheckout(path, upstream, commit, problems)) {
+    cleanup();
+
+    return null;
+  }
+
+  return (path: path, cleanup: cleanup);
+}
+
+/// Makes the temporary checkout at [path] hold the pinned [commit] of
+/// [upstream]. False when one of the steps failed.
+Future<bool> _prepareTemporaryCheckout(
+  String path,
+  String upstream,
+  String commit,
+  List<String> problems,
+) async {
+  final steps = <(String, List<String>, Duration?)>[
+    ('git init', ['init', '--quiet', path], null),
+    (
+      'git fetch $commit',
+      ['-C', path, 'fetch', '--depth', '1', upstream, commit],
+      const Duration(minutes: 15),
+    ),
+    (
+      'git checkout',
+      ['-C', path, 'checkout', '--detach', 'FETCH_HEAD'],
+      null,
+    ),
+  ];
+  for (final (name, arguments, timeout) in steps) {
+    final result = await _runCommand('git', arguments, timeout: timeout);
+    if (result.ok) {
+      continue;
+    }
+    problems.add(
+      '$name failed: '
+      '${result.failure ?? _tail('${result.stdout}${result.stderr}')}',
+    );
+
+    return false;
+  }
+
+  return true;
+}
+
+/// The corpus tree the pin records.
+_PinnedTree? _pinnedTree(Map<String, Object?> pin) {
+  final trees = pin['trees'];
+  if (trees is! List<Object?>) {
+    return null;
+  }
+  for (final entry in trees) {
+    if (entry is! Map<String, Object?>) {
+      continue;
+    }
+    if (entry['path'] != _corpusPath) {
+      continue;
+    }
+    final gitTree = entry['git_tree'];
+    final files = entry['files'];
+    if (gitTree is! String || files is! int) {
+      return null;
+    }
+
+    return (gitTree: gitTree, files: files);
+  }
+
+  return null;
+}
+
+/// The fixture names in the checkout's corpus directory.
+List<String> _checkoutCorpusFiles(String checkout) {
+  final directory = Directory(p.join(checkout, _corpusPath));
+  if (!directory.existsSync()) {
+    return const [];
+  }
+
+  return [
+    for (final entity in directory.listSync())
+      if (entity is File && entity.path.endsWith('.py'))
+        p.basename(entity.path),
+  ]..sort();
+}
+
+/// What is wrong with the upstream pin itself; empty when it records the
+/// v1.2.0 corpus.
+///
+/// The pin's own readers decide what the record says, so this states the
+/// same version and tag the rest of the tree reads.
+List<String> _pinProblems() {
+  final Map<String, Object?> pin;
+  final String version;
+  final String tag;
+  try {
+    pin = _pinRecord();
+    version = _pinnedUpstreamVersion();
+    tag = _pinnedUpstreamTag();
+  } on Exception catch (error) {
+    return ['the upstream pin could not be read: $error'];
+  }
+
+  final problems = <String>[];
+  if (version != _upstreamVersion) {
+    problems.add(
+      '$_pinPath records upstream version $version, not $_upstreamVersion',
+    );
+  }
+  if (tag != _upstreamTag) {
+    problems.add('$_pinPath records tag $tag, not $_upstreamTag');
+  }
+  final tree = _pinnedTree(pin);
+  if (tree == null) {
+    problems.add('$_pinPath records no $_corpusPath tree');
+  } else if (tree.files != _pinnedCorpusFiles) {
+    problems.add(
+      '$_pinPath records ${tree.files} files in $_corpusPath, '
+      'not $_pinnedCorpusFiles',
+    );
+  }
+
+  return problems;
+}
+
+/// What is wrong with the corpus records: the pin, the checkout's fixtures,
+/// the manifest and the generated corpus the generator writes.
+///
+/// The generator is run with --check: a corpus that differs from the pinned
+/// checkout is a problem, and nothing here computes a hash of its own.
+Future<List<String>> _corpusRecordProblems(String? checkout) async {
+  final problems = <String>[..._pinProblems()];
+  if (checkout == null) {
+    problems.add('no upstream checkout to measure the corpus against');
+
+    return problems;
+  }
+
+  final fixtures = _checkoutCorpusFiles(checkout);
+  if (fixtures.length != _pinnedCorpusFiles) {
+    problems.add(
+      'the checkout holds ${fixtures.length} $_corpusPath fixtures, '
+      'not $_pinnedCorpusFiles',
+    );
+  }
+  for (final problem in manifestProblems(fixtures)) {
+    problems.add('the corpus manifest: $problem');
+  }
+
+  final generated = await _runCommand(
+    'dart',
+    [_corpusGenerator, checkout, '--check'],
+    timeout: const Duration(minutes: 10),
+  );
+  if (!generated.ok) {
+    problems.add(
+      'the corpus generator --check failed (exit ${generated.exitCode}): '
+      '${generated.failure ?? _tail(generated.stderr)}',
+    );
+  }
+
+  return problems;
+}
+
+/// The upstream version the README's version banner names.
+///
+/// The banner is the one line tool/check_docs_data.py checks: the package
+/// version, a middle dot and the upstream version. A README without that
+/// line names no version at all.
+String? _readmeUpstreamVersion() {
+  final file = File(p.join(_repositoryRoot(), 'README.md'));
+  if (!file.existsSync()) {
+    return null;
+  }
+  final List<String> lines;
+  try {
+    lines = const LineSplitter().convert(file.readAsStringSync());
+  } on Exception {
+    return null;
+  }
+
+  final pattern = RegExp(
+    r'^\*\*dart_monty_core (\d+\.\d+\.\d+) · monty (\d+\.\d+\.\d+)\*\*$',
+  );
+  final versions = <String>[];
+  for (final line in lines) {
+    final match = pattern.firstMatch(line);
+    if (match != null) {
+      versions.add(match.group(2) ?? '');
+    }
+  }
+  if (versions.length != 1) {
+    return null;
+  }
+
+  return versions.singleOrNull;
+}
+
+/// The upstream version the generated corpus' header names.
+///
+/// The header is the leading comment line of the generated file that names
+/// pydantic/monty and the corpus path, as the generator writes it. Only
+/// that header counts: the version phrase elsewhere in the file is not a
+/// header.
+String? _generatedCorpusUpstreamVersion() {
+  final file = File(p.join(_repositoryRoot(), _generatedCorpusPath));
+  if (!file.existsSync()) {
+    return null;
+  }
+  final List<String> lines;
+  try {
+    lines = const LineSplitter().convert(file.readAsStringSync());
+  } on Exception {
+    return null;
+  }
+
+  final pattern = RegExp(
+    r"^///\s+pydantic/monty\s+v(\d+\.\d+\.\d+)'s\s+`[^`]+`,\s+embedded\.$",
+  );
+  final versions = <String>[];
+  for (final line in lines) {
+    final trimmed = line.trim();
+    if (trimmed.isEmpty) {
+      continue;
+    }
+    if (!trimmed.startsWith('//')) {
+      break;
+    }
+    final match = pattern.firstMatch(trimmed);
+    if (match != null) {
+      versions.add(match.group(1) ?? '');
+    }
+  }
+  if (versions.length != 1) {
+    return null;
+  }
+
+  return versions.singleOrNull;
+}
+
+/// The upstream version each of the two documents names.
+_DocumentedVersions _documentedReferenceVersions() => (
+  readme: _readmeUpstreamVersion(),
+  generated: _generatedCorpusUpstreamVersion(),
+);
+
+/// What is wrong with the two documents that name the upstream release.
+/// Empty when both name it.
+///
+/// The documents are checked independently: a README without its banner is
+/// a problem even when the generated corpus names the release, and the
+/// other way round.
+List<String> _documentationProblems() {
+  final problems = <String>[];
+  final versions = _documentedReferenceVersions();
+  final readme = versions.readme;
+  if (readme == null) {
+    problems.add(
+      'README.md has no package/upstream version banner naming '
+      '$_upstreamVersion',
+    );
+  } else if (readme != _upstreamVersion) {
+    problems.add('README.md names upstream $readme, not $_upstreamVersion');
+  }
+  final generated = versions.generated;
+  if (generated == null) {
+    problems.add(
+      '$_generatedCorpusPath has no generated pydantic/monty header naming '
+      '$_upstreamVersion',
+    );
+  } else if (generated != _upstreamVersion) {
+    problems.add(
+      '$_generatedCorpusPath names upstream $generated, '
+      'not $_upstreamVersion',
+    );
+  }
+
+  return problems;
+}
+
+/// Runs the capability checker, offline and online, and measures both.
+Future<_CapabilityRuns> _measureCapabilityRecords() async {
+  final offline = await _runCommand(
+    'python3',
+    ['-I', _capabilityChecker],
+    timeout: const Duration(minutes: 5),
+  );
+  final online = await _runCommand(
+    'python3',
+    ['-I', _capabilityChecker, '--online'],
+    timeout: const Duration(minutes: 10),
+  );
+
+  return (offline: offline, online: online);
+}
+
+/// The upstream version the capability manifest records.
+String? _capabilityManifestVersion() {
+  final file = File(p.join(_repositoryRoot(), _capabilityManifestPath));
+  if (!file.existsSync()) {
+    return null;
+  }
+  final Object? decoded;
+  try {
+    decoded = json.decode(file.readAsStringSync());
+  } on Exception {
+    return null;
+  }
+  if (decoded is! Map<String, Object?>) {
+    return null;
+  }
+  final version = decoded['upstream_version'];
+
+  return version is String ? version : null;
+}
+
+/// What is wrong with the capability records: the checker's two runs and the
+/// manifest's recorded version.
+///
+/// A failed fetch and a citation that names no file are the checker's own
+/// output, and they stay problems: they are not dropped and not replaced.
+List<String> _capabilityProblems(_CapabilityRuns runs) {
+  final problems = <String>[];
+  for (final run in [runs.offline, runs.online]) {
+    if (run.ok) {
+      continue;
+    }
+    problems.add(
+      '${run.command} failed (exit ${run.exitCode}): '
+      '${run.failure ?? _tail('${run.stdout}${run.stderr}')}',
+    );
+  }
+  final version = _capabilityManifestVersion();
+  if (version == null) {
+    problems.add('$_capabilityManifestPath records no upstream version');
+  } else if (version != _upstreamVersion) {
+    problems.add(
+      '$_capabilityManifestPath records upstream version $version, '
+      'not $_upstreamVersion',
+    );
+  }
+
+  return problems;
+}
+
+/// Runs the corpus suite for [leg] and measures it.
+///
+/// The whole suite runs, unfiltered but for the corpus-worker tag it is
+/// tagged with: a smaller subset would measure less than the acceptance
+/// claims.
+Future<_CommandResult> _measureCorpusLeg(_CorpusLeg leg) {
+  final arguments = ['test', 'test/corpus', '-p', leg.platform];
+  final compiler = leg.compiler;
+  if (compiler != null) {
+    arguments.addAll(['-c', compiler]);
+  }
+  arguments.addAll(['--tags=corpus-worker', '--reporter=json']);
+  final environment = <String, String>{
+    if (leg.platform == 'firefox') 'MOZ_HEADLESS': '1',
+  };
+
+  return _runCommand(
+    'dart',
+    arguments,
+    timeout: const Duration(minutes: 20),
+    environment: environment.isEmpty ? null : environment,
+  );
+}
+
+/// Runs every corpus leg, in order, and keeps each leg's own result: a leg
+/// that fails does not stop the ones after it.
+Future<List<_LegRun>> _measureCorpusLegs() async {
+  final runs = <_LegRun>[];
+  for (final leg in _corpusLegs) {
+    _CommandResult result;
+    try {
+      result = await _measureCorpusLeg(leg);
+    } on Exception catch (error) {
+      result = _CommandResult(
+        command: 'dart test test/corpus -p ${leg.platform}',
+        failure: 'the corpus run could not be started: $error',
+      );
+    }
+    runs.add((leg: leg, result: result));
+  }
+
+  return runs;
+}
+
+/// The events the JSON reporter printed, in order.
+List<Map<String, Object?>> _jsonEvents(String stdout) {
+  final events = <Map<String, Object?>>[];
+  for (final line in const LineSplitter().convert(stdout)) {
+    final text = line.trim();
+    if (text.isEmpty) {
+      continue;
+    }
+    Object? decoded;
+    try {
+      decoded = json.decode(text);
+    } on FormatException {
+      continue;
+    }
+    if (decoded is Map<String, Object?>) {
+      events.add(decoded);
+    }
+  }
+
+  return events;
+}
+
+/// The scorecard the line states, or null when the line is not one.
+///
+/// The line is the corpus suite's own scorecard: the backend's label and
+/// the five counts it prints, in the order it prints them. The JSPI state
+/// is read strictly: `true`, `false` or `null`, and no other token.
+_Scorecard? _scorecardOf(String line) {
+  final match = RegExp(
+    r'^CORPUS ([A-Za-z0-9_]+): total=(\d+) passed=(\d+) divergent=(\d+) '
+    r'jspi=(true|false|null) listed=(\d+)$',
+  ).firstMatch(line.trim());
+  if (match == null) {
+    return null;
+  }
+  final jspi = switch (match.group(5)) {
+    'true' => true,
+    'false' => false,
+    _ => null,
+  };
+
+  return _Scorecard(
+    label: match.group(1) ?? '',
+    total: int.parse(match.group(2) ?? '0'),
+    passed: int.parse(match.group(3) ?? '0'),
+    divergent: int.parse(match.group(4) ?? '0'),
+    listed: int.parse(match.group(6) ?? '0'),
+    jspi: jspi,
+  );
+}
+
+/// The scorecards the measured print events carry, and the lines that
+/// claimed to be one but did not parse.
+({List<_Scorecard> scorecards, List<String> malformed}) _scorecardsOf(
+  String stdout,
+) {
+  final scorecards = <_Scorecard>[];
+  final malformed = <String>[];
+  for (final event in _jsonEvents(stdout)) {
+    if (event['type'] != 'print') {
+      continue;
+    }
+    final message = event['message'];
+    if (message is! String) {
+      continue;
+    }
+    for (final line in const LineSplitter().convert(message)) {
+      if (!line.trim().startsWith('CORPUS ')) {
+        continue;
+      }
+      final card = _scorecardOf(line);
+      if (card == null) {
+        malformed.add(line.trim());
+      } else {
+        scorecards.add(card);
+      }
+    }
+  }
+
+  return (scorecards: scorecards, malformed: malformed);
+}
+
+/// The files the manifest lists as expected failures for [profile].
+Set<String> _listedFailureFiles(WorkerCorpusProfile profile) => {
+  for (final entry in workerCorpusExpected)
+    if (entry.profiles.contains(profile)) entry.file,
+};
+
+/// The recursion-set files that must crash when JSPI is off: the ones
+/// upstream's own browser build crashes on.
+Set<String> _recursionCrashFiles() => {
+  for (final entry in workerRecursionSetNoJspi.entries)
+    if (entry.value == RecursionOutcome.crashes) entry.key,
+};
+
+/// Whether the measured JSPI state is off: false, and nothing else.
+bool _jspiOff(bool? jspi) => switch (jspi) {
+  false => true,
+  _ => false,
+};
+
+/// The files a leg must fail: the manifest's listed failures for the leg's
+/// profile and, when [jspi] is false, the recursion-set files that crash
+/// without JSPI.
+///
+/// A native leg has no JSPI at all (null), so it adds none, and the
+/// scorecard's listed count never includes a recursion crash.
+Set<String> _expectedFailureFiles(
+  Set<String> listed,
+  Set<String> crashes,
+  bool? jspi,
+) => _jspiOff(jspi) ? {...listed, ...crashes} : listed;
+
+/// What is wrong with a measured scorecard's JSPI state.
+List<String> _scorecardJspiProblems(
+  _Scorecard card,
+  WorkerCorpusProfile profile,
+) {
+  if (profile == WorkerCorpusProfile.browser && card.jspi == null) {
+    return ['the browser scorecard states no JSPI state'];
+  }
+  if (profile == WorkerCorpusProfile.native && card.jspi != null) {
+    return ['the native scorecard states a JSPI state'];
+  }
+
+  return [];
+}
+
+/// What is wrong with a measured scorecard's counts.
+///
+/// [expected] are the files the leg must fail, [listedFiles] the manifest's
+/// listed failures for the leg's profile and [expectedTotal] how many
+/// fixtures the pinned corpus holds.
+List<String> _scorecardCountProblems(
+  _Scorecard card,
+  Set<String> expected,
+  Set<String> listedFiles,
+  int expectedTotal,
+) {
+  final problems = <String>[];
+  if (card.total != expectedTotal) {
+    problems.add(
+      'the scorecard states ${card.total} fixtures ran, not $expectedTotal',
+    );
+  }
+  if (card.passed + card.divergent != expectedTotal) {
+    problems.add(
+      'the scorecard states ${card.passed} passed and '
+      '${card.divergent} divergent, which is not $expectedTotal',
+    );
+  }
+  if (card.divergent != expected.length) {
+    problems.add(
+      'the scorecard states ${card.divergent} divergent failures, '
+      'not ${expected.length}',
+    );
+  }
+  if (card.listed != listedFiles.length) {
+    problems.add(
+      'the scorecard lists ${card.listed} expected failures, '
+      'not ${listedFiles.length}',
+    );
+  }
+  for (final count in [
+    ('total', card.total),
+    ('passed', card.passed),
+    ('divergent', card.divergent),
+    ('listed', card.listed),
+  ]) {
+    if (count.$2 < 0) {
+      problems.add('the scorecard states a negative ${count.$1} count');
+    }
+  }
+
+  return problems;
+}
+
+/// What is wrong with a measured scorecard; empty when the scorecard states
+/// the counts the manifest requires.
+///
+/// [listedFiles] are the manifest's listed failures for the leg's profile,
+/// [crashes] the recursion-set files that must crash without JSPI and
+/// [expectedTotal] how many fixtures the pinned corpus holds.
+List<String> _scorecardProblems(
+  _Scorecard card,
+  Set<String> listedFiles,
+  Set<String> crashes, {
+  required WorkerCorpusProfile profile,
+  required int expectedTotal,
+}) {
+  final expected = _expectedFailureFiles(listedFiles, crashes, card.jspi);
+
+  return [
+    ..._scorecardJspiProblems(card, profile),
+    ..._scorecardCountProblems(card, expected, listedFiles, expectedTotal),
+  ];
+}
+
+/// The error messages the JSON reporter recorded, for a problem message.
+///
+/// The corpus suite's own verdict is in them: which fixture failed
+/// unexpectedly, which listed failure now passes and which reason changed.
+List<String> _reportedErrors(String stdout) => [
+  for (final event in _jsonEvents(stdout))
+    if (event['type'] == 'error')
+      if (event['error'] case final String message) message,
+];
+
+/// What is wrong with a leg's run itself: it did not finish, or it failed.
+List<String> _legRunProblems(_CorpusLeg leg, _CommandResult result) {
+  final problems = <String>[];
+  final failure = result.failure;
+  if (failure != null) {
+    problems.add('${leg.label}: $failure');
+  }
+  final status = result.exitCode;
+  if (status == null) {
+    problems.add('${leg.label}: the corpus suite never ran');
+  } else if (status != 0) {
+    problems.add('${leg.label}: the corpus suite exited $status');
+    final errors = _reportedErrors(result.stdout);
+    final detail = errors.isEmpty ? _tail(result.stderr) : errors.join('\n');
+    if (detail.isNotEmpty) {
+      problems.add('${leg.label}: $detail');
+    }
+  }
+
+  return problems;
+}
+
+/// What is wrong with a leg's scorecard: it is missing, it is duplicated, it
+/// does not parse, it names another backend or its counts are wrong.
+List<String> _legScorecardProblems(_CorpusLeg leg, _CommandResult result) {
+  final problems = <String>[];
+  final parsed = _scorecardsOf(result.stdout);
+  for (final line in parsed.malformed) {
+    problems.add('${leg.label}: the scorecard "$line" does not parse');
+  }
+  final printed = parsed.scorecards.length;
+  if (printed != 1) {
+    problems.add('${leg.label}: the run printed $printed scorecards, not 1');
+
+    return problems;
+  }
+
+  final card = parsed.scorecards.singleOrNull;
+  if (card == null) {
+    problems.add('${leg.label}: the run printed no scorecard');
+
+    return problems;
+  }
+  if (card.label != leg.label) {
+    problems.add('${leg.label}: the run printed a scorecard for ${card.label}');
+
+    return problems;
+  }
+  problems.addAll(
+    _scorecardProblems(
+      card,
+      _listedFailureFiles(leg.profile),
+      _recursionCrashFiles(),
+      profile: leg.profile,
+      expectedTotal: _pinnedCorpusFiles,
+    ),
+  );
+
+  return problems;
+}
+
+/// What is wrong with one measured leg: its exit status and its scorecard.
+///
+/// The corpus suite judges the failures themselves, in both directions: the
+/// run must have exited 0, or a failing file that is not a listed
+/// divergence, a listed file that now passes and a changed failure reason
+/// are all reported by it. The counts below are read on top of that.
+List<String> _legProblem(_CorpusLeg leg, _CommandResult result) => [
+  ..._legRunProblems(leg, result),
+  ..._legScorecardProblems(leg, result),
+];
+
+/// What is wrong with every measured leg, in order.
+List<String> _legProblems(List<_LegRun> runs) => [
+  for (final run in runs) ..._legProblem(run.leg, run.result),
+];
+
+/// The upstream pin, or an empty record when it cannot be read.
+Map<String, Object?> _readPin(List<String> problems) {
+  try {
+    return _pinRecord();
+  } on Exception catch (error) {
+    problems.add('the upstream pin could not be read: $error');
+
+    return const {};
+  }
+}
+
+/// The upstream checkout the measurement runs against.
+Future<_UpstreamCheckout?> _checkoutStage(
+  Map<String, Object?> pin,
+  List<String> problems,
+) async {
+  try {
+    return await _upstreamCheckout(pin, problems);
+  } on Exception catch (error) {
+    problems.add('the upstream checkout could not be prepared: $error');
+
+    return null;
+  }
+}
+
+/// The problems the corpus records stage found.
+Future<List<String>> _corpusRecordStage(_UpstreamCheckout? checkout) async {
+  try {
+    return await _corpusRecordProblems(checkout?.path);
+  } on Exception catch (error) {
+    return ['the corpus records could not be checked: $error'];
+  }
+}
+
+/// The problems the documentation stage found.
+List<String> _documentationStage() {
+  try {
+    return _documentationProblems();
+  } on Exception catch (error) {
+    return ['the documented versions could not be read: $error'];
+  }
+}
+
+/// The problems the capability stage found.
+Future<List<String>> _capabilityStage() async {
+  final problems = <String>[];
+  var runs = (
+    offline: const _CommandResult(
+      command: _capabilityChecker,
+      failure: 'the checker did not run',
+    ),
+    online: const _CommandResult(
+      command: '$_capabilityChecker --online',
+      failure: 'the checker did not run',
+    ),
+  );
+  try {
+    runs = await _measureCapabilityRecords();
+  } on Exception catch (error) {
+    problems.add('the capability checker could not be run: $error');
+  }
+  try {
+    problems.addAll(_capabilityProblems(runs));
+  } on Exception catch (error) {
+    problems.add('the capability records could not be checked: $error');
+  }
+
+  return problems;
+}
+
+/// The problems the corpus legs found.
+Future<List<String>> _corpusLegStage() async {
+  List<_LegRun>? runs;
+  try {
+    runs = await _measureCorpusLegs();
+  } on Exception catch (error) {
+    return ['the corpus legs could not be measured: $error'];
+  }
+  try {
+    return _legProblems(runs);
+  } on Exception catch (error) {
+    return ['the measured scorecards could not be checked: $error'];
+  }
+}
+
+/// Removes the checkout this test made, if it made one.
+void _cleanupStage(_UpstreamCheckout? checkout, List<String> problems) {
+  final temporary = checkout;
+  if (temporary == null) {
+    return;
+  }
+  try {
+    temporary.cleanup?.call();
+  } on Exception catch (error) {
+    problems.add('the temporary checkout could not be removed: $error');
+  }
+}
+
+/// The acceptance: measures the corpus on every leg, checks the records
+/// that describe it against the measurement, and reports the difference.
+///
+/// Every stage runs, whatever the stages before it found: a missing
+/// checkout, a stale record and a failing leg are all reported, and the
+/// stages that do not depend on them are still measured.
+Future<void> _corpusScorecardAcceptance() async {
+  final problems = <String>[];
+
+  final pin = _readPin(problems);
+  final checkout = await _checkoutStage(pin, problems);
+  problems
+    ..addAll(await _corpusRecordStage(checkout))
+    ..addAll(_documentationStage())
+    ..addAll(await _capabilityStage())
+    ..addAll(await _corpusLegStage());
+  _cleanupStage(checkout, problems);
+
+  expect(problems, isEmpty, reason: problems.join('\n'));
 }
