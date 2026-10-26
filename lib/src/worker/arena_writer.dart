@@ -67,6 +67,14 @@ pb.MontyNode functionNode(String name, {String? docstring}) => pb.MontyNode(
   function: pb.Function_(name: name, docstring: docstring),
 );
 
+/// Writes [module], imported as [path], into [writer]'s arena and returns
+/// the node of the module value the sandbox binds the import to.
+///
+/// STUB: returns a wrong value (-1) and writes nothing, so the module-arena
+/// unit stays red; the real behaviour is pinned by arena_test.dart's
+/// 'module arenas preserve import graphs and validate output references'.
+int addImport(ArenaWriter writer, String path, ExternalModule module) => -1;
+
 /// Builds one arena from host values.
 final class ArenaWriter {
   /// Creates a writer bound to an optional host-object registry.
