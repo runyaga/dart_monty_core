@@ -374,18 +374,38 @@ Future<void> _breakStaleLock(
   final held = await _tryAcquireBreakLock(lock.parent, digest);
   if (held == null) return;
   try {
-    if (!lock.existsSync() || !await _isStaleLock(lock, staleAfter)) return;
-    await onStage?.call('beforeMoveStaleLock');
-    await _moveAndDeleteStaleLock(lock);
+    await _reclaimStaleLock(lock, staleAfter, onStage);
   } finally {
     await _releaseLock(held);
   }
 }
 
+/// Removes [lock] when no live installer owns it.
+///
+/// The lock is claimed by renaming it aside before its staleness is decided
+/// again, so a replacement that appears while the decision is made is put
+/// back instead of being deleted under its new owner.
+Future<void> _reclaimStaleLock(
+  Directory lock,
+  Duration staleAfter,
+  Future<void> Function(String stage)? onStage,
+) async {
+  if (!await _isStaleLock(lock, staleAfter)) return;
+  await onStage?.call('beforeMoveStaleLock');
+  final claimed = await _claimDirectory(lock);
+  if (claimed == null) return;
+  if (await _isStaleLock(claimed, staleAfter)) {
+    await _deleteBestEffort(claimed);
+
+    return;
+  }
+  await _restoreClaimedLock(claimed, lock);
+}
+
 Future<_HeldLock?> _tryAcquireBreakLock(Directory root, String digest) async {
   final breaker = Directory(path.join(root.path, '.break-$digest'));
   if (breaker.existsSync()) {
-    await _reclaimBreakLock(breaker);
+    await _reclaimStaleLock(breaker, _breakLockStaleAfter, null);
 
     return null;
   }
@@ -400,21 +420,34 @@ Future<_HeldLock?> _tryAcquireBreakLock(Directory root, String digest) async {
   return (directory: breaker, token: token);
 }
 
-Future<void> _reclaimBreakLock(Directory breaker) async {
-  if (!await _isStaleLock(breaker, _breakLockStaleAfter)) return;
-  await _moveAndDeleteStaleLock(breaker);
+/// Claims [directory] by renaming it aside.
+///
+/// Returns the claimed directory, or null when the directory disappeared
+/// before it could be claimed.
+Future<Directory?> _claimDirectory(Directory directory) async {
+  final claimed = Directory(
+    '${directory.parent.path}/.stale-lock-$pid-'
+    '${DateTime.now().microsecondsSinceEpoch}',
+  );
+  if (!await _renameQuietly(directory, claimed.path)) return null;
+
+  return claimed;
 }
 
-Future<void> _moveAndDeleteStaleLock(Directory lock) async {
-  final stale = Directory(
-    '${lock.parent.path}/.stale-lock-$pid-${DateTime.now().microsecondsSinceEpoch}',
-  );
+/// Puts a claimed lock back where its owner expects to find it.
+Future<void> _restoreClaimedLock(Directory claimed, Directory lock) async {
+  await _renameQuietly(claimed, lock.path);
+}
+
+/// Renames [directory] to [target], reporting whether the move happened.
+Future<bool> _renameQuietly(Directory directory, String target) async {
   try {
-    await lock.rename(stale.path);
-    await _deleteBestEffort(stale);
+    await directory.rename(target);
   } on FileSystemException {
-    // The lock was released or replaced while checking it.
+    return false;
   }
+
+  return true;
 }
 
 void _checkLockDeadline(Directory lock, DateTime deadline) {
@@ -425,8 +458,14 @@ void _checkLockDeadline(Directory lock, DateTime deadline) {
   );
 }
 
-Future<bool> _isStaleLock(Directory lock, Duration staleAfter) {
-  final age = DateTime.now().difference(lock.statSync().modified);
+/// Reports whether [lock] was abandoned by its owner.
+///
+/// A lock that disappeared is never stale: another installer may have put a
+/// live one in its place while the staleness was decided.
+Future<bool> _isStaleLock(Directory lock, Duration staleAfter) async {
+  final stat = lock.statSync();
+  if (stat.type == FileSystemEntityType.notFound) return false;
+  final age = DateTime.now().difference(stat.modified);
   final owner = _lockOwner(lock);
 
   return _ownerIsStale(owner, age, staleAfter);
@@ -448,6 +487,11 @@ _Owner? _ownerFile(File owner) {
   }
 }
 
+/// Claims [directory] by writing its owner metadata exclusively.
+///
+/// Returns false when another installer claimed the directory first or when
+/// the directory disappeared while the metadata was written. Both outcomes
+/// mean the claim was lost, not that the cache is broken.
 Future<bool> _writeOwner(
   Directory directory,
   String token,
@@ -457,12 +501,7 @@ Future<bool> _writeOwner(
   try {
     await beforeWrite?.call();
     final owner = File(path.join(directory.path, 'owner'));
-    try {
-      await owner.create(exclusive: true);
-    } on PathExistsException {
-      return false;
-    }
-    await owner.writeAsString('$pid $token', flush: true);
+    if (!await _writeOwnerFile(owner, token)) return false;
 
     return true;
   } on Object catch (error) {
@@ -471,6 +510,23 @@ Future<bool> _writeOwner(
       'cache $cacheRoot could not write owner metadata ($error); grant write '
       'access or set HOME.',
     );
+  }
+}
+
+/// Writes the owner metadata of the claiming installer.
+///
+/// The file is created exclusively, so exactly one installer can own the
+/// directory, and a directory that vanished mid-claim is a lost race.
+Future<bool> _writeOwnerFile(File owner, String token) async {
+  try {
+    await owner.create(exclusive: true);
+    await owner.writeAsString('$pid $token', flush: true);
+
+    return true;
+  } on PathExistsException {
+    return false;
+  } on PathNotFoundException {
+    return false;
   }
 }
 
