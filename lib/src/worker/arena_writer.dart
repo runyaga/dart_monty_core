@@ -922,7 +922,11 @@ pb.RaisedException raisedException(
     excType: excType,
     message: message == null ? null : exceptionArg(excType, message),
   );
-  if (excType == 'json.JSONDecodeError') {
+  // Since Python 3.14 `tomllib.TOMLDecodeError` defines the same five
+  // attributes as `json.JSONDecodeError`, so both travel as the json payload
+  // (upstream's `exc_py_to_monty`).
+  if (excType == 'json.JSONDecodeError' ||
+      excType == 'tomllib.TOMLDecodeError') {
     if (_jsonData(attributes) case final json?) {
       raised.data = pb.ExcData(json: json);
     }

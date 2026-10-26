@@ -873,27 +873,72 @@ void main() {
     };
 
     // The JSON host-exception coverage is retained: the control encodes the
-    // json arm and round-trips it through the reconstruction path unchanged.
+    // json arm with the message the host gave it.
     final json = raisedException('json.JSONDecodeError', 'm', full);
     final jsonData = json.data;
     expect(jsonData.hasJson(), isTrue);
     expect(jsonData.json.msg, 'Expecting value');
     expect(jsonData.json.doc, '{"a": x}');
-    final jsonBack = raisedError(json).exception;
-    expect(jsonBack.excType, 'json.JSONDecodeError');
-    expect(jsonBack.message, 'm');
-    expect(jsonBack.attributes, full);
+    expect(json.message, 'm');
 
     // A TOMLDecodeError carries the same five attributes, so it emits the
-    // same json arm with its outer message and round-trips the same way.
+    // same json arm, with its own message beside the payload's `msg`.
     final toml = raisedException('tomllib.TOMLDecodeError', 'm', full);
     final tomlData = toml.data;
     expect(tomlData.hasJson(), isTrue);
     expect(tomlData.json.msg, 'Expecting value');
-    final tomlBack = raisedError(toml).exception;
+    expect(tomlData.json.doc, '{"a": x}');
+    expect(toml.message, 'm');
+
+    // An exception of another type carries no payload, whatever its
+    // attributes are.
+    expect(raisedException('ValueError', 'm', full).hasData(), isFalse);
+
+    // A payload survives the reader only when the outer message is at least
+    // as long as the payload's `msg` (upstream's `sanitize_json_data`), so a
+    // round trip uses the message upstream formats for each exception.
+    final jsonCanonical = raisedException(
+      'json.JSONDecodeError',
+      'Expecting value: line 1 column 7 (char 6)',
+      full,
+    );
+    final jsonBack = raisedError(
+      pb.RaisedException.fromBuffer(jsonCanonical.writeToBuffer()),
+    ).exception;
+    expect(jsonBack.excType, 'json.JSONDecodeError');
+    expect(jsonBack.message, 'Expecting value: line 1 column 7 (char 6)');
+    expect(jsonBack.attributes, full);
+
+    const tomlFull = {
+      'msg': MontyString('Invalid value'),
+      'doc': MontyString('a = 1\nb = [1,,]'),
+      'pos': MontyInt(13),
+      'lineno': MontyInt(2),
+      'colno': MontyInt(8),
+    };
+    final tomlCanonical = raisedException(
+      'tomllib.TOMLDecodeError',
+      'Invalid value (at line 2, column 8)',
+      tomlFull,
+    );
+    final tomlBack = raisedError(
+      pb.RaisedException.fromBuffer(tomlCanonical.writeToBuffer()),
+    ).exception;
     expect(tomlBack.excType, 'tomllib.TOMLDecodeError');
-    expect(tomlBack.message, 'm');
-    expect(tomlBack.attributes, full);
+    expect(tomlBack.message, 'Invalid value (at line 2, column 8)');
+    expect(tomlBack.attributes, tomlFull);
+
+    // A message shorter than the payload's `msg` loses the payload: the
+    // reader then rebuilds the exception as a plain `ValueError`.
+    for (final raised in [json, toml]) {
+      final short = raisedError(
+        pb.RaisedException.fromBuffer(raised.writeToBuffer()),
+      );
+      expect(short, isA<MontyRuntimeError>());
+      expect(short.exception.excType, 'ValueError');
+      expect(short.exception.message, 'm');
+      expect(short.exception.attributes, isEmpty);
+    }
 
     // Unusable-attribute controls: a missing or mistyped attribute drops the
     // arm, whatever the host type, so neither encodes a json arm.
