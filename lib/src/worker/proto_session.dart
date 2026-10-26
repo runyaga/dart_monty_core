@@ -53,7 +53,8 @@ const String _driverVersion = '1.1.0';
 ///
 /// [close] must be called: it is what ends the worker.
 final class ProtoSession {
-  ProtoSession._(this._channel, this._config) {
+  ProtoSession._(this._channel, this._config)
+    : externalModules = _config.externalModules ?? <String, ExternalModule>{} {
     final bridge = telemetryBridge;
     final channel = _channel;
     if (bridge != null && channel is TelemetryChannel) {
@@ -68,6 +69,14 @@ final class ProtoSession {
   /// The host objects sent into this session, by id: the registry its
   /// inputs, answers and results resolve through. A load empties it.
   final HostObjects objects = HostObjects();
+
+  /// The session's host modules, by name: the modules an `import` asks for.
+  ///
+  /// The map given in the session's configuration is kept as it is, and read
+  /// live: an entry added, replaced or removed after the session opened is
+  /// seen by the next import. A session without one owns an empty map of
+  /// its own, which the host may fill.
+  final Map<String, ExternalModule> externalModules;
 
   final MontyChannel _channel;
   final SessionConfig _config;
@@ -128,6 +137,7 @@ final class ProtoSession {
       prepareFeed(code, inputs, skipTypeCheck: options.skipTypeCheck),
       HostAnswers(
         externalLookup: externalLookup,
+        externalModules: externalModules,
         os: onOsCall,
         systemSleepMax: options.systemSleepMax,
         objects: objects,
@@ -574,6 +584,7 @@ final class SessionConfig {
     this.assertMessageAnnotations,
     this.printFlushInterval,
     this.osPolicy,
+    this.externalModules,
   });
 
   /// The file name tracebacks report for fed code.
@@ -610,6 +621,15 @@ final class SessionConfig {
   /// The clock, zone, sleep and randomness the session gets; null is
   /// upstream's default policy.
   final OsPolicy? osPolicy;
+
+  /// The host modules the session offers, by name: the modules an `import`
+  /// asks for.
+  ///
+  /// The map is kept as it is and read live, as upstream reads
+  /// `external_modules`: an entry added, replaced or removed after the
+  /// session opened is seen by the next import. A name is checked when it
+  /// is looked up, not here.
+  final Map<String, ExternalModule>? externalModules;
 
   /// The longest one `time.sleep` the parent waits for this session: the
   /// policy's system-sleep maximum, else upstream's 10 s.
