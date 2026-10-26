@@ -66,6 +66,30 @@ Future<ProcessChannel> _spawn(String scenario) async {
   return channel;
 }
 
+/// The clock a crash-timing bound is measured against: it starts when the
+/// worker's exit was seen.
+///
+/// The worker's own start-up is a cold Dart VM, which on a loaded runner
+/// takes seconds (measured 9 s to 14 s with eight test runs at once), and
+/// it is not what a bound on the crash report is about. The drain of the
+/// pipes the worker left behind starts at its exit, and that is what the
+/// bound is about.
+final class _ExitClock {
+  Stopwatch? _sinceExit;
+
+  /// Starts the clock when [channel]'s worker has exited.
+  Future<void> markOnExit(ProcessChannel channel) async {
+    await channel.exitCode;
+    _sinceExit ??= Stopwatch()..start();
+  }
+
+  /// Whether the worker's exit has been seen.
+  bool get marked => _sinceExit != null;
+
+  /// How long it has been since the worker's exit was seen.
+  Duration get sinceExit => _sinceExit?.elapsed ?? Duration.zero;
+}
+
 void main() {
   expectNoWorkersLeftAfterEachTest();
 
@@ -320,13 +344,22 @@ void main() {
     test(
       'a worker that exits while a descendant holds stdout still crashes',
       () async {
-        final watch = Stopwatch()..start();
         final channel = await _spawn('hold-stdout');
-        final crash = await _crashOf(channel.turn(_configure));
+        final turn = channel.turn(_configure);
+        // The bound is measured from the worker's exit, not from the start
+        // of the test: the worker's own start-up is a cold Dart VM, which a
+        // loaded runner stretches over seconds (measured 9 s to 14 s with
+        // eight runs at once), and it says nothing about how long the
+        // channel waits for the pipe the descendant holds open. That wait
+        // starts at the exit.
+        final exit = _ExitClock();
+        unawaited(exit.markOnExit(channel));
+        final crash = await _crashOf(turn);
         expect(crash.cause, CrashCause.vanished);
         expect(crash.exitCode, 0);
         // The descendant holds stdout for 6 s; the drain gives up after 1 s.
-        expect(watch.elapsed, lessThan(const Duration(seconds: 5)));
+        expect(exit.marked, isTrue, reason: 'the worker never exited');
+        expect(exit.sinceExit, lessThan(const Duration(seconds: 5)));
       },
       testOn: '!windows',
     );
