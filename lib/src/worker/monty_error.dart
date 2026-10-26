@@ -403,11 +403,15 @@ MontyExceptionValue _exceptionOf(RaisedRecord record) {
 }
 
 /// The payload each type is rebuilt from: CPython's `UnicodeDecodeError`
-/// takes a `bytes` object, `UnicodeEncodeError` a `str`.
+/// takes a `bytes` object, `UnicodeEncodeError` a `str`; since Python 3.14
+/// `tomllib.TOMLDecodeError` defines the same five attributes as
+/// `json.JSONDecodeError`, so both travel as the JSON payload (upstream's
+/// `exc_monty_to_py`).
 const Map<String, PayloadKind> _payloadKinds = {
   'UnicodeDecodeError': PayloadKind.unicodeBytes,
   'UnicodeEncodeError': PayloadKind.unicodeStr,
   'json.JSONDecodeError': PayloadKind.json,
+  'tomllib.TOMLDecodeError': PayloadKind.json,
 };
 
 List<Frame> _frames(RaisedRecord record) =>
