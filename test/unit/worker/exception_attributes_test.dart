@@ -510,7 +510,8 @@ void main() {
     });
 
     test(
-      'JSON payload bounds use the optional outer message and allow one past doc',
+      'JSON payload bounds use the optional outer message and allow one past '
+      'doc',
       () {
         // A JSON error's message is its `msg` with the position appended, so
         // upstream sizes `msg` by that message's UTF-8 bytes when the wire
