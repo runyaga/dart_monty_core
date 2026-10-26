@@ -13,6 +13,7 @@ import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart'
     show MontyCrashedErrorInternal;
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
+import 'package:dart_monty_core/src/worker/proto_session.dart';
 import 'package:dart_monty_core/src/worker/spawn_handle.dart';
 import 'package:dart_monty_core/src/worker/wire_scalars.dart';
 import 'package:dart_monty_core/src/worker/worker_connection.dart';
@@ -39,14 +40,18 @@ final class _FakePort implements WorkerPort {
 }
 
 /// The ready reply of a Worker that started.
+///
+/// [protocol] is the protocol the Worker speaks; null (the default) takes
+/// the version this driver speaks. The version is spelled out where a test
+/// names the window it checks, so it is never the default by accident.
 WorkerMessage _hello({
   bool jspi = true,
-  int protocol = workerProtocolVersion,
+  int? protocol,
 }) => (
   ready: true,
   error: null,
   jspi: jspi,
-  protocol: protocol,
+  protocol: protocol ?? workerProtocolVersion,
   events: null,
   outcome: null,
   trap: null,
@@ -377,6 +382,72 @@ void main() {
       expect(c.jspi, isFalse);
     });
   });
+
+  // The protocol window upstream serves at the pinned tag: 5 to 6
+  // (monty-proto's MIN_SUPPORTED_PROTOCOL_VERSION..=PROTOCOL_VERSION).
+  test(
+    'Configure sends 6 and readiness accepts only supported peers 5 and 6',
+    () async {
+      // The Configure a session sends, as the worker receives it.
+      final channel = scripted.ScriptedChannel([
+        scripted.expecting(pb.ParentRequest_Kind.configure, [scripted.ok()]),
+      ]);
+      final session = await ProtoSession.open(channel);
+      final configure = onlyItem(channel.requests).configure;
+      expect(configure.protocolVersion, 6);
+      expect(configure.montyVersion, '1.2.0');
+      await session.close();
+
+      // A peer on the oldest supported version is still served: a version
+      // bump keeps the window open for the peers that never send the new
+      // thing (upstream's oldest supported version is accepted).
+      final oldest = _FakePort();
+      final oldestConnection = WorkerConnection.accept(
+        oldest,
+        _hello(protocol: 5),
+      );
+      expect(oldestConnection.isAlive, isTrue);
+      expect(oldest.terminated, 0);
+      expect(oldest.posted, isEmpty);
+
+      // The version the driver itself speaks.
+      final current = _FakePort();
+      final currentConnection = WorkerConnection.accept(
+        current,
+        _hello(protocol: 6),
+      );
+      expect(currentConnection.isAlive, isTrue);
+      expect(current.terminated, 0);
+      expect(current.posted, isEmpty);
+
+      // Every other peer is refused before any request.
+      const WorkerMessage missing = (
+        ready: true,
+        error: null,
+        jspi: true,
+        protocol: null,
+        events: null,
+        outcome: null,
+        trap: null,
+        print: null,
+        stderr: null,
+      );
+      void refused(String label, WorkerMessage hello) {
+        final port = _FakePort();
+        expect(
+          () => WorkerConnection.accept(port, hello),
+          throwsA(_crashed(CrashCause.fatal)),
+          reason: '$label is refused',
+        );
+        expect(port.terminated, 1, reason: '$label is terminated');
+        expect(port.posted, isEmpty, reason: '$label gets no request');
+      }
+
+      refused('a peer without a protocol', missing);
+      refused('a peer on protocol 4', _hello(protocol: 4));
+      refused('a peer on protocol 7', _hello(protocol: 7));
+    },
+  );
 
   group('onMessage', () {
     test('routes a turn reply', () async {
