@@ -226,7 +226,8 @@ void manifestTests() {
   );
 
   test(
-    'pyValueRepr preserves fixed-point boundaries and declines scientific values',
+    'pyValueRepr preserves fixed-point boundaries and declines scientific '
+    'values',
     () {
       expect(pyValueRepr(MontyFloat(1e15)), equals('1000000000000000.0'));
       expect(pyValueRepr(MontyFloat(-1e15)), equals('-1000000000000000.0'));
