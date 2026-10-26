@@ -420,6 +420,71 @@ String? _parent(String path) {
   return i == 0 ? (path == '/' ? null : '/') : path.substring(0, i);
 }
 
+/// [path] without its trailing slashes, as upstream's `trim_end_matches('/')`
+/// leaves it: `/` itself becomes empty.
+String _trimTrailingSlashes(String path) {
+  var end = path.length;
+  while (end > 0 && path.codeUnitAt(end - 1) == 0x2f) {
+    end--;
+  }
+
+  return path.substring(0, end);
+}
+
+/// [path] as upstream's `normalize_virtual_path` normalizes it
+/// (crates/monty-types/src/virtual_path.rs): an absolute POSIX path with the
+/// empty and `.` components dropped and `..` resolved, stopping at `/` — a
+/// `..` at the root leaves the root. A relative path is rooted at `/`, as
+/// the virtual namespace is; this never reads the host filesystem.
+String _normalizeVirtualPath(String path) {
+  final parts = <String>[];
+  for (final segment in path.split('/')) {
+    switch (segment) {
+      case '' || '.':
+        break;
+      case '..':
+        if (parts.isNotEmpty) parts.removeLast();
+      default:
+        parts.add(segment);
+    }
+  }
+
+  return parts.isEmpty ? '/' : '/${parts.join('/')}';
+}
+
+/// The root of a scan as the request spelled it. Upstream's `ScanArgs.path`
+/// is the path as it was written, so it crosses as a string; a `MontyPath`
+/// has normalized the spelling away (`MontyPath('')` arrives as `.`), and
+/// either way the spelling is the one a scan's errors name.
+String _scanRoot(List<MontyValue> args) => switch (args) {
+  [MontyString(:final value) || MontyPath(:final value), ...] => value,
+  final other => throw StateError('Path.scan requires a path, got $other'),
+};
+
+/// The lookup root of a scan of the mounted tree: [root] normalized
+/// lexically by `_normalizeVirtualPath`, and declined when it names anywhere
+/// but the mount at `/mnt` — the mount table routes on the normalized path,
+/// and a path no mount covers is handed back to the host unanswered
+/// (crates/monty-fs/src/mount_table.rs).
+String _mountedScanRoot(String root) {
+  final normalized = _normalizeVirtualPath(root);
+  if (normalized != '/mnt' && !normalized.startsWith('/mnt/')) {
+    throw const OsCallNotHandledException();
+  }
+
+  return normalized;
+}
+
+/// The lookup root of a scan of the virtual tree: the trailing slashes alone
+/// are trimmed — the root itself stays `/` — and every other spelling is
+/// looked up as it was written (`VirtualScanSource::absolute`,
+/// crates/monty-datatest/src/main.rs).
+String _virtualScanRoot(String root) {
+  final trimmed = _trimTrailingSlashes(root);
+
+  return trimmed.isEmpty ? '/' : trimmed;
+}
+
 /// The environment upstream's handler reports.
 const Map<String, String> _env = {
   'VIRTUAL_HOME': '/virtual/home',
@@ -620,7 +685,7 @@ final class WorkerFixtureOs {
       case 'Path.rename':
         return _rename(path(0), path(1));
       case 'Path.scan':
-        return _scan(path(0), kwargs);
+        return _scan(_scanRoot(args), kwargs);
     }
 
     throw const OsCallNotHandledException();
@@ -643,16 +708,28 @@ final class WorkerFixtureOs {
   /// A root that is not there raises a `FileNotFoundError` naming it, spelled
   /// as the root was spelled. A root that is a file is described, not listed:
   /// it is the only entry of the reply.
+  ///
+  /// The root is normalized for the lookup alone, each mode as its upstream
+  /// original does it (`_mountedScanRoot` and `_virtualScanRoot`): the
+  /// traversal below runs from the normalized root, and nothing else about
+  /// an entry changes. The raw spelling is kept for the failures: the empty
+  /// root -- `''` as written, `.` as an empty `MontyPath` spells it -- is
+  /// nowhere, whatever the tree holds, in either mode.
   MontyValue _scan(String root, Map<String, MontyValue> kwargs) {
-    final rootIsDir = _isDir(root);
-    final rootIsFile = _files.containsKey(root);
+    _checkName(root);
+    // The empty root fails before either mode normalizes it: it is not
+    // anywhere a tree could be, in either mode, whatever the tree holds.
+    if (root.isEmpty || root == '.') throw _notFound(root);
+    final lookupRoot = real ? _mountedScanRoot(root) : _virtualScanRoot(root);
+    final rootIsDir = _isDir(lookupRoot);
+    final rootIsFile = _files.containsKey(lookupRoot);
     if (!rootIsDir && !rootIsFile) throw _notFound(root);
 
     return MontyList([
       _scanEntry('', isDir: rootIsDir, isFile: rootIsFile),
       if (rootIsDir)
         ..._scanEntries(
-          root,
+          lookupRoot,
           maxDepth: _scanMaxDepth(kwargs['max_depth']),
           followSymlinks: _scanFlag(kwargs['follow_symlinks']),
         ),
