@@ -452,15 +452,12 @@ MontyValue _timedelta(pb.TimeDelta td) {
 }
 
 /// An exception value as upstream's `exc_monty_to_py` builds it: an absent
-/// argument is an empty message, and the three types whose real classes
-/// need a payload a value node does not carry become `ValueError`.
+/// argument is an empty message, and the four types whose real classes
+/// need a payload a value node does not carry become their parent,
+/// `ValueError` ([exceptionParentsWithoutPayload]). Every other type keeps
+/// its own name.
 MontyValue _exception(pb.Exception e) => MontyExceptionValue(
-  switch (e.excType) {
-    'UnicodeDecodeError' ||
-    'UnicodeEncodeError' ||
-    'json.JSONDecodeError' => 'ValueError',
-    final name => name,
-  },
+  exceptionParentsWithoutPayload[e.excType] ?? e.excType,
   e.hasArg() ? e.arg : '',
 );
 
