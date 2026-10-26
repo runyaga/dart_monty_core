@@ -47,7 +47,10 @@ final class ProcessChannel with RecordedChannel implements MontyChannel {
       ),
       _stderr = ByteTail(_process.stderr, 4096) {
     _live.add(this);
-    unawaited(_reapOnExit());
+    // The reaper is retained and observed at once, not fired and
+    // forgotten: it must finish whether or not a close ever joins it, and
+    // a failure of its own must not escape uncaught.
+    _reap = _reapOnExit()..ignore();
     unawaited(_absorbFailure(_process.stdin.done));
   }
 
@@ -116,6 +119,21 @@ final class ProcessChannel with RecordedChannel implements MontyChannel {
   bool _exited = false;
   Future<void>? _closing;
 
+  /// The reaper's work, observed at once and joined by [close]: it must
+  /// finish whether or not a close ever waits for it, and a failure of
+  /// its own must not escape uncaught.
+  Future<void>? _reap;
+
+  /// The cleanup a failed send started, observed at once and joined by
+  /// [close] for the same reason as [_reap].
+  Future<void>? _sendCleanup;
+
+  /// The channel's stderr drain, started at most once and shared by every
+  /// cleanup path, crash and close alike: each [ByteTail.drain] waits a
+  /// grace of its own, so two drains would leave the later grace still
+  /// running after the first was waited for.
+  Future<void>? _stderrDrain;
+
   /// Starts a worker as [launch] describes.
   ///
   /// The worker gets an empty environment, plus `SystemRoot` on Windows (see
@@ -183,7 +201,7 @@ final class ProcessChannel with RecordedChannel implements MontyChannel {
       // while sending it.
       _unsent = true;
       final written = turn.write(frame);
-      unawaited(_endOutputIfUnsent(written, _events));
+      _sendCleanup = _endOutputIfUnsent(written, _events)..ignore();
       // Read while the request is still being written: a worker paused on
       // a full stdout reads no stdin until the parent reads again, so a
       // request larger than the pipe would otherwise never be sent. A
@@ -222,7 +240,9 @@ final class ProcessChannel with RecordedChannel implements MontyChannel {
     if (recorded != null) return recorded;
     final code = await _exitWithin(fatalExitGrace);
     final cause = _crashCause(fatal, code, killed: _killed);
-    await _stderr.drain(pipeDrainGrace);
+    // The drain is shared with a close: both must join the same one, or the
+    // later grace would still be running after the earlier was waited for.
+    await (_stderrDrain ??= _stderr.drain(pipeDrainGrace));
     final tail = _stderr.text;
 
     return _crash ??= crashedError(
@@ -248,27 +268,46 @@ final class ProcessChannel with RecordedChannel implements MontyChannel {
   Future<void> _close() async {
     recorder?.close();
     if (_busy) {
+      // The turn itself is not awaited: an onPrint may hold it for as long
+      // as the user likes. The kill ends the worker at once; below, only
+      // the pipes' cleanup is waited for.
       kill();
       await _process.exitCode;
-
-      return;
-    }
-    final wasAlive = isAlive;
-    _closed = true;
-    if (wasAlive) {
-      final stdin = _process.stdin;
-      try {
-        final frame = Frame.encode(pb.ParentRequest(shutdown: pb.Shutdown()));
-        stdin.add(frame);
-        await stdin.close();
-        TelemetryMetrics.frame.attribute(frame.length, 'direction', 'sent');
-      } on Object catch (_) {
-        // The worker is already gone; the exit below is all that is left.
+    } else {
+      final wasAlive = isAlive;
+      _closed = true;
+      if (wasAlive) {
+        final stdin = _process.stdin;
+        try {
+          final frame = Frame.encode(pb.ParentRequest(shutdown: pb.Shutdown()));
+          stdin.add(frame);
+          await stdin.close();
+          TelemetryMetrics.frame.attribute(frame.length, 'direction', 'sent');
+        } on Object catch (_) {
+          // The worker is already gone; the exit below is all that is left.
+        }
       }
+      await _exitWithin(shutdownGrace);
+      _events.cancel();
     }
-    await _exitWithin(shutdownGrace);
-    _events.cancel();
-    await _stderr.drain(pipeDrainGrace);
+    // The close joins every cleanup the channel started rather than
+    // finish beside it, whichever branch ended the worker: the stderr
+    // drain it shares with a turn's crash path, the reaper, a failed
+    // send's drain, and the stdout cleanup, whose failure fails the close
+    // instead of escaping unobserved. The drain waiters settle the moment
+    // the close terminated the queue; the subscription's cancellation
+    // settles with the pipe itself.
+    Future<void> stdoutCleanup() async {
+      await _events._closed.future;
+      await _events._cancelling;
+    }
+
+    await Future.wait([
+      _stderrDrain ??= _stderr.drain(pipeDrainGrace),
+      stdoutCleanup(),
+      ?_reap,
+      ?_sendCleanup,
+    ]);
   }
 
   Future<void> _reapOnExit() async {
@@ -526,6 +565,11 @@ final class EventQueue {
   Completer<void>? _wake;
   Object? _error;
 
+  /// The subscription's cancellation, started at most once and shared by
+  /// every path that stops listening; observed at once, so its failure can
+  /// surface through the close that joins it without escaping uncaught.
+  Future<void>? _cancelling;
+
   /// The frame that arrived whole but did not decode, if one did.
   FrameDecodeException? _invalid;
   bool _ended = false;
@@ -593,11 +637,18 @@ final class EventQueue {
 
   /// Drops buffered events, ends any wait in [next] and stops listening, so
   /// a pipe some other process holds open cannot keep this one alive.
+  ///
+  /// Terminating the queue also settles every waiter of [endWithin] and
+  /// stops its grace timer: no later end can still arrive. The
+  /// subscription's cancellation is shared with every other path that
+  /// stops listening and observed at once, so its failure surfaces through
+  /// the cleanup that joins it instead of escaping uncaught.
   void cancel() {
     _cancelled = true;
     _queue.clear();
     _readAhead = 0;
-    unawaited(_subscription?.cancel());
+    if (!_closed.isCompleted) _closed.complete();
+    (_cancelling ??= _subscription?.cancel() ?? Future.value()).ignore();
     _subscription = null;
     _wakeUp();
   }
@@ -623,7 +674,9 @@ final class EventQueue {
     await _closed.future.timeout(grace, onTimeout: () => null);
     if (_ended) return;
     _ended = true;
-    unawaited(_subscription?.cancel());
+    // The same shared, observed cancellation [cancel] starts: concurrent
+    // cleanups must not each leave a cancellation of their own.
+    (_cancelling ??= _subscription?.cancel() ?? Future.value()).ignore();
     _subscription = null;
     _wakeUp();
   }
