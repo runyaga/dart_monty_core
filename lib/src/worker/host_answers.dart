@@ -22,6 +22,8 @@ import 'package:dart_monty_core/src/worker/monty_error.dart'
 import 'package:dart_monty_core/src/worker/monty_snapshot.dart'
     show ExternalException, unknownExcType;
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
+import 'package:dart_monty_core/src/worker/python_rules.dart'
+    show moduleNameError;
 import 'package:dart_monty_core/src/worker/telemetry_recorder.dart';
 
 /// A host function Python can call by name.
@@ -583,6 +585,9 @@ final class HostAnswers {
   /// waited here, as `feedRun` waits it; without, it goes to the handler
   /// like any other call, as a resumed snapshot's does upstream.
   ///
+  /// An `import` is answered from the session's host modules, before the
+  /// mounts and the OS handler see it (upstream's `module_call`).
+  ///
   /// Throws [MontyCrashedError] ([protocolError], upstream's `invalid OS
   /// call payload`) for a payload [checkOsCall] rejects, before anything
   /// else: the caller discards the worker.
@@ -598,6 +603,9 @@ final class HostAnswers {
     final max = systemSleepMax;
     final slept = parentSleeps && max != null ? _systemSleep(call, max) : null;
     if (slept != null) return slept;
+    if (call.whichCall() == pb.OsCall_Call.import) {
+      return _import(this, call);
+    }
     final mounted = _mounts.route?.call(call.writeToBuffer());
     if (mounted != null) {
       return pb.ParentRequest(resumeCall: pb.ResumeCall.fromBuffer(mounted));
@@ -794,6 +802,120 @@ Future<pb.ParentRequest> _functionCall(
     _started(callback),
     parity: parity,
   );
+}
+
+/// Answers the `import` OS call [call] from the session's host modules, as
+/// upstream's `import_module` does (monty-python 1.2.0 `src/external.rs`).
+///
+/// The name the call carries is looked up in the session's map, read live,
+/// and only a direct entry is resolved: a nested module is part of the
+/// module value the import binds, as upstream's `resolve_module` resolves
+/// the top-level name alone.
+///
+/// A name the map does not hold is not found, which raises
+/// `ModuleNotFoundError` in the sandbox. A name that cannot name a host
+/// module raises `ValueError`, and an attribute the sandbox cannot hold
+/// raises `TypeError`; both are answered as errors, and no failure of the
+/// mapping escapes the answer.
+pb.ParentRequest _import(HostAnswers host, pb.OsCall call) {
+  final callId = call.callId;
+  final name = call.import.module;
+  final ExternalModule? module;
+  try {
+    module = host.externalModules[name];
+  } on Object catch (error) {
+    return _importFailure(callId, error);
+  }
+  if (module == null) {
+    return _resume(callId, pb.ExtFunctionResult(notFound: 'import'));
+  }
+  // The name is checked when it is looked up, as upstream's `check_entry`
+  // checks it: a name that is not an identifier, or one the sandbox
+  // provides itself, cannot name a host module.
+  final nameError = moduleNameError(name);
+  if (nameError != null) {
+    return _resume(
+      callId,
+      pb.ExtFunctionResult(
+        error: raisedException('ValueError', nameError, const {}),
+      ),
+    );
+  }
+
+  return _importValue(host, callId, name, module);
+}
+
+/// The module value the import binds: the module [module], imported as
+/// [name], written into an arena of its own.
+pb.ParentRequest _importValue(
+  HostAnswers host,
+  int callId,
+  String name,
+  ExternalModule module,
+) {
+  try {
+    final writer = ArenaWriter(objects: host.objects);
+    final index = addImport(writer, name, module);
+
+    return _resume(
+      callId,
+      pb.ExtFunctionResult(returnValue: index),
+      writer.arena,
+    );
+  } on Object catch (error) {
+    return _importFailure(callId, error);
+  }
+}
+
+/// The answer to an import that failed: the error it raised, as the Python
+/// exception the worker raises in the sandbox.
+///
+/// No failure escapes: the error is converted defensively, so an error
+/// whose own text cannot be read is answered without a message, as
+/// upstream's `exception_arg` gives none when `str()` fails.
+pb.ParentRequest _importFailure(int callId, Object error) => _resume(
+  callId,
+  pb.ExtFunctionResult(error: _importError(error)),
+);
+
+/// The Python exception an import failure answers with.
+///
+/// A value the sandbox cannot hold is a `TypeError`, as upstream's
+/// `value_conversion_err` makes it; any other failure is `Exception` with
+/// its own text ([raisedFrom]).
+///
+/// The conversion cannot fail: an error whose own text cannot be read is
+/// answered without one, and an error the conversion cannot handle at all
+/// is answered as a plain `Exception`, so the worker is never left waiting
+/// for an answer that does not come.
+pb.RaisedException _importError(Object error) {
+  try {
+    if (error is PythonRefusal) return raisedFrom(error);
+    if (error is ArgumentError) {
+      final message = _argumentMessage(error);
+      if (message != null && message.startsWith('Cannot convert')) {
+        return raisedException('TypeError', message, const {});
+      }
+    }
+
+    return raisedFrom(error);
+  } on Object {
+    return raisedException('Exception', null, const {});
+  }
+}
+
+/// [error]'s own message, or null when it has none or its text cannot be
+/// read: a message that is not a string is read through its own
+/// `toString()`, which may throw.
+String? _argumentMessage(ArgumentError error) {
+  final message = error.message;
+  if (message == null) return null;
+  if (message is String) return message;
+  try {
+    return '$message';
+  } on Object {
+    return null;
+  }
 }
 
 /// Answers the dotted call [name] through the session's host modules, as
