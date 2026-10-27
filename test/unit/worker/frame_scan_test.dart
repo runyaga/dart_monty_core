@@ -34,6 +34,7 @@ const _explicit = {
   'ChildEvent.maxFeedDurationMicros', 'ChildEvent.maxTurnDurationMicros',
   'ChildEvent.maxTotalSleepMicros', 'ChildEvent.restoredScriptName',
   'ChildEvent.sessionId', 'ShutdownDump.dump',
+  'Scan.maxDepth', 'Scan.caseSensitive',
 };
 
 /// prost's re-encoding [hex], parsed by package:protobuf with every string
@@ -2117,7 +2118,7 @@ void main() {
 
   test('MontyNode_Kind is numbered in field order, as the scan assumes', () {
     const kinds = pb.MontyNode_Kind.values;
-    for (var field = 1; field <= 31; field++) {
+    for (var field = 1; field <= 32; field++) {
       final (wire, payload) = switch (field) {
         4 || 5 => (0, [0]),
         7 => (1, List.filled(8, 0)),
