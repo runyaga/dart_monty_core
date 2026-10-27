@@ -32,6 +32,8 @@
 /// attributes read through the wrapper, and one wrapper is one node, as a
 /// container is. The class an instance carries is registered only if its
 /// id is free. Any other object is refused with Python's `TypeError`.
+/// An [ExternalModule] is refused too, with Python's `TypeError`: it enters
+/// the sandbox through `external_modules`, not as a value.
 /// Before emitting, it refuses with [ArgumentError] what upstream's encoder
 /// or the worker's decoder would not accept, rather than letting protobuf
 /// send something else: a cycle, a byte outside 0..255, a string with an
@@ -72,6 +74,15 @@ import 'package:fixnum/fixnum.dart';
 pb.MontyNode functionNode(String name, {String? docstring}) => pb.MontyNode(
   function: pb.Function_(name: name, docstring: docstring),
 );
+
+/// The refusal of a module sent as an ordinary value.
+///
+/// A module enters the sandbox through the session's `external_modules`
+/// mapping, never as a value; upstream refuses one as an ordinary input
+/// too (monty-proto `python/encode.rs`).
+const _moduleNotAValue =
+    'an ExternalModule enters the sandbox only through external_modules, '
+    'not as a value';
 
 /// Writes [module], imported as [path], into [writer]'s arena and returns
 /// the node of the module value the sandbox binds the import to.
@@ -174,6 +185,17 @@ final class ArenaWriter {
     // A class wrapper registers at each meeting, before its node is reused.
     if (child is ClassType<Object>) {
       return _enterHostClass(_HostClass.of(child), open, stack);
+    }
+    // A module is not an ordinary value: it enters the sandbox through
+    // `external_modules` only. It is refused before the memo is consulted,
+    // so a module met again is refused as well.
+    if (child is ExternalModule) {
+      throw PythonRefusal(
+        child,
+        _moduleNotAValue,
+        'TypeError',
+        _moduleNotAValue,
+      );
     }
     if (_containers[child] case final id?) return id;
 

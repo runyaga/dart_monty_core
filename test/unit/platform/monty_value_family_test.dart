@@ -1,8 +1,8 @@
 // The value family at the cutover: the subtypes it gains (MontyComplex,
-// MontyClassTypeProxy, ClassInstance, ClassType, MontyHostFunction, all
-// declared in the value library) and the projections it changes
-// (MontyDateTime.dartValue, SPEC2 Q48; fromDart(DateTime) with its offset;
-// MontyTimeDelta.dartValue's refusal).
+// MontyClassTypeProxy, ClassInstance, ClassType, MontyHostFunction,
+// ExternalModule, all declared in the value library) and the projections it
+// changes (MontyDateTime.dartValue, SPEC2 Q48; fromDart(DateTime) with its
+// offset; MontyTimeDelta.dartValue's refusal).
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart'
     show
@@ -47,6 +47,7 @@ String kindOf(MontyValue v) => switch (v) {
   MontyHostFunction() => throw StateError(
     'unreachable: MontyHostFunction is input-only',
   ),
+  ExternalModule() => 'external_module',
 };
 
 class _Point {
