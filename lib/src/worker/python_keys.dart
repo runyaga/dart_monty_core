@@ -18,7 +18,7 @@
 ///   only when every member is hashable;
 /// - aware datetimes compare by instant, aware times by their UTC wall clock,
 ///   naive and aware never; a time zone compares by its offset alone;
-/// - `list`, `dict`, `set` and the class proxies are unhashable.
+/// - `list`, `dict`, `set`, the class proxies and a module are unhashable.
 ///
 /// Each node gets one interned integer: two nodes Python counts as equal get
 /// the same one. A container's key is built from its members' integers, so a
@@ -158,6 +158,9 @@ _signatures = {
   pb.MontyNode_Kind.fileHandle: (_, _) => null,
   pb.MontyNode_Kind.classInstance: (_, _) =>
       const _Unhashable('MontyClassProxy'),
+  // A module is a dict of its own, as upstream's `ExternalModule` is: it
+  // cannot be a key or a member.
+  pb.MontyNode_Kind.module: (_, _) => const _Unhashable('ExternalModule'),
   pb.MontyNode_Kind.list: (_, _) => const _Unhashable('list'),
   pb.MontyNode_Kind.dict: (_, _) => const _Unhashable('dict'),
   pb.MontyNode_Kind.set: (_, _) => const _Unhashable('set'),

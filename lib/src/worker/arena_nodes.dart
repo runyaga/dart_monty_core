@@ -63,6 +63,7 @@ final Map<pb.MontyNode_Kind, void Function(pb.MontyNode)> _checks = {
   pb.MontyNode_Kind.complex: (n) => _checkComplex(n.complex),
   pb.MontyNode_Kind.type: (n) => _checkType(n.type),
   pb.MontyNode_Kind.classInstance: (n) => _checkInstance(n.classInstance),
+  pb.MontyNode_Kind.module: (n) => _checkModule(n.module),
   pb.MontyNode_Kind.date: (n) =>
       checkDate(n.date.year, n.date.month, n.date.day, 'Date'),
   pb.MontyNode_Kind.datetime: (n) => _checkDateTime(n.datetime),
@@ -86,6 +87,14 @@ void _checkInstance(pb.ClassInstanceNode instance) {
   if (!instance.hasInstanceId()) _missing('ClassInstanceNode.instance_id');
   if (!instance.hasAttrs()) _missing('ClassInstanceNode.attrs');
   _checkUuid(instance.instanceId, 'ClassInstanceNode.instance_id');
+}
+
+/// Upstream's `Kind::Module`: the id and the attrs are required, and the
+/// id a 16-byte uuid. The name is not checked: upstream reads it as it is.
+void _checkModule(pb.ModuleNode module) {
+  if (!module.hasId()) _missing('ModuleNode.id');
+  if (!module.hasAttrs()) _missing('ModuleNode.attrs');
+  _checkUuid(module.id, 'ModuleNode.id');
 }
 
 void _checkDateTime(pb.DateTime d) {

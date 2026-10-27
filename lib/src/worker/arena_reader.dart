@@ -33,6 +33,10 @@
 /// the registered [ClassInstance], else to a [MontyClassProxy] (upstream
 /// returns the registered object itself; the wrapper carries it).
 ///
+/// A module node decodes to the [ExternalModule] the sandbox sent: the id
+/// it imported with, no stubs, and its attributes as the sandbox's values
+/// (a function comes back as its name, a submodule as a module).
+///
 /// Internal to the package; nothing here is exported.
 library;
 
@@ -192,6 +196,7 @@ List<int> _children(pb.MontyNode node) => switch (node.whichKind()) {
     node.classInstance.classType,
     ..._flat(node.classInstance.attrs.pairs),
   ],
+  pb.MontyNode_Kind.module => _flat(node.module.attrs.pairs),
   _ => const [],
 };
 
@@ -328,6 +333,25 @@ final class _Builder {
     );
   }
 
+  /// A module: the [ExternalModule] the sandbox sent, with the id it
+  /// imported with, no stubs, and its attributes as the sandbox's values.
+  ///
+  /// The attributes are read as any node's are, and the module's own
+  /// constructor checks them; a failure is the reader's [FormatException],
+  /// as the reader reports every arena it refuses.
+  MontyValue _module(pb.ModuleNode node) {
+    final attrs = _attrs(node.attrs.pairs);
+    try {
+      return ExternalModule(attrs, id: uuidString(node.id.data));
+    }
+    // The module's own constructor refuses what upstream's refuses, and the
+    // reader reports every arena it refuses as a FormatException.
+    // ignore: avoid_catching_errors
+    on ArgumentError catch (e) {
+      throw FormatException('${e.message}');
+    }
+  }
+
   /// [host], recorded as what the node being built resolved to: the wrapped
   /// object, so that two nodes for one object are one dict key.
   MontyValue? _register(MontyValue? host) {
@@ -422,6 +446,7 @@ final Map<pb.MontyNode_Kind, Object Function(_Builder, pb.MontyNode)> _kinds = {
   pb.MontyNode_Kind.exception: (b, n) => _exception(n.exception),
   pb.MontyNode_Kind.type: (b, n) => b._type(n.type),
   pb.MontyNode_Kind.classInstance: (b, n) => b._instance(n.classInstance),
+  pb.MontyNode_Kind.module: (b, n) => b._module(n.module),
   pb.MontyNode_Kind.builtinFunction: (b, n) =>
       _builtinFunction(n.builtinFunction),
   pb.MontyNode_Kind.function: (b, n) => MontyString(n.function.name),
