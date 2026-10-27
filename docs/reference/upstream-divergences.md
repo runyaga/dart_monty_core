@@ -84,6 +84,11 @@ declaration at the top of this page still names 1.1.0 for everything else.
 | E-11 | Tagged JSON projection | A module is not one of monty's value nodes, so it has no tagged JSON form | There is none either, and the projection says so: `toJson` throws `UnsupportedError('ExternalModule has no tagged JSON representation')`, for the module on its own and for a container that holds one | NO-ANALOGUE | `test/unit/platform/external_module_value_test.dart` "ExternalModule is a MontyValue with opaque projection and import-only input" (E-11) |
 | E-12 | Encoding as an ordinary input | `TypeError: an ExternalModule enters the sandbox only through external_modules, not as a value` (`monty-proto` `python/encode.rs`) | The same refusal, with the same text and the same Python `TypeError`, raised by the arena writer as a `PythonRefusal`: a module sent on its own, and a module reached inside an ordinary container, are both refused | TEXT | `test/unit/platform/external_module_value_test.dart` "ExternalModule is a MontyValue with opaque projection and import-only input" (E-12) |
 | E-13 | The type a module call names when the leaf is not callable | `TypeError: '<type>' object is not callable`, with CPython's own type name (`int`, `bytes`, `datetime.datetime`, `complex`; a binding class by its class name) | The same text, with the type of the leaf's Python counterpart: a builtin by its own name, the binding's own classes by their qualified name (`pydantic_monty.MontyClassProxy`, `pydantic_monty.ExternalModule`), and a value with no Python counterpart by its Dart type | TEXT | `test/unit/worker/host_answers_test.dart` "dotted calls resolve only public module functions and preserve async dispatch" |
+| E-14 | The shape of a module factory | Any callable of no arguments that returns a module: a function, a bound method, a callable object, a lambda | A function of no arguments: the entry must be callable with zero arguments and return the module. A callable object is not one: it needs an explicit `.call` tear-off, so the factory reads `tools.call` and not `tools` | API-TYPING | `test/unit/worker/proto_session_test.dart` "module factories cache successes and retry failed resolutions" |
+| E-15 | A factory that returns an awaitable | The synchronous pool refuses it: `RuntimeError: external_modules['tools']() returned an awaitable; async module factories require AsyncMonty`. The asynchronous pool awaits it | The driver is asynchronous, so a factory may return a future. It is awaited before the import or the call is answered, and its result is the module | API-TYPING | `test/unit/worker/proto_session_test.dart` "module factories cache successes and retry failed resolutions" |
+| E-16 | The type a factory's refusal names | `TypeError: external_modules['tools']() returned int, not an ExternalModule`, with the Python type of the result | The same text, with the Dart type of the result instead of the Python one, and the same refusal for an entry that is neither a module nor a factory: `external_modules['tools'] must be an ExternalModule or a callable returning one, not <Dart type>` | TEXT | `test/unit/worker/proto_session_test.dart` "module factories cache successes and retry failed resolutions" |
+| E-17 | The exception a factory's failure raises | The Python exception the factory raised, with its own type: a `ValueError` for a module whose attribute key upstream refuses, a `TypeError` for a key that is not a string | The Dart exception the factory raised, converted as any host failure is. A factory that builds a module upstream refuses keeps upstream's type: a `ValueError` for an attribute key it refuses, a `TypeError` for a key that is not a string | TEXT | `test/unit/worker/proto_session_test.dart` "module factories cache successes and retry failed resolutions" |
+| E-18 | What a factory's result is checked against | The result must be a module, checked when the import that needs it runs | The same, and at the same time: the result is checked when it is reached, never when the mapping is given. A module the sandbox cannot hold is installed all the same: the conversion of its attributes happens later, and its failure does not undo the installation | — | `test/unit/worker/proto_session_test.dart` "module factories cache successes and retry failed resolutions" |
 
 A module is a value in Dart (E-9), but not one the sandbox can hold: it
 enters the sandbox through the session's `external_modules` mapping, and the
@@ -116,12 +121,17 @@ after a call that names a host object has been dispatched to that object.
 
 - The name is split at its **last** dot. The part before it is the module
   path; the part after it is the attribute's name.
-- The path is walked through the session's `external_modules`, one
-  component at a time. The first component names a module of the mapping;
-  every other component names a public attribute of the module before it,
-  and that attribute must itself be a module. A component that is missing,
-  protected (its name starts with `_`), or not a module ends the walk: the
-  call is then not found, as upstream stops at the first missing component.
+- The first component of the path names the host module, and it is
+  resolved as an import resolves it: the name is checked (a name that is
+  not an identifier, or one the sandbox provides itself, is refused with
+  `ValueError`), a factory is run, and its result is cached for the
+  session.
+- The rest of the path is walked through the module the first component
+  named, one component at a time. Every other component names a public
+  attribute of the module before it, and that attribute must itself be a
+  module. A component that is missing, protected (its name starts with
+  `_`), or not a module ends the walk: the call is then not found, as
+  upstream stops at the first missing component.
 - The leaf is the public attribute the module that path names holds. A name
   the module does not hold, or holds under a protected name, is not found.
 - A leaf that is a host function is called through the ordinary function
@@ -151,9 +161,11 @@ the OS handler, and the driver still advertises protocol version 5.
 - The name the call carries is looked up in the session's mapping, read
   live: an entry added, replaced or removed after the session opened is
   seen by the next import, as upstream reads `external_modules`.
-- Only a direct entry is resolved. A nested module is part of the module
-  value the import binds, imported by its dotted path, as upstream's
-  `resolve_module` resolves the top-level name alone.
+- A direct entry is resolved as it is. A nested module is part of the
+  module value the import binds, imported by its dotted path, as
+  upstream's `resolve_module` resolves the top-level name alone.
+- An entry that is a factory is run, and its result is the module the
+  import binds (see the factories below).
 - The module crosses as an import: its public attributes, in insertion
   order, a callable as a host function named by its dotted path, a nested
   module as a module of its own, and any other value as the value it is.
@@ -172,3 +184,49 @@ the OS handler, and the driver still advertises protocol version 5.
   encoding raises is answered as an exception, with no message when the
   error's own text cannot be read, as upstream's `exception_arg` gives none
   when `str()` fails.
+
+## Module factories: the Dart model
+
+An entry of the session's mapping is a module itself, or a factory that
+builds one. Upstream calls such an entry a factory too, and the rules are
+the ones upstream's `resolve_module` and `install_module` apply (monty-
+python 1.2.0 `src/external.rs`).
+
+- A factory is a function of no arguments that returns the module. It may
+  return a future instead: the driver is asynchronous, so the future is
+  awaited before the import or the call that needs it is answered (E-15).
+  A callable object is not a factory: it needs an explicit `.call`
+  tear-off, so the entry reads `tools.call` and not `tools` (E-14).
+- Nothing is checked when the mapping is given. The name is checked, and
+  the entry with it, when a request reaches it: a name that is not an
+  identifier, or one the sandbox provides itself, is refused with
+  `ValueError`, and an entry that is neither a module nor a factory is
+  refused with `TypeError` (E-16). A name the mapping does not hold is
+  not found, and a name it holds with no value is refused, not found.
+- A factory's result is checked when it arrives, and only a module is
+  kept: any other result is refused with `TypeError`, naming the factory
+  and the Dart type of the result (E-16).
+- The module a factory built is installed before the import that needed it
+  converts its attributes, and before the call that needed it calls one of
+  them. A conversion that fails afterwards does not undo the
+  installation (E-18).
+- The installed module serves the rest of the session: the next import,
+  the next call and the next resume see it, whatever the mapping holds by
+  then. A direct entry is never installed: the mapping is read live, so a
+  replaced entry is seen by the next request and a removed one is not
+  found.
+- A factory that fails is not installed: the failure is answered where it
+  happened (as the exception the factory raised, E-17), and the next
+  request runs the factory again, which may succeed then.
+- A reset clears the installed modules: the next request runs the factory
+  again. The mapping itself is kept, and the host's own entries with it.
+- A dump carries no module and no installed module: the session that
+  loads it keeps its own mapping, and resolves its modules again, lazily,
+  when a restored import or call needs one.
+
+The refusals name the Dart type of what was found, where upstream names
+the Python type (E-16): a factory that returns a number is refused with
+`external_modules['tools']() returned int, not an ExternalModule`, and an
+entry that is a class is refused with
+`external_modules['tools'] must be an ExternalModule or a callable
+returning one, not the class String`.

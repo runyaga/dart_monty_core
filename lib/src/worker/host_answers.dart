@@ -425,16 +425,32 @@ _Mounts _mountsFor(List<MountDir>? mount, MountRoute? route) {
 final class HostAnswers {
   /// The answers for one feed, its host objects in [objects] (a fresh
   /// registry without one).
+  ///
+  /// The session's host [modules] are the ones the feeds of a session
+  /// share, so a factory's result is cached across them. The mapping
+  /// [externalModules] is read only when no [modules] are given: the two
+  /// name one thing, and the mapping the modules hold is the one that is
+  /// read.
   HostAnswers({
     this.externalLookup = const {},
     this.os,
     this.systemSleepMax,
     this.recorder,
-    this.externalModules = const {},
+    Map<String, Object?>? externalModules,
+    HostModules? modules,
     HostObjects? objects,
     List<MountDir>? mount,
     MountRoute? mountRoute,
-  }) : objects = objects ?? HostObjects(),
+  }) : modules =
+           modules ??
+           HostModules(
+             externalModules: externalModules ?? HostModules._noModules,
+           ),
+       externalModules =
+           modules?.externalModules ??
+           externalModules ??
+           HostModules._noModules,
+       objects = objects ?? HostObjects(),
        _mounts = _mountsFor(mount, mountRoute);
 
   /// Callback context for this checkout, absent without instrumentation.
@@ -451,12 +467,19 @@ final class HostAnswers {
   /// The OS handler; without one every OS call is declined.
   final OsHandler? os;
 
+  /// The session's host modules: the mapping the host gave and the factory
+  /// results cached for it.
+  ///
+  /// One per session, so a factory's result is cached across the session's
+  /// feeds, its resets and its resumes.
+  final HostModules modules;
+
   /// The session's host modules, by name: the modules an `import` asks for.
   ///
-  /// The map is read live, as upstream reads `external_modules`: an entry
-  /// added, replaced or removed after the session opened is seen by the
-  /// next import.
-  final Map<String, ExternalModule> externalModules;
+  /// The very map the session holds, not a copy of it: an entry added,
+  /// replaced or removed through it is seen by the next import, as
+  /// upstream reads `external_modules`.
+  final Map<String, Object?> externalModules;
 
   /// The longest system sleep the parent waits; null declines system sleeps.
   final Duration? systemSleepMax;
@@ -768,6 +791,261 @@ final class HostAnswers {
   }
 }
 
+/// The session's host modules: the mapping the host gave and the factory
+/// results cached for it.
+///
+/// The mapping is the host's own and is read live, as upstream reads
+/// `external_modules`: an entry added, replaced or removed after the
+/// session opened is seen by the next import or call. An entry is a module
+/// itself, or a factory: a zero-argument function returning one, either
+/// synchronously or through a future.
+///
+/// A factory runs once per session: its result is cached and serves every
+/// later import, call and resume. A factory that fails is not cached, so
+/// the next use runs it again. A direct entry is never cached: the mapping
+/// is read live, and a replaced entry is seen by the next request.
+final class HostModules {
+  /// Creates the modules of [externalModules]: the very map, not a copy.
+  HostModules({this.externalModules = _noModules});
+
+  /// The mapping, as the host gave it.
+  final Map<String, Object?> externalModules;
+
+  /// The mapping a set of modules without one of its own holds: empty, and
+  /// the same one everywhere, so a feed's own mapping is that one too.
+  static const Map<String, Object?> _noModules = {};
+
+  /// What each factory returned, by module name: only a validated result
+  /// is cached, never a direct entry, a failure, an invalid result or a
+  /// pending future.
+  final Map<String, ExternalModule> _factoryResults = {};
+
+  /// Forgets every factory result: the mapping stays as it is, and the
+  /// factories run again when they are next needed.
+  void clearFactoryResults() => _factoryResults.clear();
+
+  /// The module [name] names, staged: the module itself, the factory's
+  /// pending future, the name's absence, or the error that stopped it.
+  ///
+  /// The cache comes first: a factory's validated result serves every
+  /// later request, whatever the mapping holds by then. A direct entry is
+  /// returned as it is and never cached, so a replaced entry is seen by the
+  /// next request.
+  ///
+  /// The name is checked when it is reached, as upstream's `check_entry`
+  /// checks it: a name that is not an identifier, or one the sandbox
+  /// provides itself, cannot name a host module. An entry that is neither
+  /// a module nor a factory is refused when it is reached, too.
+  ModuleResolution resolve(String name) {
+    final cached = _factoryResults[name];
+    if (cached != null) return ResolvedModule(cached);
+    final Object? entry;
+    try {
+      entry = externalModules[name];
+      // A name the mapping does not hold is absent; a name it holds with no
+      // value is an entry the host must fix, not a missing module.
+      if (entry == null && !externalModules.containsKey(name)) {
+        return const MissingModule();
+      }
+    } on Object catch (error) {
+      return RefusedModule(raisedFrom(error));
+    }
+    final nameError = moduleNameError(name);
+    if (nameError != null) {
+      return RefusedModule(
+        raisedException('ValueError', nameError, const {}),
+      );
+    }
+    if (entry == null) return RefusedModule(_invalidEntry(name, entry));
+    if (entry is ExternalModule) return ResolvedModule(entry);
+    if (entry is! Object? Function()) {
+      return RefusedModule(_invalidEntry(name, entry));
+    }
+
+    return _stage(name, entry);
+  }
+
+  /// The module [name] names, awaiting a factory's future: the module
+  /// itself, the name's absence, or the error that stopped it.
+  ///
+  /// A factory's future is awaited here and its result installed, so the
+  /// next request finds it in the cache. A failure is not cached: the next
+  /// request runs the factory again.
+  Future<SettledModule> resolveAsync(String name) async {
+    final resolution = resolve(name);
+
+    return switch (resolution) {
+      PendingModule(:final future) => await _awaited(name, future),
+      ResolvedModule(:final module) => ResolvedModule(module),
+      MissingModule() => const MissingModule(),
+      RefusedModule(:final error) => RefusedModule(error),
+    };
+  }
+
+  /// The module [name] holds once [result] is installed: the result
+  /// itself, cached for the rest of the session.
+  ///
+  /// A result that is not an [ExternalModule] is refused, with a
+  /// `TypeError` naming the factory and the type it returned, as upstream's
+  /// `install_module` raises. Nothing is cached then, and the next request
+  /// runs the factory again. The module's attributes are not read here: a
+  /// module the sandbox cannot hold is installed all the same.
+  ExternalModule install(String name, Object? result) {
+    if (result is! ExternalModule) {
+      throw ExternalException(
+        'TypeError',
+        "external_modules['$name']() returned ${_resultTypeName(result)}, "
+            'not an ExternalModule',
+      );
+    }
+    _factoryResults[name] = result;
+
+    return result;
+  }
+
+  /// The module [name] holds once the factory's [future] is awaited, or
+  /// the error that stopped it.
+  Future<SettledModule> _awaited(String name, Future<Object?> future) async {
+    final Object? result;
+    try {
+      result = await future;
+    } on Object catch (error) {
+      return RefusedModule(_factoryError(error));
+    }
+
+    return _install(name, result);
+  }
+
+  /// The factory [factory]'s result for [name]: the module it built, or
+  /// the error that stopped it.
+  ///
+  /// A factory that returns a future stages it: the future is awaited by
+  /// [resolveAsync], which installs its result. A factory that fails
+  /// leaves nothing behind, so the next request runs the factory again.
+  ModuleResolution _stage(String name, Object? Function() factory) {
+    final Object? result;
+    try {
+      result = factory();
+    } on Object catch (error) {
+      return RefusedModule(_factoryError(error));
+    }
+    if (result is Future<Object?>) return PendingModule(result);
+
+    return _install(name, result);
+  }
+
+  /// The module [name] holds once [result] is installed, or the error the
+  /// refusal answers with.
+  SettledModule _install(String name, Object? result) {
+    try {
+      return ResolvedModule(install(name, result));
+    } on Object catch (error) {
+      return RefusedModule(_factoryError(error));
+    }
+  }
+}
+
+/// How a module name resolved: the module it holds, the factory's pending
+/// future, the name's absence, or the error that stopped it.
+sealed class ModuleResolution {
+  const ModuleResolution();
+}
+
+/// A resolution that is settled: the module, the name's absence, or the
+/// error that stopped it.
+sealed class SettledModule extends ModuleResolution {
+  const SettledModule();
+}
+
+/// The module [module] the name holds.
+final class ResolvedModule extends SettledModule {
+  /// Creates the resolution of the module [module].
+  const ResolvedModule(this.module);
+
+  /// The module the name holds.
+  final ExternalModule module;
+}
+
+/// The factory's [future]: the module it will bring is not known yet.
+final class PendingModule extends ModuleResolution {
+  /// Creates the resolution of the factory's pending [future].
+  const PendingModule(this.future);
+
+  /// The future the factory returned.
+  final Future<Object?> future;
+}
+
+/// The name holds no entry: the request that needs it is not found.
+final class MissingModule extends SettledModule {
+  /// Creates the resolution of a name the mapping does not hold.
+  const MissingModule();
+}
+
+/// The name cannot be resolved: [error] is the exception the request
+/// answers with.
+final class RefusedModule extends SettledModule {
+  /// Creates the resolution refused with [error].
+  const RefusedModule(this.error);
+
+  /// The exception the request answers with.
+  final pb.RaisedException error;
+}
+
+/// The error an entry that is neither a module nor a factory answers with:
+/// a `TypeError`, as upstream's `check_entry` raises.
+pb.RaisedException _invalidEntry(String name, Object? entry) => raisedException(
+  'TypeError',
+  "external_modules['$name'] must be an ExternalModule or a callable "
+      'returning one, not ${_entryTypeName(entry)}',
+  const {},
+);
+
+/// How the entry [entry] is named in the refusal upstream's `check_entry`
+/// makes: a class is named as one, a function that takes arguments as
+/// one, and any other value by its Dart type.
+String _entryTypeName(Object? entry) => switch (entry) {
+  null => 'Null',
+  final Type type => 'the class $type',
+  final Function _ => 'a function taking arguments',
+  _ => '${entry.runtimeType}',
+};
+
+/// The Dart type of the result [result] a factory returned, as the refusal
+/// upstream's `install_module` makes names it.
+String _resultTypeName(Object? result) =>
+    result == null ? 'Null' : '${result.runtimeType}';
+
+/// The Python exception a module factory's failure answers with.
+///
+/// A factory that builds a module upstream refuses fails with the error
+/// upstream's constructor raises: a `ValueError` for an attribute key it
+/// refuses, a `TypeError` for a key that is not a string. Any other
+/// failure keeps its own type, as [raisedFrom] converts it.
+pb.RaisedException _factoryError(Object error) {
+  try {
+    if (error is ArgumentError) {
+      final message = _argumentMessage(error);
+      if (message != null && message.startsWith('ExternalModule attrs')) {
+        final strKeys = message.startsWith(
+          'ExternalModule attrs must have str keys',
+        );
+
+        return raisedException(
+          strKeys ? 'TypeError' : 'ValueError',
+          message,
+          const {},
+        );
+      }
+    }
+  } on Object {
+    // An arbitrary ArgumentError may throw while exposing its message.
+    // Preserve the original error's normal protocol conversion.
+    return raisedFrom(error);
+  }
+
+  return raisedFrom(error);
+}
+
 /// Answers [call] with the resolved host function [entry]: run in place when
 /// synchronous, or as a coroutine when marked by [coroutine] or
 /// [parityCoroutine].
@@ -810,39 +1088,30 @@ Future<pb.ParentRequest> _functionCall(
 /// The name the call carries is looked up in the session's map, read live,
 /// and only a direct entry is resolved: a nested module is part of the
 /// module value the import binds, as upstream's `resolve_module` resolves
-/// the top-level name alone.
+/// the top-level name alone. An entry that is a factory is run, and its
+/// result is cached for the rest of the session.
 ///
 /// A name the map does not hold is not found, which raises
 /// `ModuleNotFoundError` in the sandbox. A name that cannot name a host
 /// module raises `ValueError`, and an attribute the sandbox cannot hold
 /// raises `TypeError`; both are answered as errors, and no failure of the
 /// mapping escapes the answer.
-pb.ParentRequest _import(HostAnswers host, pb.OsCall call) {
+Future<pb.ParentRequest> _import(HostAnswers host, pb.OsCall call) async {
   final callId = call.callId;
   final name = call.import.module;
-  final ExternalModule? module;
-  try {
-    module = host.externalModules[name];
-  } on Object catch (error) {
-    return _importFailure(callId, error);
-  }
-  if (module == null) {
-    return _resume(callId, pb.ExtFunctionResult(notFound: 'import'));
-  }
-  // The name is checked when it is looked up, as upstream's `check_entry`
-  // checks it: a name that is not an identifier, or one the sandbox
-  // provides itself, cannot name a host module.
-  final nameError = moduleNameError(name);
-  if (nameError != null) {
-    return _resume(
-      callId,
-      pb.ExtFunctionResult(
-        error: raisedException('ValueError', nameError, const {}),
-      ),
-    );
-  }
+  final resolution = await host.modules.resolveAsync(name);
 
-  return _importValue(host, callId, name, module);
+  return switch (resolution) {
+    ResolvedModule(:final module) => _importValue(host, callId, name, module),
+    MissingModule() => _resume(
+      callId,
+      pb.ExtFunctionResult(notFound: 'import'),
+    ),
+    RefusedModule(:final error) => _resume(
+      callId,
+      pb.ExtFunctionResult(error: error),
+    ),
+  };
 }
 
 /// The module value the import binds: the module [module], imported as
@@ -870,6 +1139,10 @@ pb.ParentRequest _importValue(
 /// The answer to an import that failed: the error it raised, as the Python
 /// exception the worker raises in the sandbox.
 ///
+/// This is the conversion of the module's attributes: a failure of the
+/// resolution itself is answered by the resolution, as a dotted call
+/// answers it.
+///
 /// No failure escapes: the error is converted defensively, so an error
 /// whose own text cannot be read is answered without a message, as
 /// upstream's `exception_arg` gives none when `str()` fails.
@@ -878,7 +1151,8 @@ pb.ParentRequest _importFailure(int callId, Object error) => _resume(
   pb.ExtFunctionResult(error: _importError(error)),
 );
 
-/// The Python exception an import failure answers with.
+/// The Python exception the conversion of a module's attributes answers
+/// with.
 ///
 /// A value the sandbox cannot hold is a `TypeError`, as upstream's
 /// `value_conversion_err` makes it; any other failure is `Exception` with
@@ -925,10 +1199,13 @@ String? _argumentMessage(ArgumentError error) {
 /// attribute the module that path names holds).
 ///
 /// The lookup is never consulted for a dotted name: a module attribute is
-/// the only thing such a name can name. A name the modules do not hold is
-/// not found: the walk stops at the first component that is missing,
-/// protected, or not a module. A leaf the module holds but cannot call
-/// raises CPython's `'<type>' object is not callable`.
+/// the only thing such a name can name. The first component of the path
+/// names the host module, and it is resolved as an import resolves it: a
+/// factory is run, and its result is cached for the rest of the session.
+/// A name the modules do not hold is not found: the walk stops at the
+/// first component that is missing, protected, or not a module. A leaf the
+/// module holds but cannot call raises CPython's
+/// `'<type>' object is not callable`.
 Future<pb.ParentRequest> _moduleCall(
   HostAnswers host,
   pb.FunctionCall call,
@@ -936,11 +1213,51 @@ Future<pb.ParentRequest> _moduleCall(
   String name,
 ) async {
   final dot = name.lastIndexOf('.');
-  final module = _moduleAt(host.externalModules, name.substring(0, dot));
-  if (module == null) {
+  final parts = name.substring(0, dot).split('.');
+  final resolution = await host.modules.resolveAsync(
+    parts.firstOrNull ?? '',
+  );
+
+  return switch (resolution) {
+    ResolvedModule(:final module) => _moduleLeaf(
+      host,
+      call,
+      reader,
+      name,
+      module,
+      parts,
+    ),
+    MissingModule() => _resume(
+      call.callId,
+      pb.ExtFunctionResult(notFound: name),
+    ),
+    RefusedModule(:final error) => _resume(
+      call.callId,
+      pb.ExtFunctionResult(error: error),
+    ),
+  };
+}
+
+/// The answer to the dotted call [name]: the attribute the module the path
+/// names holds, called as any other host function.
+///
+/// The module [module] is the one the first component of the path [parts]
+/// named; the components below it are walked through it, one public
+/// attribute at a time.
+Future<pb.ParentRequest> _moduleLeaf(
+  HostAnswers host,
+  pb.FunctionCall call,
+  ArenaReader reader,
+  String name,
+  ExternalModule module,
+  List<String> parts,
+) async {
+  final dot = name.lastIndexOf('.');
+  final target = _moduleBelow(module, parts.skip(1));
+  if (target == null) {
     return _resume(call.callId, pb.ExtFunctionResult(notFound: name));
   }
-  final attrs = module.publicAttrs;
+  final attrs = target.publicAttrs;
   final leaf = name.substring(dot + 1);
   if (!attrs.containsKey(leaf)) {
     return _resume(call.callId, pb.ExtFunctionResult(notFound: name));
@@ -957,22 +1274,21 @@ Future<pb.ParentRequest> _moduleCall(
   return _functionCall(host, call, reader, entry);
 }
 
-/// The module the dotted path [path] names, or null when the path names
-/// none: a component that is missing, protected, or not a module ends the
-/// walk, as upstream's `module_of` stops at the first missing component.
-ExternalModule? _moduleAt(Map<String, ExternalModule> modules, String path) {
-  final parts = path.split('.');
-  var module = modules[parts.firstOrNull ?? ''];
-  for (final part in parts.skip(1)) {
-    if (module == null) return null;
-    final attrs = module.publicAttrs;
+/// The module the components [rest] name below [module], or null when the
+/// walk stops: a component that is missing, protected, or not a module ends
+/// the walk, as upstream's `module_of` stops at the first missing
+/// component.
+ExternalModule? _moduleBelow(ExternalModule module, Iterable<String> rest) {
+  var current = module;
+  for (final part in rest) {
+    final attrs = current.publicAttrs;
     if (!attrs.containsKey(part)) return null;
     final child = attrs[part];
     if (child is! ExternalModule) return null;
-    module = child;
+    current = child;
   }
 
-  return module;
+  return current;
 }
 
 /// Answers a method call on the host object [call] names: refused for an

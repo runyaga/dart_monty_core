@@ -5,6 +5,7 @@
 // protocol on the VM, dart2js and dart2wasm without a worker. The last test
 // covers the session's host modules: the map is read live, and an import is
 // answered before the mounts and the OS handler see it.
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:dart_monty_core/dart_monty_core.dart'
@@ -1523,6 +1524,21 @@ void main() {
       await _mountPrecedenceAndScan();
     },
   );
+
+  test(
+    'module factories cache successes and retry failed resolutions',
+    () async {
+      await _factoryCachesSuccesses();
+      await _factoryAnswersDottedCalls();
+      await _factoryFutureIsAwaited();
+      await _factoryFailuresAreRetried();
+      await _directEntriesAreNotCached();
+      await _factorySurvivesReset();
+      await _factorySurvivesLoad();
+      await _factoryInstalledBeforeConversion();
+      await _factorySurvivesAutomaticResume();
+    },
+  );
 }
 
 /// A `complex` node, `1j`.
@@ -1544,6 +1560,18 @@ const MontyValue _complexValue = MontyComplex(0, 1);
 
 /// The module the scenarios import.
 const String _tools = 'tools';
+
+/// The module a second factory builds, for the calls that fail.
+const String _otherTools = 'other_tools';
+
+/// The module a third factory builds, with a nested module.
+const String _nestedTools = 'nested_tools';
+
+/// The module the mapping holds with no value.
+const String _nullTools = 'null_tools';
+
+/// The module the mapping does not hold.
+const String _absent = 'absent';
 
 /// A module name that is not an identifier.
 const String _badName = 'bad name';
@@ -1914,6 +1942,614 @@ Future<void> _mountPrecedenceAndScan() async {
   expect(listed.hasList(), isTrue, reason: 'the scan returns a list');
   expect(listed.list.items, isEmpty);
   expect(answer.callId, 5);
+}
+
+// ---------------------------------------------------------------------------
+// The session's module factories: a factory runs once per session, its
+// result is cached, and a failure is not.
+//
+// Upstream (monty-python 1.2.0, `src/external.rs`): the mapping holds a
+// module or a factory returning one. The factory runs at the first import,
+// call or stubs ask that needs it, and its validated result is cached for
+// the session; a factory that fails is raised there, and the next use runs
+// it again.
+// ---------------------------------------------------------------------------
+
+/// The module a factory failure is raised as, when the host raises one of
+/// its own.
+final class _FactoryFailure implements Exception {
+  const _FactoryFailure(this.message);
+
+  /// The failure's own text.
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
+/// The configuration of a session offering the modules [modules].
+///
+/// The mapping is passed dynamically: the tree this test was written
+/// against declares the parameter with the narrow type of a module map, so
+/// a plain call would not compile there. The construction is checked by the
+/// caller, outside the catch, so a failure is an assertion and not a
+/// thrown error.
+SessionConfig _configWith(Map<String, Object?> modules) =>
+    Function.apply(
+          SessionConfig.new,
+          const [],
+          {#externalModules: modules},
+        )
+        as SessionConfig;
+
+/// The session on [channel] offering the modules [modules].
+Future<ProtoSession> _sessionWith(
+  ScriptedChannel channel,
+  Map<String, Object?> modules,
+) async {
+  final built = await _outcome(() async => _configWith(modules));
+  expect(built.error, isNull, reason: 'the session configuration is built');
+  final config = switch (built.value) {
+    final SessionConfig made => made,
+    _ => fail('the session configuration is built'),
+  };
+
+  return ProtoSession.open(channel, config);
+}
+
+/// A factory runs once per session: its result is cached, and the mapping
+/// may change under it.
+Future<void> _factoryCachesSuccesses() async {
+  final modules = <String, Object?>{};
+  var calls = 0;
+  modules[_tools] = () {
+    calls++;
+
+    return ExternalModule({'VERSION': _versionOne});
+  };
+  final osCalls = <String>[];
+  final done = completeNone();
+  final ended = expecting(pb.ParentRequest_Kind.resumeCall, [done]);
+  final channel = ScriptedChannel([
+    expecting(pb.ParentRequest_Kind.configure, [ok()]),
+    // A feed that asks for nothing: no factory runs for it.
+    expecting(pb.ParentRequest_Kind.feed, [done]),
+    // The first import runs the factory.
+    expecting(pb.ParentRequest_Kind.feed, [_importEvent(1, _tools)]),
+    ended,
+    // The second import is answered from the cache.
+    expecting(pb.ParentRequest_Kind.feed, [_importEvent(2, _tools)]),
+    ended,
+    // The third and the fourth import are answered from the cache too,
+    // although the mapping changed under them.
+    expecting(pb.ParentRequest_Kind.feed, [_importEvent(3, _tools)]),
+    ended,
+    expecting(pb.ParentRequest_Kind.feed, [_importEvent(4, _tools)]),
+    ended,
+  ]);
+  final session = await _sessionWith(channel, modules);
+  addTearDown(session.close);
+
+  // A feed that needs no module runs no factory.
+  await _feedOk(session, 'x = 1', osCalls);
+  expect(calls, 0, reason: 'no factory runs before a module is needed');
+
+  // The first import runs the factory and answers with its module.
+  await _feedOk(session, 'import tools', osCalls);
+  _expectImportedModule(channel, 1, _tools, _versionOne);
+  expect(calls, 1, reason: 'the factory runs once');
+
+  // The second import is answered from the cache.
+  await _feedOk(session, 'import tools', osCalls);
+  _expectImportedModule(channel, 2, _tools, _versionOne);
+  expect(calls, 1, reason: 'the cached module answers the second import');
+
+  // The mapping is replaced: the cached module still answers.
+  modules[_tools] = ExternalModule({'VERSION': _versionTwo});
+  await _feedOk(session, 'import tools', osCalls);
+  _expectImportedModule(channel, 3, _tools, _versionOne);
+  expect(calls, 1, reason: 'the cached module answers the third import');
+
+  // The mapping is emptied: the cached module still answers, and the
+  // factory does not run again.
+  modules.remove(_tools);
+  await _feedOk(session, 'import tools', osCalls);
+  _expectImportedModule(channel, 4, _tools, _versionOne);
+  expect(calls, 1, reason: 'the cached module answers the fourth import');
+}
+
+/// A dotted call resolves its module as an import does: the factory runs
+/// for it, its result is cached, and a factory that fails answers the call
+/// as it answers an import.
+Future<void> _factoryAnswersDottedCalls() async {
+  final modules = <String, Object?>{};
+  var calls = 0;
+  final add = MontyHostFunction('add', (args, kwargs) => const MontyInt(3));
+  modules[_tools] = () {
+    calls++;
+
+    return ExternalModule({'add': add});
+  };
+  modules[_otherTools] = () => throw ArgumentError(
+    'Cannot convert factory input',
+  );
+  modules[_nestedTools] = () {
+    calls++;
+
+    return ExternalModule({
+      'sub': ExternalModule({'add': add}),
+    });
+  };
+  final osCalls = <String>[];
+  final done = completeNone();
+  final ended = expecting(pb.ParentRequest_Kind.resumeCall, [done]);
+  final channel = ScriptedChannel([
+    expecting(pb.ParentRequest_Kind.configure, [ok()]),
+    expecting(
+      pb.ParentRequest_Kind.feed,
+      [_functionCall('tools.add', const [], callId: 11)],
+    ),
+    ended,
+    expecting(
+      pb.ParentRequest_Kind.feed,
+      [_functionCall('tools.add', const [], callId: 12)],
+    ),
+    ended,
+    // A factory that fails: the failure is raised as it is, not as the
+    // `TypeError` an unconvertible attribute raises.
+    expecting(
+      pb.ParentRequest_Kind.feed,
+      [_functionCall('other_tools.add', const [], callId: 13)],
+    ),
+    ended,
+    // A call into a nested module awaits the top-level factory only.
+    expecting(
+      pb.ParentRequest_Kind.feed,
+      [_functionCall('nested_tools.sub.add', const [], callId: 14)],
+    ),
+    ended,
+  ]);
+  final session = await _sessionWith(channel, modules);
+  addTearDown(session.close);
+
+  // The first call runs the factory and calls the module's own function.
+  await _feedOk(session, 'tools.add()', osCalls);
+  _expectValue(channel, 11, BigInt.from(3));
+  expect(calls, 1, reason: 'the factory runs once');
+
+  // The second call is answered from the cache.
+  await _feedOk(session, 'tools.add()', osCalls);
+  _expectValue(channel, 12, BigInt.from(3));
+  expect(calls, 1, reason: 'the cached module answers the second call');
+
+  // A factory that throws answers the call as an exception of its own.
+  await _feedOk(session, 'other_tools.add()', osCalls);
+  _expectError(channel, 13, 'Exception', 'Cannot convert factory input');
+
+  // A call into a nested module runs the top-level factory and walks
+  // through the module it built.
+  await _feedOk(session, 'nested_tools.sub.add()', osCalls);
+  _expectValue(channel, 14, BigInt.from(3));
+  expect(calls, 2, reason: 'the nested module runs its own factory');
+}
+
+/// A factory's future is awaited before the answer is made.
+Future<void> _factoryFutureIsAwaited() async {
+  final modules = <String, Object?>{};
+  final gate = Completer<ExternalModule>();
+  var ran = false;
+  modules[_tools] = () {
+    ran = true;
+
+    return gate.future;
+  };
+  final osCalls = <String>[];
+  final done = completeNone();
+  final ended = expecting(pb.ParentRequest_Kind.resumeCall, [done]);
+  final channel = ScriptedChannel([
+    expecting(pb.ParentRequest_Kind.configure, [ok()]),
+    expecting(pb.ParentRequest_Kind.feed, [_importEvent(1, _tools)]),
+    ended,
+  ]);
+  final session = await _sessionWith(channel, modules);
+  addTearDown(session.close);
+
+  final feed = session.feed('import tools', onOsCall: _recording(osCalls));
+  await _waitUntil(() => ran);
+
+  // The answer waits for the factory's future.
+  expect(_answers(channel), 0, reason: 'the import is not answered yet');
+  gate.complete(ExternalModule({'VERSION': _versionOne}));
+  final outcome = await _outcome(() => feed);
+  _expectNoError(outcome, 'the feed');
+  _expectImportedModule(channel, 1, _tools, _versionOne);
+}
+
+/// A factory that fails leaves nothing behind: the next request runs it
+/// again, and it may succeed then.
+Future<void> _factoryFailuresAreRetried() async {
+  await _factoryFailureIsRetried(
+    () => throw const _FactoryFailure('boom'),
+    'Exception',
+    'boom',
+  );
+  await _factoryFailureIsRetried(
+    () => 3,
+    'TypeError',
+    'not an ExternalModule',
+  );
+  await _factoryFutureFailureIsRetried(
+    (gate) => gate.completeError(
+      const _FactoryFailure('boom'),
+      StackTrace.current,
+    ),
+    'Exception',
+    'boom',
+  );
+  await _factoryFutureFailureIsRetried(
+    (gate) => gate.complete(3),
+    'TypeError',
+    'not an ExternalModule',
+  );
+}
+
+/// The import that reaches the failing factory [factory] fails with
+/// [excType], and the import after it runs the factory again and answers
+/// with the module.
+Future<void> _factoryFailureIsRetried(
+  Object? Function() factory,
+  String excType,
+  String detail,
+) async {
+  final modules = <String, Object?>{};
+  var calls = 0;
+  modules[_tools] = () {
+    calls++;
+
+    return calls == 1 ? factory() : ExternalModule({'VERSION': _versionOne});
+  };
+  final osCalls = <String>[];
+  final done = completeNone();
+  final ended = expecting(pb.ParentRequest_Kind.resumeCall, [done]);
+  final channel = ScriptedChannel([
+    expecting(pb.ParentRequest_Kind.configure, [ok()]),
+    expecting(pb.ParentRequest_Kind.feed, [_importEvent(1, _tools)]),
+    ended,
+    expecting(pb.ParentRequest_Kind.feed, [_importEvent(2, _tools)]),
+    ended,
+  ]);
+  final session = await _sessionWith(channel, modules);
+  addTearDown(session.close);
+
+  await _feedOk(session, 'import tools', osCalls);
+  _expectError(channel, 1, excType, detail);
+  expect(calls, 1, reason: 'the factory ran once');
+
+  // The failure was not cached: the factory runs again, and it succeeds.
+  await _feedOk(session, 'import tools', osCalls);
+  _expectImportedModule(channel, 2, _tools, _versionOne);
+  expect(calls, 2, reason: 'the failed factory runs again');
+}
+
+/// The import that reaches the factory whose future [fail] fails answers
+/// the failure, and the import after it runs the factory again.
+Future<void> _factoryFutureFailureIsRetried(
+  void Function(Completer<Object?> gate) fail,
+  String excType,
+  String detail,
+) async {
+  final modules = <String, Object?>{};
+  final gate = Completer<Object?>();
+  var calls = 0;
+  modules[_tools] = () {
+    calls++;
+
+    return calls == 1 ? gate.future : ExternalModule({'VERSION': _versionOne});
+  };
+  final osCalls = <String>[];
+  final done = completeNone();
+  final ended = expecting(pb.ParentRequest_Kind.resumeCall, [done]);
+  final channel = ScriptedChannel([
+    expecting(pb.ParentRequest_Kind.configure, [ok()]),
+    expecting(pb.ParentRequest_Kind.feed, [_importEvent(1, _tools)]),
+    ended,
+    expecting(pb.ParentRequest_Kind.feed, [_importEvent(2, _tools)]),
+    ended,
+  ]);
+  final session = await _sessionWith(channel, modules);
+  addTearDown(session.close);
+
+  final feed = session.feed('import tools', onOsCall: _recording(osCalls));
+  await _waitUntil(() => calls == 1);
+  fail(gate);
+  final outcome = await _outcome(() => feed);
+  _expectNoError(outcome, 'the feed');
+  _expectError(channel, 1, excType, detail);
+  expect(calls, 1, reason: 'the factory ran once');
+
+  // The failure was not cached: the factory runs again, and it succeeds.
+  await _feedOk(session, 'import tools', osCalls);
+  _expectImportedModule(channel, 2, _tools, _versionOne);
+  expect(calls, 2, reason: 'the failed factory runs again');
+}
+
+/// A direct entry is not cached: the mapping is read live, so a replaced
+/// entry is seen by the next request, and a removed one is not found.
+Future<void> _directEntriesAreNotCached() async {
+  final modules = <String, Object?>{};
+  modules[_tools] = ExternalModule({'VERSION': _versionOne});
+  modules[_nullTools] = null;
+  final osCalls = <String>[];
+  final done = completeNone();
+  final ended = expecting(pb.ParentRequest_Kind.resumeCall, [done]);
+  final channel = ScriptedChannel([
+    expecting(pb.ParentRequest_Kind.configure, [ok()]),
+    expecting(pb.ParentRequest_Kind.feed, [_importEvent(1, _tools)]),
+    ended,
+    expecting(pb.ParentRequest_Kind.feed, [_importEvent(2, _tools)]),
+    ended,
+    expecting(pb.ParentRequest_Kind.feed, [_importEvent(3, _tools)]),
+    ended,
+    expecting(pb.ParentRequest_Kind.feed, [_importEvent(4, _absent)]),
+    ended,
+    expecting(pb.ParentRequest_Kind.feed, [_importEvent(5, _nullTools)]),
+    ended,
+  ]);
+  final session = await _sessionWith(channel, modules);
+  addTearDown(session.close);
+
+  // The direct entry answers the import.
+  await _feedOk(session, 'import tools', osCalls);
+  _expectImportedModule(channel, 1, _tools, _versionOne);
+
+  // A replaced entry is seen by the next import: a direct entry is not
+  // cached.
+  modules[_tools] = ExternalModule({'VERSION': _versionTwo});
+  await _feedOk(session, 'import tools', osCalls);
+  _expectImportedModule(channel, 2, _tools, _versionTwo);
+
+  // A removed entry is not found.
+  modules.remove(_tools);
+  await _feedOk(session, 'import tools', osCalls);
+  _expectNotFound(channel, 3, 'import');
+
+  // A name the mapping does not hold is not found, and a name it holds
+  // with no value is refused: the two are not the same.
+  await _feedOk(session, 'import absent', osCalls);
+  _expectNotFound(channel, 4, 'import');
+  await _feedOk(session, 'import null_tools', osCalls);
+  _expectError(channel, 5, 'TypeError', 'must be an ExternalModule');
+}
+
+/// A reset clears the factory results: the mapping stays, and the factory
+/// runs again.
+Future<void> _factorySurvivesReset() async {
+  final modules = <String, Object?>{};
+  var calls = 0;
+  modules[_tools] = () {
+    calls++;
+
+    return ExternalModule({'VERSION': _versionOne});
+  };
+  final osCalls = <String>[];
+  final done = completeNone();
+  final ended = expecting(pb.ParentRequest_Kind.resumeCall, [done]);
+  final accepted = [ok()];
+  final configured = expecting(pb.ParentRequest_Kind.configure, accepted);
+  final reset = expecting(pb.ParentRequest_Kind.reset, accepted);
+  final channel = ScriptedChannel([
+    configured,
+    expecting(pb.ParentRequest_Kind.feed, [_importEvent(1, _tools)]),
+    ended,
+    reset,
+    configured,
+    expecting(pb.ParentRequest_Kind.feed, [_importEvent(2, _tools)]),
+    ended,
+  ]);
+  final session = await _sessionWith(channel, modules);
+  addTearDown(session.close);
+
+  await _feedOk(session, 'import tools', osCalls);
+  _expectImportedModule(channel, 1, _tools, _versionOne);
+  expect(calls, 1, reason: 'the factory ran once');
+
+  await session.reset();
+  expect(
+    modules.containsKey(_tools),
+    isTrue,
+    reason: 'the reset keeps the mapping',
+  );
+
+  await _feedOk(session, 'import tools', osCalls);
+  _expectImportedModule(channel, 2, _tools, _versionOne);
+  expect(calls, 2, reason: 'the factory runs again after the reset');
+}
+
+/// A dump carries no module: the session that loads it keeps its own
+/// mapping, and resolves its modules lazily.
+Future<void> _factorySurvivesLoad() async {
+  final sourceModules = <String, Object?>{};
+  var sourceCalls = 0;
+  sourceModules[_tools] = () {
+    sourceCalls++;
+
+    return ExternalModule({'VERSION': _versionOne});
+  };
+  final accepted = [ok()];
+  final configured = expecting(pb.ParentRequest_Kind.configure, accepted);
+  final loaded = expecting(pb.ParentRequest_Kind.load, accepted);
+  final sourceChannel = ScriptedChannel([
+    configured,
+    expecting(
+      pb.ParentRequest_Kind.dump,
+      [
+        pb.ChildEvent(dumpResult: pb.DumpResult(state: [1, 2, 3])),
+      ],
+    ),
+  ]);
+  final source = await _sessionWith(sourceChannel, sourceModules);
+  addTearDown(source.close);
+  final dump = await source.dump();
+  expect(sourceCalls, 0, reason: 'a dump runs no factory');
+
+  final destinationModules = <String, Object?>{};
+  var destinationCalls = 0;
+  destinationModules[_tools] = () {
+    destinationCalls++;
+
+    return ExternalModule({'VERSION': _versionTwo});
+  };
+  final osCalls = <String>[];
+  final done = completeNone();
+  final ended = expecting(pb.ParentRequest_Kind.resumeCall, [done]);
+  final destinationChannel = ScriptedChannel([
+    configured,
+    loaded,
+    expecting(pb.ParentRequest_Kind.feed, [_importEvent(1, _tools)]),
+    ended,
+  ]);
+  final destination = await _sessionWith(
+    destinationChannel,
+    destinationModules,
+  );
+  addTearDown(destination.close);
+
+  await destination.load(dump);
+  expect(destinationCalls, 0, reason: 'a load runs no factory');
+
+  // The destination resolves its own module, lazily.
+  await _feedOk(destination, 'import tools', osCalls);
+  _expectImportedModule(destinationChannel, 1, _tools, _versionTwo);
+  expect(
+    destinationCalls,
+    1,
+    reason: 'the destination runs its own factory',
+  );
+  expect(sourceCalls, 0, reason: "the source's factory did not run");
+}
+
+/// A factory's result is installed before the module's attributes are
+/// converted: a module the sandbox cannot hold is installed all the same.
+Future<void> _factoryInstalledBeforeConversion() async {
+  final modules = <String, Object?>{};
+  var calls = 0;
+  final add = MontyHostFunction('add', (args, kwargs) => const MontyInt(3));
+  modules[_tools] = () {
+    calls++;
+
+    return ExternalModule({'bad': Object(), 'add': add});
+  };
+  final osCalls = <String>[];
+  final done = completeNone();
+  final ended = expecting(pb.ParentRequest_Kind.resumeCall, [done]);
+  final channel = ScriptedChannel([
+    expecting(pb.ParentRequest_Kind.configure, [ok()]),
+    expecting(pb.ParentRequest_Kind.feed, [_importEvent(1, _tools)]),
+    ended,
+    expecting(pb.ParentRequest_Kind.feed, [_importEvent(2, _tools)]),
+    ended,
+    expecting(
+      pb.ParentRequest_Kind.feed,
+      [_functionCall('tools.add', const [], callId: 3)],
+    ),
+    ended,
+  ]);
+  final session = await _sessionWith(channel, modules);
+  addTearDown(session.close);
+
+  // The import fails: the attribute cannot be converted.
+  await _feedOk(session, 'import tools', osCalls);
+  _expectError(channel, 1, 'TypeError', 'Cannot convert');
+  expect(calls, 1, reason: 'the factory ran once');
+
+  // The module was installed before the conversion failed: the factory
+  // does not run again, although the mapping changed under it.
+  modules[_tools] = ExternalModule({'VERSION': _versionTwo});
+  await _feedOk(session, 'import tools', osCalls);
+  _expectError(channel, 2, 'TypeError', 'Cannot convert');
+  expect(calls, 1, reason: 'the installed module answers the import');
+
+  // The callable attribute of the installed module still works.
+  await _feedOk(session, 'tools.add()', osCalls);
+  _expectValue(channel, 3, BigInt.from(3));
+  expect(calls, 1, reason: 'the installed module answers the call');
+}
+
+/// An automatic resume sees the same factory result as an ordinary feed.
+Future<void> _factorySurvivesAutomaticResume() async {
+  final modules = <String, Object?>{};
+  var calls = 0;
+  modules[_tools] = () {
+    calls++;
+
+    return ExternalModule({'VERSION': _versionOne});
+  };
+  final osCalls = <String>[];
+  final done = completeNone();
+  final ended = expecting(pb.ParentRequest_Kind.resumeCall, [done]);
+  final built = await _outcome(() async => _configWith(modules));
+  expect(built.error, isNull, reason: 'the session configuration is built');
+  final config = switch (built.value) {
+    final SessionConfig made => made,
+    _ => fail('the session configuration is built'),
+  };
+  final (session, channel) = await poolB2Session(
+    [
+      expecting(pb.ParentRequest_Kind.feed, [_importEvent(1, _tools)]),
+      ended,
+      expecting(pb.ParentRequest_Kind.feed, [_importEvent(2, _tools)]),
+      ended,
+    ],
+    config: config,
+  );
+
+  // The first feed suspends on the import; the resume answers it. The
+  // second resume sees the same cached module, although the mapping
+  // changed under it.
+  final recording = _recording(osCalls);
+  final snapshots = <FunctionSnapshot>[];
+  for (var step = 0; step < 2; step++) {
+    if (step == 1) {
+      modules[_tools] = ExternalModule({'VERSION': _versionTwo});
+    }
+    final snapshot = await _suspendedOnImport(session, recording);
+    final resumed = await _outcome(snapshot.resumeAuto);
+    _expectNoError(resumed, 'the feed');
+    snapshots.add(snapshot);
+  }
+  final first = itemAt(snapshots, 0);
+  final second = itemAt(snapshots, 1);
+  _expectImportedModule(channel, first.callId, _tools, _versionOne);
+  expect(calls, 1, reason: 'the factory runs for the resumed import');
+  _expectImportedModule(channel, second.callId, _tools, _versionOne);
+  expect(calls, 1, reason: 'the cached module answers the second resume');
+}
+
+/// Waits until [condition] holds, without a timing sleep: the loop yields
+/// to the event loop and looks again.
+Future<void> _waitUntil(bool Function() condition) async {
+  for (var turn = 0; turn < 100; turn++) {
+    if (condition()) return;
+    await Future<void>.delayed(Duration.zero);
+  }
+  fail('the condition never held');
+}
+
+/// The answers the channel recorded: the replies the driver sent.
+int _answers(ScriptedChannel channel) =>
+    channel.requests.where((request) => request.hasResumeCall()).length;
+
+/// The answer to the call [callId] is the integer [value].
+void _expectValue(ScriptedChannel channel, int callId, BigInt value) {
+  final answer = _answerFor(channel, callId);
+  expect(
+    answer.result.hasReturnValue(),
+    isTrue,
+    reason: 'the call $callId returns a value',
+  );
+  final node = itemAt(answer.values.nodes, answer.result.returnValue);
+  expect(node.hasInt_5(), isTrue, reason: 'the value $callId is an integer');
+  expect(intOfNode(node), value, reason: 'the call $callId');
 }
 
 /// Feeds [code] on [session], which must succeed, and fails the test when

@@ -104,6 +104,7 @@ void main() {
       'assertMessageAnnotations': ('int?', null),
       'printFlushInterval': ('Duration?', null),
       'osPolicy': ('OsPolicy?', null),
+      'externalModules': ('Map<String, Object?>?', null),
     });
     expect(_differences(methods, 'withSession', 'checkout'), isEmpty);
   });
