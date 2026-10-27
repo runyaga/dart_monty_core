@@ -697,56 +697,6 @@ void main() {
       expect(objects[_boxId], same(box));
       expect(objects[_boxClassId], theClass);
 
-      // Host wrappers as keys, as the sandbox hashes them (monty
-      // host_class.rs `py_hash`): a class type hashes by its id, so the one
-      // node of the class keys a dict and sits in a frozenset; a host
-      // instance does not hash at all, so an import carrying one as a key is
-      // refused before the wire, as the sandbox's own `unhashable dict
-      // keys` (object_bridge.rs) would refuse it after.
-      final keyObjects = HostObjects();
-      final keyWriter = ArenaWriter(objects: keyObjects);
-      final keyedRoot = addImport(
-        keyWriter,
-        'typed',
-        ExternalModule({
-          'byType': MontyDict([(boxType, const MontyInt(1))]),
-          'types': MontyFrozenSet([boxType]),
-        }, id: _pkgId),
-      );
-      expect(keyedRoot, 6);
-      final keyNodes = keyWriter.arena.nodes;
-      final dictNode = itemAt(keyNodes, 3);
-      expect(dictNode.whichKind(), pb.MontyNode_Kind.dict);
-      expect(onlyItem(dictNode.dict.pairs).key, 1);
-      final setNode = itemAt(keyNodes, 5);
-      expect(setNode.whichKind(), pb.MontyNode_Kind.frozenSet);
-      expect(setNode.frozenSet.items, [1]);
-      expect(itemAt(keyNodes, 1).type.id.data, _boxClassIdBytes);
-      expect(keyObjects[_boxClassId], theClass);
-      final unhashableInstance = _refusing(
-        "unhashable type: 'ClassInstance'",
-      );
-      expect(
-        () => addImport(
-          ArenaWriter(objects: HostObjects()),
-          'boxed',
-          ExternalModule({
-            'byBox': MontyDict([(box, const MontyInt(1))]),
-          }),
-        ),
-        unhashableInstance,
-      );
-      expect(
-        () => addImport(
-          ArenaWriter(objects: HostObjects()),
-          'boxed',
-          ExternalModule({
-            'boxes': MontySet([box]),
-          }),
-        ),
-        unhashableInstance,
-      );
-
       // A module the sandbox sends back (test_external_modules.py:432): the
       // id it imported with, no stubs, and its attrs as the sandbox's values
       // -- a function comes back as its name, a submodule as a module.

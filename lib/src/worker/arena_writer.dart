@@ -26,6 +26,10 @@
 /// is a function node with its own name ([functionNode]); a call from the
 /// sandbox dispatches by that name.
 ///
+/// The modules a session imports cross through [addImport] alone: each is
+/// a module node of its own, holding the module's public attributes, as
+/// upstream's `module_value` sends it.
+///
 /// It also sends host objects, given as their [ClassInstance] and
 /// [ClassType] wrappers, as upstream's encoder sends them: each wrapper is
 /// registered in the session's [HostObjects] as it is met, its eager
@@ -34,6 +38,7 @@
 /// id is free. Any other object is refused with Python's `TypeError`.
 /// An [ExternalModule] is refused too, with Python's `TypeError`: it enters
 /// the sandbox through `external_modules`, not as a value.
+///
 /// Before emitting, it refuses with [ArgumentError] what upstream's encoder
 /// or the worker's decoder would not accept, rather than letting protobuf
 /// send something else: a cycle, a byte outside 0..255, a string with an
@@ -87,10 +92,47 @@ const _moduleNotAValue =
 /// Writes [module], imported as [path], into [writer]'s arena and returns
 /// the node of the module value the sandbox binds the import to.
 ///
-/// STUB: returns a wrong value (-1) and writes nothing, so the module-arena
-/// unit stays red; the real behaviour is pinned by arena_test.dart's
-/// 'module arenas preserve import graphs and validate output references'.
-int addImport(ArenaWriter writer, String path, ExternalModule module) => -1;
+/// The module crosses as upstream's `module_value` sends it (monty-python
+/// `src/external.rs`): its public attributes, in insertion order, each a
+/// name and its value. A nested module is a module of its own, imported by
+/// its dotted path (`pkg.sub`); a callable is a function named by that
+/// path, with its docstring; any other value is the value it is.
+///
+/// A module met again is the node it was first given, as one Dart object is
+/// one node, and the path it was first met by names it.
+int addImport(ArenaWriter writer, String path, ExternalModule module) =>
+    _run(writer, _ImportModule(path, module), parity: false);
+
+/// A value an import sends as it is.
+///
+/// The tokens are private, so an ordinary [ArenaWriter.add] never meets
+/// one: a module crosses only through [addImport], never as a value.
+sealed class _ImportValue {
+  const _ImportValue();
+}
+
+/// A module to import: [module] under the dotted [path] it is imported by.
+final class _ImportModule extends _ImportValue {
+  const _ImportModule(this.path, this.module);
+
+  /// The dotted path the module is imported by, `pkg` or `pkg.sub`.
+  final String path;
+
+  /// The module itself.
+  final ExternalModule module;
+}
+
+/// A callable the sandbox calls by [name], the dotted path it is imported
+/// by, with its [docstring].
+final class _ImportFunction extends _ImportValue {
+  const _ImportFunction(this.name, this.docstring);
+
+  /// The name the sandbox calls it by, `pkg.add`.
+  final String name;
+
+  /// Its `__doc__`, if any.
+  final String? docstring;
+}
 
 /// Builds one arena from host values.
 final class ArenaWriter {
@@ -111,6 +153,12 @@ final class ArenaWriter {
   /// The node of each attribute-less class already emitted, by class id.
   final Map<String, int> _classes = {};
 
+  /// The node of each module already emitted, by the module itself.
+  ///
+  /// The modules are held by identity, as one Dart object is one node; a
+  /// module is not an ordinary value and never enters [_containers].
+  final Map<ExternalModule, int> _modules = Map.identity();
+
   /// Each key judged so far: the type Python cannot hash in it, or null.
   final Map<MontyValue, String?> _hashable = Map.identity();
 
@@ -124,26 +172,8 @@ final class ArenaWriter {
   /// [value] is a [MontyValue]; anything else is refused with Python's
   /// `TypeError`. A host-object wrapper's own throws (its eager attributes,
   /// its hook) propagate.
-  int add(Object? value, {bool parity = false}) {
-    // The containers and classes on the stack.
-    final open = Set<Object>.identity();
-    final stack = <_Frame>[];
-    var done = _step(value, open, stack, parity: parity);
-    // `done` is null right after a frame was opened, so a frame is open.
-    while (done == null || stack.isNotEmpty) {
-      final frame = stack.removeLast();
-      if (done != null) frame.ids.add(done);
-      final next = frame.next;
-      if (next != null) {
-        stack.add(frame);
-        done = _step(next, open, stack, parity: parity);
-      } else {
-        done = _complete(frame, open);
-      }
-    }
-
-    return done;
-  }
+  int add(Object? value, {bool parity = false}) =>
+      _run(this, value, parity: parity);
 
   /// Starts a value independent of those added so far: none of their
   /// nodes is shared with it, and a wrapper met again is registered and
@@ -151,6 +181,7 @@ final class ArenaWriter {
   void separate() {
     _containers.clear();
     _classes.clear();
+    _modules.clear();
   }
 
   /// [add], leaving the arena as it was when [value] is refused, so the
@@ -239,9 +270,9 @@ final class ArenaWriter {
     return null;
   }
 
-  /// [_step] for what is not a [MontyValue]: null, a class proxy's metadata,
-  /// a host class an instance carries, or a method read from a wrapper;
-  /// anything else is refused.
+  /// [_step] for what is not a [MontyValue]: a value an import sends as it
+  /// is, null, a class proxy's metadata, a host class an instance carries,
+  /// or a method read from a wrapper; anything else is refused.
   int? _hostStep(
     Object? child,
     Set<Object> open,
@@ -250,6 +281,17 @@ final class ArenaWriter {
   }) => switch (child) {
     null when parity => _emit(_leaf(const MontyNone())),
     null => throw ArgumentError.notNull('value'),
+    // A module to import, or a callable named by the path it is imported
+    // by: an ordinary add never meets either.
+    final _ImportModule module => _enterImportModule(
+      this,
+      module,
+      open,
+      stack,
+    ),
+    final _ImportFunction function => _emit(
+      functionNode(function.name, docstring: function.docstring),
+    ),
     _ProxyClass(:final type) => _enterClass(
       type,
       open,
@@ -436,6 +478,10 @@ final class ArenaWriter {
       case final ClassType<Object> w:
         if (frame.children.isEmpty) _classes.putIfAbsent(w.id, () => id);
         _containers[w] = id;
+      case final ExternalModule module:
+        // A module is not an ordinary value: it is shared as the module
+        // itself, never as a value the writer may hand out.
+        _modules[module] = id;
       case final MontyValue v:
         _containers[v] = id;
     }
@@ -627,6 +673,97 @@ String? _unhashableType(MontyValue v) => switch (v) {
   ClassInstance() => 'ClassInstance',
   _ => null,
 };
+
+/// The traversal: [value] and everything it holds, in post-order.
+///
+/// The writer's own steps open the frames; the loop here walks them, so
+/// the nesting depth costs memory, not the Dart call stack.
+int _run(ArenaWriter writer, Object? value, {required bool parity}) {
+  // The containers and classes on the stack.
+  final open = Set<Object>.identity();
+  final stack = <_Frame>[];
+  var done = writer._step(value, open, stack, parity: parity);
+  // `done` is null right after a frame was opened, so a frame is open.
+  while (done == null || stack.isNotEmpty) {
+    final frame = stack.removeLast();
+    if (done != null) frame.ids.add(done);
+    final next = frame.next;
+    if (next != null) {
+      stack.add(frame);
+      done = writer._step(next, open, stack, parity: parity);
+    } else {
+      done = writer._complete(frame, open);
+    }
+  }
+
+  return done;
+}
+
+/// A module to import: its public attributes, in insertion order, each a
+/// name and its value.
+///
+/// A module met again is the node it was first given, as one Dart object is
+/// one node; the path it was first met by names it. A module met inside
+/// itself is a cycle, as upstream's encoder finds it.
+int? _enterImportModule(
+  ArenaWriter writer,
+  _ImportModule token,
+  Set<Object> open,
+  List<_Frame> stack,
+) {
+  final module = token.module;
+  final shared = writer._modules[module];
+  if (shared != null) return shared;
+  if (!open.add(module)) {
+    throw PythonRefusal(
+      module,
+      'contains itself; a cycle cannot be sent to the worker',
+      'ValueError',
+      'Circular reference detected',
+    );
+  }
+  final path = token.path;
+  stack.add(
+    _Frame(
+      module,
+      _moduleChildren(path, module),
+      (ids) => pb.MontyNode(
+        module: pb.ModuleNode(
+          name: path,
+          id: _uuid(module, module.id),
+          attrs: _pairs(ids),
+        ),
+      ),
+    ),
+  );
+
+  return null;
+}
+
+/// The children of a module: each public attribute's name and its value.
+///
+/// A nested module is a module to import, by its dotted path; a callable is
+/// a function named by that path, with its docstring; any other value is
+/// the value it is, converted as an ordinary value is.
+List<Object> _moduleChildren(String path, ExternalModule module) {
+  final children = <Object>[];
+  for (final MapEntry(:key, :value) in module.publicAttrs.entries) {
+    children
+      ..add(MontyString(key))
+      ..add(
+        switch (value) {
+          final ExternalModule nested => _ImportModule('$path.$key', nested),
+          final MontyHostFunction function => _ImportFunction(
+            '$path.$key',
+            function.docstring,
+          ),
+          _ => MontyValue.fromDart(value),
+        },
+      );
+  }
+
+  return children;
+}
 
 /// Attributes as children: each name as the `str` it is sent as, then its
 /// value.
