@@ -155,8 +155,9 @@ worker sends to the parent (`OsCall.import`, field 31 of the v1.2.0
 `OsCall`). The driver answers it from the session's `external_modules`,
 before the mounts and the OS handler see it, as upstream's binding answers
 it (monty-python 1.2.0 `src/external.rs`, `import_module`). The
-`import_stubs` arm is not answered from the mapping yet: it still reaches
-the OS handler, and the driver still advertises protocol version 5.
+`import_stubs` arm (field 32) is answered from the same mapping, before the
+mounts and the OS handler see it too, as upstream's `import_stubs` does
+(`src/external.rs`).
 
 - The name the call carries is looked up in the session's mapping, read
   live: an entry added, replaced or removed after the session opened is
@@ -230,3 +231,69 @@ the Python type (E-16): a factory that returns a number is refused with
 entry that is a class is refused with
 `external_modules['tools'] must be an ExternalModule or a callable
 returning one, not the class String`.
+
+## Module stubs: the dispatch rules
+
+An `import_stubs` of the names the sandbox does not provide itself is an
+OS call the worker sends to the parent (`OsCall.import_stubs`, field 32 of
+the v1.2.0 `OsCall`). The driver answers it from the session's
+`external_modules`, before the mounts and the OS handler see it, as
+upstream's `import_stubs` does (monty-python 1.2.0 `src/external.rs`).
+
+- The names the call carries are resolved in the order they were asked
+  for, through the same resolver an import uses: the cache of the installed
+  modules first, then the session's mapping, read live. A name the mapping
+  does not hold is left out of the answer; a name it holds is answered.
+- A factory that answers at once is installed as soon as its result is a
+  module, as an import installs it. A factory that returns a future is
+  staged: every factory of the ask runs before any of them is awaited, as
+  upstream's `import_stubs_or_coroutine` does.
+- The answer is the stubs of every module that was asked for: a dict of
+  the dotted path of a module to its `.pyi` source, or `None` for a module
+  without one, as upstream's `collect_stubs` builds it. A module is
+  followed by its public submodules, in insertion order, and a protected
+  one (its name starts with `_`) is left out. An ordinary attribute is
+  neither converted nor called.
+- The answer keeps the order the names were asked for, whatever order the
+  factories finished in.
+
+Five failures end the ask, and each of them is answered with the
+structured error of the failure it is: the answer is a `ResumeCall` under
+the call's own id, and no failure escapes the OS call as a thrown
+exception.
+
+- **A factory that fails at once**, or answers a value that is not a
+  module: the factories after it do not run at all, the modules installed
+  before it stay installed, and the results of the futures staged before
+  it are never installed.
+- **A failure of the resolver itself**: the resolver refuses an entry that
+  is neither a module nor a factory by naming the type it found, and an
+  entry whose type cannot be read fails that refusal. The ask is answered
+  with the structured error of the failure, under the call's own id, and
+  the futures staged before it are abandoned: their failure is observed,
+  and their results are never installed.
+- **A staged future that fails**: the ask ends at once, without waiting
+  for the futures that are still pending, and no result of the batch is
+  installed, not even one that succeeded before the failure.
+- **A staged future that answers a value that is not a module**: the
+  results before it are installed, in the order the names were asked for,
+  and the ones after it are not installed at all.
+- **A stub source the wire cannot hold**: a source with an unpaired
+  UTF-16 surrogate has no UTF-8 form, so the answer cannot be encoded.
+  The ask is answered with the `UnicodeEncodeError` the encoder raises,
+  under the call's own id.
+
+Upstream closes the coroutines it abandons (`src/external.rs:337`, the
+`close_coroutine` branch of `import_stubs_or_coroutine`). **A Dart future
+cannot be closed**: the port observes the failure of an abandoned future,
+so that it is not an unhandled asynchronous error, and it never installs
+the result such a future brings. That is all it promises: it does **not**
+promise that a Python coroutine is closed, and it does **not** cancel the
+host work the abandoned future was doing. A host that wants the work
+stopped must stop it itself.
+
+The observation covers every future the ask meets: the ones the factories
+of the ask returned, and the one a factory returns while the stubs are
+collected, when the mapping changed under the ask and names a factory
+that is pending again. Such a future is observed the same way, and its
+result is never installed.

@@ -626,9 +626,9 @@ final class HostAnswers {
     final max = systemSleepMax;
     final slept = parentSleeps && max != null ? _systemSleep(call, max) : null;
     if (slept != null) return slept;
-    if (call.whichCall() == pb.OsCall_Call.import) {
-      return _import(this, call);
-    }
+    final kind = call.whichCall();
+    final module = _moduleAnswer(this, call, kind);
+    if (module != null) return module;
     final mounted = _mounts.route?.call(call.writeToBuffer());
     if (mounted != null) {
       return pb.ParentRequest(resumeCall: pb.ResumeCall.fromBuffer(mounted));
@@ -1113,6 +1113,219 @@ Future<pb.ParentRequest> _import(HostAnswers host, pb.OsCall call) async {
     ),
   };
 }
+
+/// Answers the `import_stubs` OS call [call] from the session's host
+/// modules, as upstream's `import_stubs` does (monty-python 1.2.0
+/// `src/external.rs`).
+///
+/// The names the call carries are resolved in the order they were asked
+/// for, and a factory that returns a future is staged: every factory of
+/// the ask runs before any of them is awaited.
+///
+/// A failure ends the ask: the factories after it do not run, and the
+/// results of the futures staged before it are never installed.
+///
+/// No failure escapes the ask as a thrown exception: a failure of the
+/// resolver itself is answered with the structured error of the failure,
+/// under the call's own id.
+///
+/// The answer is the stubs of every asked module the mapping has, its
+/// public submodules included.
+Future<pb.ParentRequest> _importStubs(HostAnswers host, pb.OsCall call) async {
+  final callId = call.callId;
+  final modules = host.modules;
+  final names = call.importStubs.modules;
+  final List<(String, Future<Object?>)> staged;
+  final pb.RaisedException? refusal;
+  try {
+    (staged, refusal) = _stagedFutures(modules, names);
+  } on Object catch (error) {
+    // The resolver failed while it staged the ask: the ask ends with the
+    // structured error of the failure. The futures staged before it are
+    // observed, so their failure is not an unhandled error, and their
+    // results are never installed.
+    return _failed(callId, error);
+  }
+  if (refusal != null) return _raises(callId, refusal);
+  final List<(String, Object?)> results;
+  try {
+    results = await _awaitedBatch(staged);
+  } on Object catch (error) {
+    return _raises(callId, _factoryError(error));
+  }
+  final failure = _installResults(modules, results);
+  if (failure != null) return _raises(callId, failure);
+
+  return _stubsAnswer(host, callId, names);
+}
+
+/// The futures of the factories that returned one, by the name they were
+/// asked for, in the order they were asked for; the error a factory that
+/// fails at once answers with, and null when every factory was staged.
+///
+/// A factory that fails at once ends the ask: the factories after it do
+/// not run, and the futures staged before it are abandoned.
+///
+/// The resolver may itself fail while it refuses an entry: the failure is
+/// thrown, and the caller answers the ask with it.
+(List<(String, Future<Object?>)> staged, pb.RaisedException? refusal)
+_stagedFutures(HostModules modules, List<String> names) {
+  final staged = <(String, Future<Object?>)>[];
+  for (final name in names) {
+    switch (modules.resolve(name)) {
+      case ResolvedModule():
+      case MissingModule():
+        break;
+      case PendingModule(:final future):
+        // The future is observed, so the failure of one that is abandoned
+        // is not an unhandled error; the future itself is kept, for the
+        // batch to await.
+        future.ignore();
+        staged.add((name, future));
+      case RefusedModule(:final error):
+        return (staged, error);
+    }
+  }
+
+  return (staged, null);
+}
+
+/// Installs the results of the staged futures, in the order the names were
+/// asked for; the error the first result that is not a module answers with,
+/// and null when every result was installed.
+///
+/// The results before an invalid one stay installed; the ones after it are
+/// not installed at all.
+pb.RaisedException? _installResults(
+  HostModules modules,
+  List<(String, Object?)> results,
+) {
+  for (final (name, result) in results) {
+    try {
+      modules.install(name, result);
+    } on Object catch (error) {
+      return _factoryError(error);
+    }
+  }
+
+  return null;
+}
+
+/// The results of the staged futures, awaited together: the first failure
+/// ends the wait, without waiting for the futures that are still pending.
+///
+/// Every result is paired with the name it was asked for, so the results
+/// are installed in the order the names were asked for.
+Future<List<(String, Object?)>> _awaitedBatch(
+  List<(String, Future<Object?>)> staged,
+) async {
+  if (staged.isEmpty) return const [];
+  final values = await Future.wait<Object?>(
+    [for (final (_, future) in staged) future],
+    eagerError: true,
+  );
+  final results = values.iterator;
+  final pairs = <(String, Object?)>[];
+  for (final (name, _) in staged) {
+    results.moveNext();
+    pairs.add((name, results.current));
+  }
+
+  return pairs;
+}
+
+/// The answer to a stubs ask: the stubs of the modules the names [names]
+/// resolve to, in the order they were asked for.
+///
+/// The names are resolved through the session's host modules once more, so
+/// a module a factory built for this ask is the one the answer carries.
+///
+/// A failure while the answer is built or encoded — a source the wire
+/// cannot hold, an attribute that cannot be read — answers the call with
+/// the structured error of the failure: no failure escapes the OS call as
+/// a thrown exception.
+pb.ParentRequest _stubsAnswer(
+  HostAnswers host,
+  int callId,
+  List<String> names,
+) {
+  final modules = host.modules;
+  final pairs = <(MontyValue, MontyValue)>[];
+  try {
+    for (final name in names) {
+      switch (modules.resolve(name)) {
+        case ResolvedModule(:final module):
+          _collectModuleStubs(name, module, pairs);
+        case MissingModule():
+          break;
+        case RefusedModule(:final error):
+          return _raises(callId, error);
+        case PendingModule(:final future):
+          // The mapping changed under the ask: the name names a factory
+          // that is pending again, and was never installed. The future is
+          // observed, so the failure of one that is abandoned is not an
+          // unhandled error; its result is never installed.
+          future.ignore();
+
+          return _raises(callId, _pendingFactory(name));
+      }
+    }
+
+    return resumeValue(callId, MontyDict(pairs), objects: host.objects);
+  } on Object catch (error) {
+    return _failed(callId, error);
+  }
+}
+
+/// The error a factory that is pending again answers with.
+pb.RaisedException _pendingFactory(String name) => raisedException(
+  'RuntimeError',
+  'module factory for $name is still pending after the ask that staged it',
+  const {},
+);
+
+/// The stubs of the module [module] and of its public submodules, in the
+/// order they are reached: the module itself, then its public attributes,
+/// in insertion order, each a submodule of its own.
+///
+/// The path of a module is its own path and the name of the attribute it
+/// is held under, joined with a dot, as upstream's `collect_stubs` builds
+/// it.
+///
+/// An ordinary attribute is left alone: it is not converted, and it is not
+/// called. Only a submodule is walked into.
+void _collectModuleStubs(
+  String path,
+  ExternalModule module,
+  List<(MontyValue, MontyValue)> pairs,
+) {
+  final source = module.stubs;
+  pairs.add((
+    MontyString(path),
+    source == null ? const MontyNone() : MontyString(source),
+  ));
+  for (final entry in module.publicAttrs.entries) {
+    final value = entry.value;
+    if (value is ExternalModule) {
+      _collectModuleStubs('$path.${entry.key}', value, pairs);
+    }
+  }
+}
+
+/// The answer to the module OS call [call], when [kind] names one; null
+/// when the call is not a module call.
+///
+/// An `import` and an `import_stubs` are answered from the session's host
+/// modules, before the mounts and the OS handler see them.
+Future<pb.ParentRequest>? _moduleAnswer(
+  HostAnswers host,
+  pb.OsCall call,
+  pb.OsCall_Call kind,
+) => switch (kind) {
+  pb.OsCall_Call.import => _import(host, call),
+  pb.OsCall_Call.importStubs => _importStubs(host, call),
+  _ => null,
+};
 
 /// The module value the import binds: the module [module], imported as
 /// [name], written into an arena of its own.
@@ -1666,6 +1879,10 @@ pb.ParentRequest _notHandled(int callId) =>
 /// `ResumeCall` raising [error] at [callId]'s call.
 pb.ParentRequest _failed(int callId, Object error) =>
     _resume(callId, pb.ExtFunctionResult(error: raisedFrom(error)));
+
+/// `ResumeCall` raising the Python exception [error] at [callId]'s call.
+pb.ParentRequest _raises(int callId, pb.RaisedException error) =>
+    _resume(callId, pb.ExtFunctionResult(error: error));
 
 /// `ResumeCall` answering [callId] with [value], a [MontyValue] or a host
 /// object's wrapper, registered in [objects].
