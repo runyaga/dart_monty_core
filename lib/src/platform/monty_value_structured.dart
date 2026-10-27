@@ -507,9 +507,10 @@ String _pyReprRune(int rune, String quote) {
 /// moment an import would.
 ///
 /// Two are equal, as upstream's `__eq__`, when their ids, stubs and
-/// attributes match: the attribute values are compared with each value's own
-/// Dart `==`, never structurally, so a `List` or `Map` attribute matches
-/// only the very same object.
+/// attributes match: the attribute values are compared structurally, as
+/// Python compares the values of two dicts, so a `List` or a `Map`
+/// attribute matches another one with the same contents, not only the very
+/// same object.
 final class ExternalModule {
   /// Creates a module from a shallow copy of [attrs].
   ///
@@ -570,7 +571,13 @@ final class ExternalModule {
 
   /// Equal to another [ExternalModule] when the ids, the stubs and the
   /// attributes match: the same attribute names, protected ones included,
-  /// and for each of them values that are equal by their own `==`.
+  /// and for each of them values that are equal as Python compares them.
+  ///
+  /// A list is compared element by element, in order, and a map entry by
+  /// entry, with the keys equal and the values equal, whatever order the
+  /// entries come in; any other value is compared with its own `==`, and so
+  /// is a map key. Two containers that are the very same object are equal
+  /// without being walked into.
   ///
   /// A module is equal to itself whatever its attributes hold, as upstream's
   /// is (Python compares one dict with itself).
@@ -582,15 +589,8 @@ final class ExternalModule {
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
     if (other is! ExternalModule) return false;
-    if (id != other.id) return false;
-    if (stubs != other.stubs) return false;
-    if (_attrs.length != other._attrs.length) return false;
-    for (final entry in _attrs.entries) {
-      if (!other._attrs.containsKey(entry.key)) return false;
-      if (entry.value != other._attrs[entry.key]) return false;
-    }
 
-    return true;
+    return _ModuleEquality().equals(this, other);
   }
 
   /// A hash over the id, the stubs and the attribute names, never over the

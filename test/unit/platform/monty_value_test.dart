@@ -1475,7 +1475,7 @@ void _moduleAttributeRules() {
 }
 
 /// Two modules are equal when their ids, stubs and attributes match; every
-/// attribute value is compared with its own `==`.
+/// attribute value is compared as Python compares the values of two dicts.
 void _moduleEqualityRules() {
   const uid = '9e107669-c31b-4d0f-8b76-2f0e2a4b5a03';
 
@@ -1577,8 +1577,8 @@ void _moduleEqualityRules() {
   expect(nulls == nullsSame, isTrue);
   expect(nullsSame == nulls, isTrue);
 
-  // A list or a map attribute matches the very same object, never one with
-  // the same contents.
+  // A list or a map attribute is compared structurally: an attribute with
+  // the same contents matches another one, not only the very same object.
   final list = <Object?>[1, 2];
   final map = <String, Object?>{'a': 1};
   final holdsList = ExternalModule({'x': list}, id: uid);
@@ -1589,8 +1589,8 @@ void _moduleEqualityRules() {
   expect(identical(list, <Object?>[1, 2]), isFalse);
   expect(holdsList == holdsSameList, isTrue);
   expect(holdsSameList == holdsList, isTrue);
-  expect(holdsList == holdsOtherList, isFalse);
-  expect(holdsOtherList == holdsList, isFalse);
+  expect(holdsList == holdsOtherList, isTrue);
+  expect(holdsOtherList == holdsList, isTrue);
 
   final holdsMap = ExternalModule({'x': map}, id: uid);
   final holdsSameMap = ExternalModule({'x': map}, id: uid);
@@ -1600,8 +1600,15 @@ void _moduleEqualityRules() {
   expect(identical(map, <String, Object?>{'a': 1}), isFalse);
   expect(holdsMap == holdsSameMap, isTrue);
   expect(holdsSameMap == holdsMap, isTrue);
-  expect(holdsMap == holdsOtherMap, isFalse);
-  expect(holdsOtherMap == holdsMap, isFalse);
+  expect(holdsMap == holdsOtherMap, isTrue);
+  expect(holdsOtherMap == holdsMap, isTrue);
+
+  // A list attribute with other contents does not match.
+  final holdsChangedList = ExternalModule({
+    'x': <Object?>[2, 1],
+  }, id: uid);
+  expect(holdsList == holdsChangedList, isFalse);
+  expect(holdsChangedList == holdsList, isFalse);
 
   // A value with an equality of its own decides, as that value says. The
   // two instances are distinct, and their own equality says they match.
