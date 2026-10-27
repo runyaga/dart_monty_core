@@ -137,3 +137,38 @@ after a call that names a host object has been dispatched to that object.
 A name without a dot is the lookup's own, as it always was: it is resolved
 through `external_lookup`, which is never consulted for a dotted name. A
 dotted name in the lookup is not a module attribute, and is not called.
+
+## Module imports: the dispatch rules
+
+An `import` of a name the sandbox does not provide itself is an OS call the
+worker sends to the parent (`OsCall.import`, field 31 of the v1.2.0
+`OsCall`). The driver answers it from the session's `external_modules`,
+before the mounts and the OS handler see it, as upstream's binding answers
+it (monty-python 1.2.0 `src/external.rs`, `import_module`). The
+`import_stubs` arm is not answered from the mapping yet: it still reaches
+the OS handler, and the driver still advertises protocol version 5.
+
+- The name the call carries is looked up in the session's mapping, read
+  live: an entry added, replaced or removed after the session opened is
+  seen by the next import, as upstream reads `external_modules`.
+- Only a direct entry is resolved. A nested module is part of the module
+  value the import binds, imported by its dotted path, as upstream's
+  `resolve_module` resolves the top-level name alone.
+- The module crosses as an import: its public attributes, in insertion
+  order, a callable as a host function named by its dotted path, a nested
+  module as a module of its own, and any other value as the value it is.
+- A name the mapping does not hold is not found (`NotFound`), which raises
+  `ModuleNotFoundError` in the sandbox.
+- A name that is not an identifier, or one the sandbox provides itself,
+  raises `ValueError` with upstream's text, as upstream's `check_entry`
+  does. The name is checked when it is looked up, so a name that is never
+  asked for is never checked.
+- An attribute the sandbox cannot hold raises `TypeError`, as upstream's
+  `value_conversion_err` makes it. Its text is the port's own late
+  conversion refusal (E-7), `Cannot convert <Dart type> to MontyValue`,
+  where upstream writes `Cannot convert <type> to Monty value — wrap class
+  instances in pydantic_monty.ClassInstance(...)`.
+- No failure of the mapping escapes the answer: an error the lookup or the
+  encoding raises is answered as an exception, with no message when the
+  error's own text cannot be read, as upstream's `exception_arg` gives none
+  when `str()` fails.
