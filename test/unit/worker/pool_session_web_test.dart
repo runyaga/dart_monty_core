@@ -64,6 +64,12 @@ void _ignore(String stream, String text) => _ignored++;
 /// How many prints [_ignore] dropped; never looked at.
 var _ignored = 0;
 
+/// The host function the suspended dump calls: it answers with zero.
+///
+/// A top-level function, so the binding that carries it is a constant.
+MontyValue _zero(List<MontyValue> args, Map<String, MontyValue> kwargs) =>
+    const MontyInt(0);
+
 @JS('console')
 external JSObject get _console;
 
@@ -97,10 +103,13 @@ Future<Uint8List> _dumpOf(Monty pool, {required bool suspended}) async {
 
       return await session.dump();
     }
+    // `f` is bound as a global before the code runs, so the feed reaches the
+    // call itself: a lookup would suspend on the name first, and the dump
+    // would hold a lookup rather than the call.
     final snapshot = await session.feedStart(
       'x = 42\nf(x)',
-      externalLookup: {
-        'f': MontyHostFunction('f', (args, kwargs) => const MontyInt(0)),
+      inputs: {
+        'f': const MontyHostFunction('f', _zero),
       },
       printCallback: _ignore,
     );
@@ -206,6 +215,10 @@ void main() {
     startMonty,
   );
   restoreClampTests(
+    _backend,
+    startMonty,
+  );
+  restoreLimitSessionTests(
     _backend,
     startMonty,
   );

@@ -1,121 +1,174 @@
+// The browser worker against the shared open() contract: the newline
+// argument's validation and its ordering, the newline read modes, the
+// newline write modes and the file iteration.
+//
+//   bash tool/test_worker_web.sh
 @TestOn('browser')
 @Tags(['worker'])
 library;
 
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:dart_monty_core/dart_monty_core.dart';
-import 'package:monty_conformance/worker_conformance.dart' show WorkerFixtureOs;
 import 'package:test/test.dart';
 
-import '../../corpus/_corpus_common.dart' show upstreamOpenFsV120;
 import '_mount_cwd_cases.dart';
 import '_mount_sleep_cases.dart';
+import '_open_cases.dart';
 
 /// The backend this file runs on: `dart2js` or `dart2wasm`.
 const _backend = identical(1, 1.0) ? 'dart2js' : 'dart2wasm';
 
-/// The regression groups the shared open source ends with, named at
+/// One shared open() group: the name upstream gives it and the case that
+/// runs it.
+typedef _OpenGroup = ({
+  String name,
+  Future<void> Function(OpenCaseRunner) body,
+});
+
+/// The regression groups the shared open contract ends with, named at
 /// upstream's own markers (monty v1.2.0,
 /// `up/crates/monty/test_cases/open__fs.py:656-820`): the newline
 /// argument's validation and its ordering, the newline read modes, the
 /// newline write modes and the file iteration.
-const Map<String, String> _openGroups = {
-  'the newline argument': '# === newline argument ===',
-  'the newline read modes': '# Reading: None translates',
-  'the newline write modes': r"# Writing: only '\r' and '\r\n' translate",
-  'the file iteration': '# === Iteration ===',
-};
+///
+/// The cases themselves are the shared ones, unchanged: the browser runs
+/// the same contract the VM runner runs.
+const List<_OpenGroup> _openGroups = [
+  (name: 'the newline argument', body: expectOpenNewline),
+  (name: 'the newline read modes', body: expectOpenReadMatrix),
+  (name: 'the newline write modes', body: expectOpenWriteMatrix),
+  (name: 'the file iteration', body: expectOpenIteration),
+];
 
-/// The prints a fixture makes are not part of its outcome.
-void _discardPrint(String stream, String text) {
-  return;
-}
+/// The browser's in-memory host: the session that runs the Python, and the
+/// filesystem the Python sees.
+///
+/// The filesystem is [OSAccess], the handler the package already ships for
+/// an in-memory namespace: the browser has no host directory to mount, and
+/// the cases only need a tree to read and write. The seed file establishes
+/// `/d` as a directory the cases can write into.
+final class _BrowserRunner implements OpenCaseRunner {
+  const _BrowserRunner(this._session, this._files);
 
-/// The shared open source, split at upstream's markers: the text before the
-/// first group (which writes the files the groups read) and the four groups,
-/// each the upstream text, unchanged.
-({String preamble, List<({String name, String source})> groups})
-_splitOpenSource() {
-  final groups = <({String name, String source})>[];
-  var preambleAt = -1;
-  var previousAt = -1;
-  var previousName = '';
-  for (final MapEntry(:key, :value) in _openGroups.entries) {
-    final at = upstreamOpenFsV120.indexOf(value);
-    if (at < 0) {
-      throw StateError('the shared open source has no $value');
-    }
-    if (preambleAt < 0) {
-      preambleAt = at;
-    } else {
-      groups.add((
-        name: previousName,
-        source: upstreamOpenFsV120.substring(previousAt, at),
-      ));
-    }
-    previousAt = at;
-    previousName = key;
-  }
-  groups.add((
-    name: previousName,
-    source: upstreamOpenFsV120.substring(previousAt),
-  ));
+  final MontySession _session;
+  final OSAccess _files;
 
-  return (
-    preamble: upstreamOpenFsV120.substring(0, preambleAt),
-    groups: groups,
+  /// Runs [code] against the filesystem: the cases need `pathlib`, and the
+  /// filesystem answers the OS calls.
+  @override
+  Future<MontyValue> run(String code) => _session.feedRun(
+    'from pathlib import Path\n$code',
+    os: _files.call,
   );
-}
 
-/// The failure [body] raised, or null: the groups are upstream's Python, so
-/// a failure is the group's own error, named in the message.
-Future<Object?> _failureOf(Future<void> Function() body) async {
-  try {
-    await body();
+  /// The bytes the host holds at [path]: the live file's own content, as
+  /// bytes or as the UTF-8 encoding of its text.
+  ///
+  /// A file the host does not hold, or one whose content is neither text
+  /// nor bytes, fails the case: the host must hold what the case wrote.
+  @override
+  List<int> hostBytes(String path) {
+    for (final file in _files.files) {
+      if (file.path != path) continue;
+      final content = file.readContent();
 
-    return null;
-  } on Object catch (error) {
-    return error;
+      return switch (content) {
+        final Uint8List bytes => bytes,
+        final String text => utf8.encode(text),
+        _ => throw StateError('unexpected content at $path'),
+      };
+    }
+
+    throw StateError('the host does not hold $path');
   }
 }
 
-/// The shared open source on the browser worker: the preamble, then each of
-/// the four regression groups in its own feed, so a failure names the group
-/// it came from.
-Future<void> _runTheOpenGroups() async {
-  final source = _splitOpenSource();
-  await Monty.withPool((pool) async {
-    final session = await pool.checkout(
-      scriptName: 'open__fs.py',
-      limits: const ResourceLimits(
-        maxMemory: 256 * 1024 * 1024,
-        maxRecursionDepth: 50,
+/// The failures of the four groups, each labelled with the group and the
+/// phase it came from.
+///
+/// Every group is attempted, so one failure cannot hide another.
+Future<List<String>> _runTheOpenGroups() async {
+  final failures = <String>[];
+  for (final group in _openGroups) {
+    await _runOpenGroup(group, failures);
+  }
+
+  return failures;
+}
+
+/// Runs one group with its own pool, its own session and its own
+/// filesystem, and records what failed.
+Future<void> _runOpenGroup(_OpenGroup group, List<String> failures) async {
+  final name = group.name;
+  final files = OSAccess(files: [MemoryFile('/d/.seed', '')]);
+  final pool = await _collecting(
+    failures,
+    name,
+    'setup',
+    () => Monty.start(maxProcesses: 1),
+  );
+  if (pool == null) return;
+  try {
+    final session = await _collecting(
+      failures,
+      name,
+      'setup',
+      () => pool.checkout(
+        scriptName: 'open__fs.py',
+        limits: const ResourceLimits(
+          maxMemory: 256 * 1024 * 1024,
+          maxRecursionDepth: 50,
+        ),
       ),
     );
+    if (session == null) return;
     try {
-      final os = WorkerFixtureOs.mounted();
-      Future<MontyValue> feed(String code) => session.feedRun(
-        code,
-        cwd: '/mnt',
-        os: os.call,
-        externalLookup: {'root': MontyPath('/mnt')},
-        printCallback: _discardPrint,
+      await _collect(
+        failures,
+        name,
+        'body',
+        () => group.body(_BrowserRunner(session, files)),
       );
-      Future<void> group(String name, Future<MontyValue> Function() run) async {
-        try {
-          await run();
-        } on Object catch (error) {
-          throw StateError('the group "$name" failed: $error');
-        }
-      }
-
-      await group('the shared open source', () => feed(source.preamble));
-      for (final openGroup in source.groups) {
-        await group(openGroup.name, () => feed(openGroup.source));
-      }
     } finally {
-      await session.close();
+      await _collect(failures, name, 'cleanup', session.close);
     }
-  }, maxProcesses: 1);
+  } finally {
+    await _collect(failures, name, 'cleanup', pool.close);
+  }
+}
+
+/// Runs [body] and records what it raised under [name] and [phase]; the
+/// failures already collected stay.
+Future<void> _collect(
+  List<String> failures,
+  String name,
+  String phase,
+  Future<void> Function() body,
+) async {
+  try {
+    await body();
+  } on Object catch (error) {
+    failures.add('$name ($phase): $error');
+  }
+}
+
+/// Runs [body] and records what it raised under [name] and [phase], which
+/// then yields null.
+Future<T?> _collecting<T>(
+  List<String> failures,
+  String name,
+  String phase,
+  Future<T> Function() body,
+) async {
+  try {
+    return await body();
+  } on Object catch (error) {
+    failures.add('$name ($phase): $error');
+
+    return null;
+  }
 }
 
 void main() {
@@ -142,19 +195,23 @@ void main() {
     }, maxProcesses: 1);
   });
 
-  test('browser worker supports newline modes and file iteration', () async {
-    // The shared open source, its four regression groups included: the
-    // newline argument's validation and its ordering, the newline read
-    // modes, the newline write modes and the file iteration.
-    final failure = await _failureOf(_runTheOpenGroups);
-    expect(
-      failure,
-      isNull,
-      reason:
-          'the browser worker must run the shared open source, all four of '
-          'its groups included ($_backend): $failure',
-    );
-  });
+  test(
+    'browser worker supports newline modes and file iteration',
+    () async {
+      // The shared open contract, its four regression groups included: the
+      // newline argument's validation and its ordering, the newline read
+      // modes, the newline write modes and the file iteration.
+      final failures = await _runTheOpenGroups();
+      expect(
+        failures,
+        isEmpty,
+        reason:
+            'the browser worker must run the shared open() contract, all '
+            'four of its groups included ($_backend): ${failures.join('; ')}',
+      );
+    },
+    timeout: const Timeout(Duration(seconds: 120)),
+  );
 
   mountSleepTests();
   mountCwdTests();
