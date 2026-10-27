@@ -14,6 +14,7 @@ import 'package:dart_monty_core/src/worker/host_answers.dart';
 import 'package:dart_monty_core/src/worker/monty_snapshot.dart'
     show ExternalException, unknownExcType;
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
+import 'package:dart_monty_core/src/worker/wire_scalars.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:test/test.dart';
 
@@ -504,6 +505,218 @@ void main() {
     expect(bareFunction.name, 'bare');
     expect(bareFunction.hasDocstring(), isFalse);
   });
+
+  test(
+    'dotted calls resolve only public module functions and preserve async '
+    'dispatch',
+    () async {
+      // Upstream (monty-python 1.2.0): a call whose name carries a dot
+      // names an attribute of a host module (`src/external.rs`,
+      // `callable`): the name is split at its last dot, the path before it
+      // is walked through the host's modules, one public component at a
+      // time, and the leaf is the attribute the module that path names
+      // holds. A name without a dot is the lookup's own, and the lookup is
+      // never consulted for a dotted name. The cases below follow
+      // `crates/monty-python/tests/test_external_modules.py` (the module's
+      // exposure, `test_name_based_calls_respect_module_exposure`) and
+      // `crates/monty/test_cases/import__host_async.py` (the async tools,
+      // `test_async_tools_run_concurrently`).
+      final ran = <String>[];
+      final add = MontyHostFunction('add', (args, kwargs) {
+        ran.add('module.add');
+
+        return MontyInt(montyArg<int>(args, 0) + montyArg<int>(args, 1));
+      });
+      final stubs = MontyHostFunction('import_stubs', (args, kwargs) {
+        ran.add('module.import_stubs');
+
+        return const MontyInt(11);
+      });
+      final host = HostAnswers(
+        externalModules: {
+          'pkg': ExternalModule({
+            'sub': ExternalModule({'add': add}),
+            '_secret': ExternalModule({'add': add}),
+            'VERSION': 3,
+          }),
+          'tools': ExternalModule({
+            'add': add,
+            'VERSION': 3,
+            'import_stubs': stubs,
+          }),
+        },
+        externalLookup: {
+          // A dotted name belongs to the modules: this entry must not run.
+          'pkg.sub.add': MontyHostFunction('pkg.sub.add', (args, kwargs) {
+            ran.add('lookup.dotted');
+
+            return const MontyInt(-1);
+          }),
+          // A bare name is the lookup's own, as it always was.
+          'add': MontyHostFunction('add', (args, kwargs) {
+            ran.add('lookup.bare');
+
+            return const MontyInt(-2);
+          }),
+          // A function named like an OS call is an ordinary function.
+          'import_stubs': MontyHostFunction('import_stubs', (args, kwargs) {
+            ran.add('lookup.import_stubs');
+
+            return const MontyInt(-3);
+          }),
+        },
+      );
+
+      // A public nested module's function runs, as the module's own: the
+      // dotted entry in the lookup is not consulted.
+      final nested = await host.call(_callTo('pkg.sub.add', args: [1, 2]));
+      expect(_value(nested.resumeCall), const MontyInt(3));
+      expect(ran, contains('module.add'));
+      expect(ran, isNot(contains('lookup.dotted')));
+
+      // A bare name is the lookup's own, as it always was.
+      final bare = await host.call(_callTo('add', args: [4, 5]));
+      expect(_value(bare.resumeCall), const MontyInt(-2));
+      expect(ran, contains('lookup.bare'));
+
+      // An object id still routes the call to the host object, whatever
+      // the name says: the modules are not consulted.
+      host.objects.register(
+        ClassInstance(
+          _Counter(ran, 42),
+          classType: ClassType(_counterClass, id: _counterClassId),
+          id: _counterId,
+          policies: (
+            eagerAttrs: 'all',
+            lazyAttrs: 'all',
+            allowedMethods: 'all',
+          ),
+        ),
+      );
+      final onObject = await host.call(
+        _callTo('pkg.sub.add', objectId: _counterId),
+      );
+      expect(_value(onObject.resumeCall), const MontyInt(42));
+      expect(ran, contains('object.add'));
+      expect(ran.where((name) => name == 'module.add'), hasLength(1));
+
+      // A root the host does not offer is not found.
+      final noRoot = await host.call(_callTo('nope.add'));
+      expect(_notFound(noRoot.resumeCall), isTrue);
+      expect(noRoot.resumeCall.result.hasError(), isFalse);
+
+      // A missing component below a registered module is not found: the
+      // walk stops at it.
+      final noIntermediate = await host.call(_callTo('pkg.missing.add'));
+      expect(_notFound(noIntermediate.resumeCall), isTrue);
+      expect(noIntermediate.resumeCall.result.hasError(), isFalse);
+
+      // A protected component is not found either: the sandbox never sees
+      // a name starting with an underscore, as upstream's
+      // `test_name_based_calls_respect_module_exposure` has it.
+      final private = await host.call(_callTo('pkg._secret.add'));
+      expect(_notFound(private.resumeCall), isTrue);
+      expect(private.resumeCall.result.hasError(), isFalse);
+
+      // A component that is not a module is not found: only a module may
+      // carry the next component.
+      final notAModule = await host.call(_callTo('pkg.VERSION.add'));
+      expect(_notFound(notAModule.resumeCall), isTrue);
+      expect(notAModule.resumeCall.result.hasError(), isFalse);
+
+      // A leaf the module does not hold is not found.
+      final noLeaf = await host.call(_callTo('tools.nope'));
+      expect(_notFound(noLeaf.resumeCall), isTrue);
+      expect(noLeaf.resumeCall.result.hasError(), isFalse);
+
+      // A leaf that is not callable is an error, not a missing name: the
+      // module holds it, and calling it is what fails.
+      final notCallable = await host.call(_callTo('tools.VERSION'));
+      final notCallableResult = notCallable.resumeCall.result;
+      expect(notCallableResult.hasNotFound(), isFalse);
+      expect(notCallableResult.hasError(), isTrue);
+      expect(notCallableResult.error.excType, 'TypeError');
+
+      // A function named like an OS call is an ordinary function, in the
+      // lookup and in a module alike.
+      final bareStubs = await host.call(_callTo('import_stubs'));
+      expect(_value(bareStubs.resumeCall), const MontyInt(-3));
+      expect(ran, contains('lookup.import_stubs'));
+      final moduleStubs = await host.call(_callTo('tools.import_stubs'));
+      expect(_value(moduleStubs.resumeCall), const MontyInt(11));
+      expect(ran, contains('module.import_stubs'));
+
+      // A coroutine-marked module function is started, not awaited in
+      // place: two of them run at once, as upstream's gather does. The
+      // first waits for the second, so it can only finish once the second
+      // has started.
+      final gate = _Gate();
+      final asyncHost = HostAnswers(
+        externalModules: {
+          'async': ExternalModule({
+            'first': MontyHostFunction(
+              'first',
+              coroutine((args, kwargs) async {
+                await gate.wait();
+
+                return const MontyInt(1);
+              }),
+            ),
+            'second': MontyHostFunction(
+              'second',
+              coroutine((args, kwargs) async {
+                gate.open();
+
+                return const MontyInt(2);
+              }),
+            ),
+            'boom': MontyHostFunction(
+              'boom',
+              coroutine((args, kwargs) async {
+                throw const ExternalException('ValueError', 'boom');
+              }),
+            ),
+          }),
+        },
+      );
+      final first = await asyncHost
+          .call(_callTo('async.first'))
+          .timeout(const Duration(seconds: 5));
+      expect(first.resumeCall.result.hasFuture(), isTrue);
+      final second = await asyncHost
+          .call(_callTo('async.second', id: 2))
+          .timeout(const Duration(seconds: 5));
+      expect(second.resumeCall.result.hasFuture(), isTrue);
+      final boom = await asyncHost
+          .call(_callTo('async.boom', id: 3))
+          .timeout(const Duration(seconds: 5));
+      expect(boom.resumeCall.result.hasFuture(), isTrue);
+
+      // They settle at once: the first could only finish because the
+      // second started, and the third raises what it was told to.
+      final settled = <int, pb.ExtFunctionResult>{};
+      final values = <int, MontyValue>{};
+      while (settled.length < 3) {
+        final answer = await asyncHost.settle().timeout(
+          const Duration(seconds: 5),
+        );
+        final futures = answer.resumeFutures;
+        final reader = ArenaReader(futures.values);
+        for (final result in futures.results) {
+          settled[result.callId] = result.result;
+          if (result.result.hasReturnValue()) {
+            values[result.callId] = reader[result.result.returnValue];
+          }
+        }
+      }
+      expect(values[1], const MontyInt(1));
+      expect(values[2], const MontyInt(2));
+      final raised = _settledResult(settled, 3);
+      expect(raised.hasError(), isTrue);
+      expect(raised.error.excType, 'ValueError');
+      expect(raised.error.message, 'boom');
+    },
+  );
 
   test('normalizeVirtualPath follows normalize_virtual_path', () {
     const cases = {
@@ -1023,3 +1236,102 @@ final class _BadText implements Exception {
 final class _Opaque {
   const _Opaque();
 }
+
+/// A call of [name]: [args] are its positional arguments, and [objectId]
+/// names the host object the call is a method call on.
+pb.FunctionCall _callTo(
+  String name, {
+  int id = 1,
+  List<int> args = const [],
+  String? objectId,
+}) => pb.FunctionCall(
+  callId: id,
+  functionName: name,
+  objectId: objectId == null ? null : pb.Uuid(data: _uuidBytes(objectId)),
+  values: pb.Arena(
+    nodeCount: args.length,
+    nodes: [for (final arg in args) intNode(arg)],
+  ),
+  args: [for (var i = 0; i < args.length; i++) i],
+);
+
+/// The bytes of the uuid [id], as the wire carries it.
+List<int> _uuidBytes(String id) => [
+  for (var i = 0; i < 32; i += 2)
+    int.parse(id.replaceAll('-', '').substring(i, i + 2), radix: 16),
+];
+
+/// The value [call] returned, or null when it returned none.
+MontyValue? _value(pb.ResumeCall call) {
+  final result = call.result;
+  if (!result.hasReturnValue()) return null;
+
+  return ArenaReader(call.values)[result.returnValue];
+}
+
+/// Whether [call] answered that the name was not found.
+bool _notFound(pb.ResumeCall call) => call.result.hasNotFound();
+
+/// The result the settled future of the call [callId] carries, or a
+/// failure naming what settled instead.
+pb.ExtFunctionResult _settledResult(
+  Map<int, pb.ExtFunctionResult> settled,
+  int callId,
+) {
+  final result = settled[callId];
+  if (result == null) {
+    fail('no settled future for the call $callId, got ${settled.keys}');
+  }
+
+  return result;
+}
+
+/// A gate the test opens: the coroutine that waits for it can only finish
+/// once the other one has started.
+final class _Gate {
+  final Completer<void> _opened = Completer<void>();
+  bool _isOpen = false;
+
+  /// Opens the gate.
+  void open() {
+    if (_isOpen) return;
+    _isOpen = true;
+    _opened.complete();
+  }
+
+  /// Waits for the gate to open.
+  Future<void> wait() => _opened.future;
+}
+
+/// The receiver the object-id path calls: its method answers [answer].
+final class _Counter {
+  const _Counter(this.ran, this.answer);
+
+  /// The names of the callbacks that ran.
+  final List<String> ran;
+
+  /// What the method answers.
+  final int answer;
+}
+
+/// The class of the receiver the object-id path calls.
+final HostClass<_Counter> _counterClass = HostClass(
+  'Counter',
+  instance: (
+    fields: <String, Never>{},
+    properties: <String, Never>{},
+    methods: {
+      'pkg.sub.add': (c, args, kwargs) {
+        c.ran.add('object.add');
+
+        return MontyInt(c.answer);
+      },
+    },
+  ),
+);
+
+/// The identity of the receiver the object-id path calls.
+const String _counterId = '00000000-0000-4000-8000-000000000001';
+
+/// The identity of the class of that receiver.
+const String _counterClassId = '00000000-0000-4000-8000-000000000002';
