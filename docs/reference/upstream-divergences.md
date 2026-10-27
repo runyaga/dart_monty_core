@@ -71,7 +71,7 @@ declaration at the top of this page still names 1.1.0 for everything else.
 
 | Id | Case | Upstream 1.2.0 | dart_monty_core | Class | Pinned by |
 |---|---|---|---|---|---|
-| E-1 | Attribute values compared | The two `attrs` dicts are compared with Python's `==`, so two lists with the same contents match | Each value is compared with its own Dart `==`. Two Dart lists or two Dart maps therefore match only when they are the very same object, and a value that brings an equality of its own is decided by that equality, whatever it does | TEXT | `test/unit/platform/monty_value_test.dart` "ExternalModule copies attributes and validates names identity and stubs" |
+| E-1 | Attribute values compared | The two `attrs` dicts are compared with Python's `==`, so two lists with the same contents match | The id, the stubs and the attribute names are compared first, and then the values, structurally: a list element by element in order, a map entry by entry with the keys equal and the values equal, whatever order the entries come in, and any other value with its own Dart `==`, as is a map key. Two containers that are the very same object are equal without being walked into. A value that holds itself ends the comparison with a StateError whose message is `recursive ExternalModule equality`, as Python's RecursionError does. Not covered: an identity map holding several Python-equal keys, a list or a map used as a key, an arbitrary iterable, and Python's own scalar equality, so a Dart `1` and a Dart `true` are not equal | PLATFORM | `test/unit/platform/monty_value_test.dart` "ExternalModule copies attributes and validates names identity and stubs", `test/unit/platform/external_module_equality_test.dart` "ExternalModule structurally compares Python-shaped attribute values" |
 | E-2 | Hashing | Python's `ExternalModule` is unhashable: `TypeError: unhashable type: 'ExternalModule'` | The hash is Object.hash(id, stubs, Object.hashAllUnordered(keys)): the id, the stubs and the attribute names, never the values. Two modules that differ only in a value share a hash | PLATFORM | `test/unit/platform/monty_value_test.dart` "ExternalModule copies attributes and validates names identity and stubs" |
 | E-3 | Identity | The id is a `uuid.UUID` | The id is the canonical lowercase uuid string, made when it is absent | API-TYPING | `test/unit/platform/monty_value_test.dart` "ExternalModule copies attributes and validates names identity and stubs" |
 | E-4 | Parameters | `stubs` is an optional `str` and `id` an optional `uuid.UUID`, both checked by their types | Both are typed by Dart: `stubs` is a `String?` and `id` a `String?` | API-TYPING | `test/unit/platform/monty_value_test.dart` "ExternalModule copies attributes and validates names identity and stubs" |
@@ -84,3 +84,13 @@ Both refuse a hard Python keyword as an attribute name, and both refuse a
 nested module under a name the sandbox provides itself (upstream's
 SANDBOX_MODULE_NAMES); the names only the type checker uses may still
 name a host module.
+
+The attribute values are compared structurally, as Python compares the
+values of two dicts. The comparison follows the values, so it walks into
+the containers a value holds; a pair of containers met again on the way is
+a cycle, and the comparison ends with a StateError whose message is
+`recursive ExternalModule equality`, as Python's RecursionError does. A
+difference found before the cycle is answered first: the comparison stops at
+the first difference and never walks into the cycle. A value that is
+neither a list, a map nor a module is compared with its own Dart `==`, as
+is a map key: Python's own scalar equality is not emulated.
