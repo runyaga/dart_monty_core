@@ -437,3 +437,418 @@ void _crossBinding(String label, _Start start) {
     expect(await continued(pool, made), expected);
   });
 }
+
+// ===========================================================================
+// A restored session runs under the tighter of the dump's limits and the
+// destination's (upstream's `ResourceTracker::tighten_limits`): a dump may
+// keep a stricter limit of its own, never a looser one.
+// ===========================================================================
+
+/// The code that spends 12 MiB, past a 10 MiB ceiling.
+const _memoryProbe = "large = b'a' * (12 * 1024 * 1024)\nlen(large)";
+
+/// The host call a suspended case stops at.
+const _pauseName = 'migration_pause';
+
+/// The host function the suspended cases bind. It never runs: the call is
+/// answered by hand, with [ExternalReturnValue].
+MontyValue _pauseCall(
+  List<MontyValue> args,
+  Map<String, MontyValue> kwargs,
+) => const MontyInt(1);
+
+/// What a restore case checks.
+enum _RestoreLimitKind { recursion, memory }
+
+/// One restore case: the limits the source session runs under, the limits
+/// the destination session asks for, the code that must fail in the
+/// restored session, and whether the dump is taken while the source is
+/// suspended.
+final class _RestoreLimitCase {
+  const _RestoreLimitCase({
+    required this.name,
+    required this.kind,
+    required this.source,
+    required this.destination,
+    required this.setup,
+    required this.control,
+    required this.controlValue,
+    required this.probe,
+    required this.expected,
+    required this.suspended,
+    this.fresh = false,
+  });
+
+  /// The case's name, in the failure messages.
+  final String name;
+
+  /// What the case checks.
+  final _RestoreLimitKind kind;
+
+  /// The source session's configuration.
+  final SessionConfig source;
+
+  /// The destination session's configuration.
+  final SessionConfig destination;
+
+  /// The code the source session runs before it dumps; empty runs none.
+  final String setup;
+
+  /// The small positive control, and the value it must return.
+  final String control;
+  final MontyValue controlValue;
+
+  /// The code that must fail in the restored session.
+  final String probe;
+
+  /// The exception type the probe must raise.
+  final String expected;
+
+  /// Whether the dump is taken while the source is suspended.
+  final bool suspended;
+
+  /// Whether the case is a fresh session, with no dump at all.
+  final bool fresh;
+}
+
+/// A session's memory ceiling, in MiB; null leaves it unlimited.
+SessionConfig _memory(int? mebibytes) => SessionConfig(
+  limits: ResourceLimits(
+    maxMemory: mebibytes == null ? null : mebibytes * 1024 * 1024,
+  ),
+);
+
+/// A recursion case: a dump taken under one depth, restored under the
+/// other.
+_RestoreLimitCase _recursionCase(
+  int source,
+  int destination,
+  bool suspended,
+) => _RestoreLimitCase(
+  name:
+      'recursion $source->$destination '
+      '${suspended ? 'suspended' : 'idle'}',
+  kind: _RestoreLimitKind.recursion,
+  source: _depth(source),
+  destination: _depth(destination),
+  setup: _rec,
+  control: 'rec(10)',
+  controlValue: const MontyInt(0),
+  probe: 'rec(100)',
+  expected: 'RecursionError',
+  suspended: suspended,
+);
+
+/// A memory case: a dump taken under one ceiling, restored under the other.
+_RestoreLimitCase _memoryCase(
+  int? source,
+  int destination,
+  bool suspended,
+) => _RestoreLimitCase(
+  name:
+      'memory ${source ?? 'unlimited'}->$destination '
+      '${suspended ? 'suspended' : 'idle'}',
+  kind: _RestoreLimitKind.memory,
+  source: _memory(source),
+  destination: _memory(destination),
+  setup: 'x = 42',
+  control: '6 * 7',
+  controlValue: const MontyInt(42),
+  probe: _memoryProbe,
+  expected: 'MemoryError',
+  suspended: suspended,
+);
+
+/// The fresh control: a session under the 10 MiB ceiling that never saw a
+/// dump.
+_RestoreLimitCase _freshMemoryCase() => _RestoreLimitCase(
+  name: 'fresh 10 MiB control',
+  kind: _RestoreLimitKind.memory,
+  source: _memory(10),
+  destination: _memory(10),
+  setup: '',
+  control: '6 * 7',
+  controlValue: const MontyInt(42),
+  probe: _memoryProbe,
+  expected: 'MemoryError',
+  suspended: false,
+  fresh: true,
+);
+
+/// The eleven cases: four recursion, six memory and the fresh control.
+List<_RestoreLimitCase> _restoreLimitCases() => [
+  for (final (source, destination) in <(int, int)>[(1000, 30), (30, 1000)])
+    for (final suspended in [false, true])
+      _recursionCase(source, destination, suspended),
+  for (final (source, destination) in <(int?, int)>[
+    (64, 10),
+    (null, 10),
+    (8, 64),
+  ])
+    for (final suspended in [false, true])
+      _memoryCase(source, destination, suspended),
+  _freshMemoryCase(),
+];
+
+/// Records [error] under [name] and [phase], keeping the earlier ones.
+void _record(List<String> failures, String name, String phase, Object error) {
+  failures.add('$name ($phase): $error');
+}
+
+/// Runs [body] and records any error under [name] and [phase]. The errors
+/// already collected stay.
+Future<void> _collect(
+  List<String> failures,
+  String name,
+  String phase,
+  Future<void> Function() body,
+) async {
+  try {
+    await body();
+  } on Object catch (error) {
+    _record(failures, name, phase, error);
+  }
+}
+
+/// Runs [body] and records any error under [name] and [phase], which then
+/// yields null. The errors already collected stay.
+Future<T?> _collecting<T>(
+  List<String> failures,
+  String name,
+  String phase,
+  Future<T> Function() body,
+) async {
+  try {
+    return await body();
+  } on Object catch (error) {
+    _record(failures, name, phase, error);
+
+    return null;
+  }
+}
+
+/// The outcome of the probe: the error it raised, or the value it returned.
+Future<String> _probeOutcome(Future<Object?> Function() probe) async {
+  try {
+    final value = await probe();
+
+    return 'the probe completed with $value';
+  } on MontyRuntimeError catch (error) {
+    return 'the probe raised ${error.exception.excType}';
+  }
+}
+
+/// The suspension on the host call: the migration pause, with no arguments.
+FunctionSnapshot _requireFunctionSnapshot(MontySnapshot snapshot) {
+  expect(snapshot, isA<FunctionSnapshot>());
+  final call = snapshot as FunctionSnapshot;
+  expect(call.functionName, _pauseName);
+  expect(call.args, isEmpty);
+  expect(call.kwargs, isEmpty);
+
+  return call;
+}
+
+/// The dump the destination restores: the source's own bytes, taken while
+/// it is idle or while it is suspended on the host call.
+///
+/// The source runs its setup and its small positive control to completion
+/// first, so a dump is only taken from a session that works.
+Future<Uint8List?> _dumpSource(
+  _RestoreLimitCase descriptor,
+  Monty pool,
+  List<String> failures,
+) async {
+  final name = descriptor.name;
+  final source = await _collecting(
+    failures,
+    name,
+    'setup',
+    () => pool.checkoutWith(descriptor.source),
+  );
+  if (source == null) return null;
+  try {
+    return await _collecting(failures, name, 'setup', () async {
+      if (descriptor.setup.isNotEmpty) {
+        await source.feedRun(descriptor.setup);
+      }
+      expect(await source.feedRun(descriptor.control), descriptor.controlValue);
+      if (descriptor.suspended) {
+        final snapshot = await source.feedStart(
+          '$_pauseName()\n${descriptor.probe}',
+          inputs: {_pauseName: const MontyHostFunction(_pauseName, _pauseCall)},
+        );
+        _requireFunctionSnapshot(snapshot);
+      }
+
+      return source.dump();
+    });
+  } finally {
+    await _collect(failures, name, 'cleanup', source.close);
+  }
+}
+
+/// Restores [dump] in [destination] and runs the probe there: a suspended
+/// dump answers the host call first, an idle one feeds the probe.
+Future<void> _loadAndProbe(
+  _RestoreLimitCase descriptor,
+  MontySession destination,
+  Uint8List dump,
+) async {
+  if (descriptor.suspended) {
+    final restored = _requireFunctionSnapshot(
+      await destination.loadSnapshot(dump),
+    );
+    expect(
+      await _probeOutcome(
+        () => restored.resume(const ExternalReturnValue(MontyInt(1))),
+      ),
+      'the probe raised ${descriptor.expected}',
+    );
+
+    return;
+  }
+  await destination.loadSession(dump);
+  expect(
+    await _probeOutcome(() => destination.feedRun(descriptor.probe)),
+    'the probe raised ${descriptor.expected}',
+  );
+}
+
+/// The fresh control: a session under the 10 MiB ceiling that never saw a
+/// dump computes, refuses the allocation, and computes again.
+Future<void> _expectFreshMemoryControl(
+  _RestoreLimitCase descriptor,
+  MontySession session,
+) async {
+  final feed = session.feedRun;
+  final control = descriptor.control;
+  final value = descriptor.controlValue;
+  expect(await feed(control), value);
+  expect(
+    await _probeOutcome(() => session.feedRun(descriptor.probe)),
+    'the probe raised ${descriptor.expected}',
+  );
+  expect(await feed(control), value);
+}
+
+/// The case's body: the fresh control, or the source's dump and the
+/// restored session that must refuse the probe.
+Future<void> _runCase(
+  _RestoreLimitCase descriptor,
+  Monty pool,
+  List<String> failures,
+) async {
+  final name = descriptor.name;
+  if (descriptor.fresh) {
+    final session = await pool.checkoutWith(descriptor.destination);
+    try {
+      await _expectFreshMemoryControl(descriptor, session);
+    } finally {
+      await _collect(failures, name, 'cleanup', session.close);
+    }
+
+    return;
+  }
+  final dump = await _dumpSource(descriptor, pool, failures);
+  if (dump == null) return;
+  final destination = await pool.checkoutWith(descriptor.destination);
+  try {
+    await _loadAndProbe(descriptor, destination, dump);
+    expect(
+      await destination.feedRun(descriptor.control),
+      descriptor.controlValue,
+    );
+  } finally {
+    await _collect(failures, name, 'cleanup', destination.close);
+  }
+}
+
+/// Runs one case: its own pool, its own sessions, and the probe that must
+/// fail in the restored session. Every error is collected under the case's
+/// name, so one case cannot hide the others.
+Future<void> _withRestoredCase(
+  _RestoreLimitCase descriptor,
+  _Start start,
+  List<String> failures,
+) async {
+  final name = descriptor.name;
+  final pool = await _collecting(
+    failures,
+    name,
+    'setup',
+    () => start(const PoolOptions(maxProcesses: 2)),
+  );
+  if (pool == null) return;
+  try {
+    await _collect(
+      failures,
+      name,
+      'body',
+      () => _runCase(descriptor, pool, failures),
+    );
+  } finally {
+    await _collect(failures, name, 'cleanup', pool.close);
+  }
+}
+
+/// The failures of the recursion cases: a restored session runs under the
+/// tighter of the dump's depth and the destination's.
+Future<List<String>> _expectRestoredRecursion(_Start start) async {
+  final failures = <String>[];
+  for (final descriptor in _restoreLimitCases()) {
+    if (descriptor.kind != _RestoreLimitKind.recursion) continue;
+    await _withRestoredCase(descriptor, start, failures);
+  }
+
+  return failures;
+}
+
+/// The failures of the memory cases, with the fresh control: a restored
+/// session runs under the tighter of the dump's ceiling and the
+/// destination's.
+Future<List<String>> _expectRestoredMemory(_Start start) async {
+  final failures = <String>[];
+  for (final descriptor in _restoreLimitCases()) {
+    if (descriptor.kind != _RestoreLimitKind.memory) continue;
+    await _withRestoredCase(descriptor, start, failures);
+  }
+
+  return failures;
+}
+
+/// Registers the restore-limit cases: a restored session runs under the
+/// tighter of the dump's limits and the destination's.
+void restoreLimitSessionTests(
+  String label,
+  Future<Monty> Function(PoolOptions) start,
+) {
+  test(
+    'a restored session runs under the tighter recursion depth ($label)',
+    () async {
+      final failures = await _expectRestoredRecursion(start);
+      expect(failures, isEmpty, reason: 'the restored recursion depths');
+    },
+  );
+
+  test(
+    'a restored session runs under the tighter memory limit ($label)',
+    () async {
+      final failures = await _expectRestoredMemory(start);
+      expect(failures, isEmpty, reason: 'the restored memory ceilings');
+    },
+  );
+}
+
+/// Runs every restore-limit case and returns the failures, after the
+/// cleanup of each.
+Future<List<String>> expectRestoredSessionLimits(
+  Future<Monty> Function(PoolOptions) start,
+) async {
+  final failures = <String>[];
+  for (final descriptor in _restoreLimitCases()) {
+    await _withRestoredCase(descriptor, start, failures);
+  }
+
+  return failures;
+}
