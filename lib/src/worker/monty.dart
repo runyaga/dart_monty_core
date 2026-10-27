@@ -101,6 +101,10 @@ final class Monty {
   /// be negative. [typeCheckFormat] defaults to `full` and accepts `full`,
   /// `concise`, `azure`, `json`, `jsonlines`, `json-lines`, `rdjson`, `pylint`,
   /// `gitlab`, or `github`, ignoring ASCII case.
+  ///
+  /// [externalModules] holds the modules an `import` asks for: the very map
+  /// is kept and read live, and an entry is a module itself or a factory, a
+  /// zero-argument function returning one.
   Future<MontySession> checkout({
     String scriptName = 'main.py',
     ResourceLimits? limits,
@@ -111,6 +115,7 @@ final class Monty {
     int? assertMessageAnnotations,
     Duration? printFlushInterval,
     OsPolicy? osPolicy,
+    Map<String, Object?>? externalModules,
   }) => checkoutWith(
     SessionConfig(
       scriptName: scriptName,
@@ -122,10 +127,15 @@ final class Monty {
       assertMessageAnnotations: assertMessageAnnotations,
       printFlushInterval: printFlushInterval,
       osPolicy: osPolicy,
+      externalModules: externalModules,
     ),
   );
 
   /// Runs a body with a checked-out session and closes the session afterward.
+  ///
+  /// [externalModules] holds the modules an `import` asks for: the very map
+  /// is kept and read live, and an entry is a module itself or a factory, a
+  /// zero-argument function returning one.
   Future<T> withSession<T>(
     Future<T> Function(MontySession session) body, {
     String scriptName = 'main.py',
@@ -137,6 +147,7 @@ final class Monty {
     int? assertMessageAnnotations,
     Duration? printFlushInterval,
     OsPolicy? osPolicy,
+    Map<String, Object?>? externalModules,
   }) => withSessionWith(
     body,
     SessionConfig(
@@ -149,6 +160,7 @@ final class Monty {
       assertMessageAnnotations: assertMessageAnnotations,
       printFlushInterval: printFlushInterval,
       osPolicy: osPolicy,
+      externalModules: externalModules,
     ),
   );
 

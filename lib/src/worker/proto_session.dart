@@ -53,8 +53,8 @@ const String _driverVersion = '1.1.0';
 ///
 /// [close] must be called: it is what ends the worker.
 final class ProtoSession {
-  ProtoSession._(this._channel, this._config)
-    : externalModules = _config.externalModules ?? <String, ExternalModule>{} {
+  ProtoSession._(this._channel, this._config, this.modules)
+    : externalModules = modules.externalModules {
     final bridge = telemetryBridge;
     final channel = _channel;
     if (bridge != null && channel is TelemetryChannel) {
@@ -70,13 +70,20 @@ final class ProtoSession {
   /// inputs, answers and results resolve through. A load empties it.
   final HostObjects objects = HostObjects();
 
+  /// The session's host modules: the mapping the host gave and the factory
+  /// results cached for it.
+  ///
+  /// One per session, so a factory's result is cached for the session and
+  /// every feed and resume of it sees the same one.
+  final HostModules modules;
+
   /// The session's host modules, by name: the modules an `import` asks for.
   ///
   /// The map given in the session's configuration is kept as it is, and read
   /// live: an entry added, replaced or removed after the session opened is
   /// seen by the next import. A session without one owns an empty map of
   /// its own, which the host may fill.
-  final Map<String, ExternalModule> externalModules;
+  final Map<String, Object?> externalModules;
 
   final MontyChannel _channel;
   final SessionConfig _config;
@@ -98,7 +105,10 @@ final class ProtoSession {
     SessionConfig config = const SessionConfig(),
   ]) async {
     config.validate();
-    final session = ProtoSession._(channel, config);
+    final modules = HostModules(
+      externalModules: config.externalModules ?? {},
+    );
+    final session = ProtoSession._(channel, config, modules);
     await session._guard(session._configure);
 
     return session;
@@ -137,7 +147,7 @@ final class ProtoSession {
       prepareFeed(code, inputs, skipTypeCheck: options.skipTypeCheck),
       HostAnswers(
         externalLookup: externalLookup,
-        externalModules: externalModules,
+        modules: modules,
         os: onOsCall,
         systemSleepMax: options.systemSleepMax,
         objects: objects,
@@ -224,6 +234,7 @@ final class ProtoSession {
     // A new session, as upstream's next checkout of the worker is.
     _cwdSet = false;
     objects.clear();
+    modules.clearFactoryResults();
     await _configure();
   });
 
@@ -399,8 +410,11 @@ extension ProtoSessionTransfer on ProtoSession {
   /// Returns the restored suspension event and dump script name.
   Future<(pb.ChildEvent?, String?)> load(List<int> state) => _guard(() async {
     // Host objects are never part of a dump: a loaded session starts with
-    // none (upstream's instance store starts empty).
+    // none (upstream's instance store starts empty). The factory results
+    // are not part of a dump either: a loaded session resolves its own
+    // modules again.
     objects.clear();
+    modules.clearFactoryResults();
     final event = await _channel.turn(
       pb.ParentRequest(load: pb.Load(state: state)),
     );
@@ -627,9 +641,11 @@ final class SessionConfig {
   ///
   /// The map is kept as it is and read live, as upstream reads
   /// `external_modules`: an entry added, replaced or removed after the
-  /// session opened is seen by the next import. A name is checked when it
-  /// is looked up, not here.
-  final Map<String, ExternalModule>? externalModules;
+  /// session opened is seen by the next import. An entry is a module
+  /// itself, or a factory: a zero-argument function returning one, either
+  /// synchronously or through a future. A name is checked when it is
+  /// looked up, not here.
+  final Map<String, Object?>? externalModules;
 
   /// The longest one `time.sleep` the parent waits for this session: the
   /// policy's system-sleep maximum, else upstream's 10 s.

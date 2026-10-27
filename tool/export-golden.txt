@@ -517,11 +517,11 @@ parityCoroutine: function(FutureOr@dart:async<Object?> Function(List<MontyValue>
 
 [members: src/worker/monty.dart]
 final class Monty
-  Monty.checkout: method({String scriptName = 'main.py', ResourceLimits? limits, bool typeCheck = false, String? typeCheckStubs, String? typeCheckFormat, bool typeCheckColor = false, int? assertMessageAnnotations, Duration? printFlushInterval, OsPolicy? osPolicy}) -> Future<MontySession>
+  Monty.checkout: method({String scriptName = 'main.py', ResourceLimits? limits, bool typeCheck = false, String? typeCheckStubs, String? typeCheckFormat, bool typeCheckColor = false, int? assertMessageAnnotations, Duration? printFlushInterval, OsPolicy? osPolicy, Map<String, Object?>? externalModules}) -> Future<MontySession>
   Monty.close: method() -> Future<void>
   Monty.start: static method({int minProcesses = 1, int? maxProcesses, Duration? checkoutTimeout, Duration? requestTimeout, int? maxCheckoutsPerWorker, Duration? feedDurationLimitGrace = PoolOptions.defaultDurationLimitGrace, Duration? turnDurationLimitGrace = PoolOptions.defaultDurationLimitGrace, String? workerLocation}) -> Future<Monty>
   Monty.withPool: static method<T>(Future<T> Function(Monty) body, {int minProcesses = 1, int? maxProcesses, Duration? checkoutTimeout, Duration? requestTimeout, int? maxCheckoutsPerWorker, Duration? feedDurationLimitGrace = PoolOptions.defaultDurationLimitGrace, Duration? turnDurationLimitGrace = PoolOptions.defaultDurationLimitGrace, String? workerLocation}) -> Future<T>
-  Monty.withSession: method<T>(Future<T> Function(MontySession) body, {String scriptName = 'main.py', ResourceLimits? limits, bool typeCheck = false, String? typeCheckStubs, String? typeCheckFormat, bool typeCheckColor = false, int? assertMessageAnnotations, Duration? printFlushInterval, OsPolicy? osPolicy}) -> Future<T>
+  Monty.withSession: method<T>(Future<T> Function(MontySession) body, {String scriptName = 'main.py', ResourceLimits? limits, bool typeCheck = false, String? typeCheckStubs, String? typeCheckFormat, bool typeCheckColor = false, int? assertMessageAnnotations, Duration? printFlushInterval, OsPolicy? osPolicy, Map<String, Object?>? externalModules}) -> Future<T>
 
 [members: src/worker/monty_error.dart]
 final class Frame

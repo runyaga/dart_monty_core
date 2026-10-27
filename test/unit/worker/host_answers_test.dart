@@ -2,6 +2,7 @@
 // sleeps and coroutines (host_answers.dart).
 // Pure Dart: vm, dart2js and dart2wasm.
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -544,6 +545,29 @@ void main() {
   });
 
   test(
+    'a failing module-map lookup answers imports and dotted calls',
+    () async {
+      final host = HostAnswers(externalModules: const _ThrowingModuleMap());
+
+      final imported = await host.osCall(
+        pb.OsCall(
+          callId: 1,
+          import: pb.OsCall_Import(module: 'tools'),
+        ),
+        parentSleeps: true,
+      );
+      final importError = imported.resumeCall.result.error;
+      expect(importError.excType, 'Exception');
+      expect(importError.message, 'FormatException: module lookup failed');
+
+      final dotted = await host.call(_callTo('tools.run', id: 2));
+      final callError = dotted.resumeCall.result.error;
+      expect(callError.excType, 'Exception');
+      expect(callError.message, 'FormatException: module lookup failed');
+    },
+  );
+
+  test(
     'dotted calls resolve only public module functions and preserve async '
     'dispatch',
     () async {
@@ -690,7 +714,9 @@ void main() {
       final gate = _Gate();
       final asyncHost = HostAnswers(
         externalModules: {
-          'async': ExternalModule({
+          // Upstream refuses a name that is not an identifier, and a
+          // keyword is not one: the module is named `async_tools`.
+          'async_tools': ExternalModule({
             'first': MontyHostFunction(
               'first',
               coroutine((args, kwargs) async {
@@ -717,15 +743,15 @@ void main() {
         },
       );
       final first = await asyncHost
-          .call(_callTo('async.first'))
+          .call(_callTo('async_tools.first'))
           .timeout(const Duration(seconds: 5));
       expect(first.resumeCall.result.hasFuture(), isTrue);
       final second = await asyncHost
-          .call(_callTo('async.second', id: 2))
+          .call(_callTo('async_tools.second', id: 2))
           .timeout(const Duration(seconds: 5));
       expect(second.resumeCall.result.hasFuture(), isTrue);
       final boom = await asyncHost
-          .call(_callTo('async.boom', id: 3))
+          .call(_callTo('async_tools.boom', id: 3))
           .timeout(const Duration(seconds: 5));
       expect(boom.resumeCall.result.hasFuture(), isTrue);
 
@@ -1267,6 +1293,28 @@ final class _BadText implements Exception {
 
   @override
   String toString() => throw StateError('no text');
+}
+
+/// A live external-module map whose lookup fails.
+final class _ThrowingModuleMap extends MapBase<String, Object?> {
+  const _ThrowingModuleMap();
+
+  @override
+  Object? operator [](Object? key) => throw const FormatException(
+    'module lookup failed',
+  );
+
+  @override
+  void operator []=(String key, Object? value) => throw UnimplementedError();
+
+  @override
+  Iterable<String> get keys => const [];
+
+  @override
+  void clear() => throw UnimplementedError();
+
+  @override
+  Object? remove(Object? key) => throw UnimplementedError();
 }
 
 /// An unconvertible custom Dart object.
