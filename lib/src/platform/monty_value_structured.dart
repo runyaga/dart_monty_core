@@ -511,7 +511,14 @@ String _pyReprRune(int rune, String quote) {
 /// Python compares the values of two dicts, so a `List` or a `Map`
 /// attribute matches another one with the same contents, not only the very
 /// same object.
-final class ExternalModule {
+///
+/// A module is a [MontyValue] of its own: `MontyValue.fromDart` hands one
+/// back unchanged, and its [dartValue] is the module itself. It has no
+/// tagged JSON projection, so [_toJson] refuses one with an
+/// [UnsupportedError]. Nor is it a value the sandbox can hold: it enters
+/// the sandbox through the session's `external_modules` mapping, and the
+/// arena writer refuses one that arrives as an ordinary value.
+final class ExternalModule extends MontyValue {
   /// Creates a module from a shallow copy of [attrs].
   ///
   /// A key that is not a [String] is an [ArgumentError] with upstream's
@@ -556,6 +563,11 @@ final class ExternalModule {
 
     return public;
   }
+
+  /// The module itself: a module has no Dart projection of its own, so it
+  /// represents itself.
+  @override
+  Object? get dartValue => this;
 
   /// The attribute [name] as the sandbox sees it: `null` when [name] is
   /// absent or protected (its name starts with `_`), a nested
@@ -615,6 +627,13 @@ final class ExternalModule {
     return 'ExternalModule(${_attrs.length} attrs, stubs=$stubsText, '
         "id=UUID('$id'))";
   }
+
+  /// A module has no tagged JSON representation, so the projection refuses
+  /// one.
+  @override
+  Object? _toJson() => throw UnsupportedError(
+    'ExternalModule has no tagged JSON representation',
+  );
 
   /// The module's attributes, copied and checked as upstream's constructor
   /// checks them: string keys, no key twice, identifier keys (a keyword is

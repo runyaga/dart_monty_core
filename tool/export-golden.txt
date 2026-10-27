@@ -198,10 +198,11 @@ final class ClassType<T extends Object> extends MontyValue
   ClassType.policies: final field ({Object? allowedMethods, Object? eagerAttrs, Object? lazyAttrs})
   ClassType.toString: method() -> String
   ClassType.value: final field HostClass<T>
-final class ExternalModule
+final class ExternalModule extends MontyValue
   ExternalModule.==: operator(Object other) -> bool
   ExternalModule.attrValue: method(String name) -> Object?
   ExternalModule.attrs: getter -> Map<String, Object?>
+  ExternalModule.dartValue: getter -> Object?
   ExternalModule.hashCode: getter -> int
   ExternalModule.id: final field String
   ExternalModule.new: constructor(Map<Object?, Object?> attrs, {String? stubs, String? id})
@@ -449,6 +450,7 @@ sealed class MontyValue
   MontyValue.new: const constructor()
   MontyValue: permits final class ClassInstance<T extends Object> extends MontyValue
   MontyValue: permits final class ClassType<T extends Object> extends MontyValue
+  MontyValue: permits final class ExternalModule extends MontyValue
   MontyValue: permits final class MontyBigInt extends MontyValue
   MontyValue: permits final class MontyBool extends MontyValue
   MontyValue: permits final class MontyBytes extends MontyValue
