@@ -189,6 +189,43 @@ Map<pb.OsCall, _Parts> _cases() {
       [const MontyFloat(0.5)],
       {},
     ),
+    pb.OsCall(import: pb.OsCall_Import(module: 'tools')): (
+      'import',
+      [const MontyString('tools')],
+      {},
+    ),
+    pb.OsCall(
+      importStubs: pb.OsCall_ImportStubs(modules: ['tools', 'other']),
+    ): (
+      'import_stubs',
+      [
+        const MontyList([
+          MontyString('tools'),
+          MontyString('other'),
+        ]),
+      ],
+      {},
+    ),
+    pb.OsCall(
+      scan: pb.OsCall_Scan(
+        path: '/data',
+        maxDepth: 1,
+        followSymlinks: true,
+        pattern: ['*.py'],
+        caseSensitive: false,
+        recurseSymlinks: true,
+      ),
+    ): (
+      'Path.scan',
+      [MontyPath('/data')],
+      {
+        'max_depth': const MontyInt(1),
+        'follow_symlinks': const MontyBool(true),
+        'pattern': const MontyList([MontyString('*.py')]),
+        'case_sensitive': const MontyBool(false),
+        'recurse_symlinks': const MontyBool(true),
+      },
+    ),
   };
 }
 

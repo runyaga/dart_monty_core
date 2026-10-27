@@ -12,7 +12,7 @@ import 'package:dart_monty_core/src/mount/native_mount_service.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/platform/os_call_not_handled_exception.dart';
 import 'package:dart_monty_core/src/worker/arena_nodes.dart'
-    show exceptionTypeNames, uuidString;
+    show exceptionTypeNames, rustDebug, uuidString;
 import 'package:dart_monty_core/src/worker/arena_reader.dart';
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
 import 'package:dart_monty_core/src/worker/host_objects.dart';
@@ -135,16 +135,23 @@ OsCallParts osCallParts(pb.OsCall call, {HostObjectLookup? hosts}) {
 }
 
 /// Checks [call] as upstream's `os_call_from_proto` does before any host
-/// code sees it: an arm is set, and a `getenv`'s arena is present, passes
-/// the reader's first two stages and holds its default's root. Returns the
-/// `getenv` default's reader, or null for any other arm.
+/// code sees it: an arm is set, an `import_stubs`'s modules are each asked
+/// about once, and a `getenv`'s arena is present, passes the reader's first
+/// two stages and holds its default's root. Returns the `getenv` default's
+/// reader, or null for any other arm.
 ///
-/// Throws [FormatException] with upstream's message (monty-proto 1.1.0
-/// `convert/os_call.rs:43-52`) for the first failure.
+/// Throws [FormatException] with upstream's message (monty-proto 1.2.0
+/// `convert/os_call.rs:43-52` and `convert/os_call.rs:194-204`) for the
+/// first failure.
 ArenaReader? checkOsCall(pb.OsCall call, {HostObjectLookup? hosts}) {
   final kind = call.whichCall();
   if (kind == pb.OsCall_Call.notSet) {
     throw const FormatException('missing required field OsCall.call');
+  }
+  if (kind == pb.OsCall_Call.importStubs) {
+    _checkStubModules(call.importStubs.modules);
+
+    return null;
   }
   if (kind != pb.OsCall_Call.getenv) return null;
   if (!call.hasValues()) {
@@ -177,6 +184,23 @@ ArenaReader checkCallArgs(pb.FunctionCall call, HostObjectLookup? hosts) {
 }
 
 const Map<String, MontyValue> _noKwargs = {};
+
+/// The modules an `import_stubs` arm asks about, each of them once.
+///
+/// Upstream refuses a module named twice (monty-proto 1.2.0
+/// `convert/os_call.rs:194-204`): a host runs one factory per name, and a
+/// compromised child must not multiply that work.
+void _checkStubModules(List<String> modules) {
+  final seen = <String>{};
+  for (final module in modules) {
+    if (!seen.add(module)) {
+      throw FormatException(
+        'invalid value for ImportStubs.modules: module ${rustDebug(module)} '
+        'is asked about twice',
+      );
+    }
+  }
+}
 
 OsCallParts _onPath(String name, String path) => (
   name,
@@ -274,6 +298,39 @@ final Map<pb.OsCall_Call, OsCallParts Function(pb.OsCall)> _osCalls = {
   pb.OsCall_Call.asyncSleep: (c) => _sleep('asyncio.sleep', c.asyncSleep.delay),
   pb.OsCall_Call.asyncSystemSleep: (c) =>
       _sleep('system.async_sleep', c.asyncSystemSleep.delay),
+  pb.OsCall_Call.import: (c) => (
+    'import',
+    [MontyString(c.import.module)],
+    _noKwargs,
+  ),
+  pb.OsCall_Call.importStubs: (c) => (
+    'import_stubs',
+    [
+      MontyList([
+        for (final module in c.importStubs.modules) MontyString(module),
+      ]),
+    ],
+    _noKwargs,
+  ),
+  pb.OsCall_Call.scan: (c) => (
+    'Path.scan',
+    [_path(c.scan.path)],
+    {
+      'max_depth': c.scan.hasMaxDepth()
+          ? MontyInt(c.scan.maxDepth)
+          : const MontyNone(),
+      'follow_symlinks': MontyBool(c.scan.followSymlinks),
+      'pattern': c.scan.pattern.isEmpty
+          ? const MontyNone()
+          : MontyList([
+              for (final part in c.scan.pattern) MontyString(part),
+            ]),
+      'case_sensitive': c.scan.hasCaseSensitive()
+          ? MontyBool(c.scan.caseSensitive)
+          : const MontyNone(),
+      'recurse_symlinks': MontyBool(c.scan.recurseSymlinks),
+    },
+  ),
 };
 
 MontyBytes _bytes(List<int> data) =>
