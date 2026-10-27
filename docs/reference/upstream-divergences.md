@@ -83,6 +83,7 @@ declaration at the top of this page still names 1.1.0 for everything else.
 | E-10 | Dart projection | A module that crosses back out of the sandbox decodes to a Python `ExternalModule` object | The `dartValue` projection is opaque: it is the module itself, not a copy of it and not a plain Dart value, so a host keeps the very module it built | NO-ANALOGUE | `test/unit/platform/external_module_value_test.dart` "ExternalModule is a MontyValue with opaque projection and import-only input" (E-10) |
 | E-11 | Tagged JSON projection | A module is not one of monty's value nodes, so it has no tagged JSON form | There is none either, and the projection says so: `toJson` throws `UnsupportedError('ExternalModule has no tagged JSON representation')`, for the module on its own and for a container that holds one | NO-ANALOGUE | `test/unit/platform/external_module_value_test.dart` "ExternalModule is a MontyValue with opaque projection and import-only input" (E-11) |
 | E-12 | Encoding as an ordinary input | `TypeError: an ExternalModule enters the sandbox only through external_modules, not as a value` (`monty-proto` `python/encode.rs`) | The same refusal, with the same text and the same Python `TypeError`, raised by the arena writer as a `PythonRefusal`: a module sent on its own, and a module reached inside an ordinary container, are both refused | TEXT | `test/unit/platform/external_module_value_test.dart` "ExternalModule is a MontyValue with opaque projection and import-only input" (E-12) |
+| E-13 | The type a module call names when the leaf is not callable | `TypeError: '<type>' object is not callable`, with CPython's own type name (`int`, `bytes`, `datetime.datetime`, `complex`; a binding class by its class name) | The same text, with the type of the leaf's Python counterpart: a builtin by its own name, the binding's own classes by their qualified name (`pydantic_monty.MontyClassProxy`, `pydantic_monty.ExternalModule`), and a value with no Python counterpart by its Dart type | TEXT | `test/unit/worker/host_answers_test.dart` "dotted calls resolve only public module functions and preserve async dispatch" |
 
 A module is a value in Dart (E-9), but not one the sandbox can hold: it
 enters the sandbox through the session's `external_modules` mapping, and the
@@ -104,3 +105,35 @@ difference found before the cycle is answered first: the comparison stops at
 the first difference and never walks into the cycle. A value that is
 neither a list, a map nor a module is compared with its own Dart `==`, as
 is a map key: Python's own scalar equality is not emulated.
+
+## Module calls: the dispatch rules
+
+A call the sandbox makes by a name that carries a dot is a module call: it
+names an attribute of one of the session's host modules. The dispatch is
+the one upstream's `callable` performs (monty-python 1.2.0
+`src/external.rs`), and it runs after the call's arguments are checked and
+after a call that names a host object has been dispatched to that object.
+
+- The name is split at its **last** dot. The part before it is the module
+  path; the part after it is the attribute's name.
+- The path is walked through the session's `external_modules`, one
+  component at a time. The first component names a module of the mapping;
+  every other component names a public attribute of the module before it,
+  and that attribute must itself be a module. A component that is missing,
+  protected (its name starts with `_`), or not a module ends the walk: the
+  call is then not found, as upstream stops at the first missing component.
+- The leaf is the public attribute the module that path names holds. A name
+  the module does not hold, or holds under a protected name, is not found.
+- A leaf that is a host function is called through the ordinary function
+  machinery, coroutines included: a function marked with `coroutine` is
+  started and answered with a pending future, as any other host function
+  is, so `asyncio.gather` runs several of them at once.
+- A leaf that is any other value raises CPython's `TypeError: '<type>'
+  object is not callable` (E-13). The value is not converted to name it:
+  the type is read from the value's own type, so a value the conversion
+  would refuse still names the type it would have had, and a failed
+  conversion never replaces the answer the walk gives.
+
+A name without a dot is the lookup's own, as it always was: it is resolved
+through `external_lookup`, which is never consulted for a dotted name. A
+dotted name in the lookup is not a module attribute, and is not called.

@@ -7,6 +7,7 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:typed_data';
 
+import 'package:collection/collection.dart';
 import 'package:dart_monty_core/src/mount/mount_dir.dart';
 import 'package:dart_monty_core/src/mount/native_mount_service.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart';
@@ -499,6 +500,9 @@ final class HostAnswers {
   /// Answers the host function call [call]; one with an object id is a
   /// method call on that host object.
   ///
+  /// A name carrying a dot is a module call: it is resolved through the
+  /// session's host modules, never through the lookup.
+  ///
   /// Throws [MontyCrashedError] ([protocolError]) for an arguments arena
   /// upstream rejects when the frame arrives, before anything else: the
   /// caller discards the worker.
@@ -506,6 +510,7 @@ final class HostAnswers {
     final reader = checkCallArgs(call, objects.lookup);
     if (call.hasObjectId()) return _methodCall(this, call, reader);
     final name = call.functionName;
+    if (name.contains('.')) return _moduleCall(this, call, reader, name);
     final MontyValue? entry;
     try {
       entry = externalLookup[name];
@@ -789,6 +794,63 @@ Future<pb.ParentRequest> _functionCall(
     _started(callback),
     parity: parity,
   );
+}
+
+/// Answers the dotted call [name] through the session's host modules, as
+/// upstream's `callable` does (monty-python 1.2.0 `src/external.rs`: the
+/// name is split at its last dot, the path before it is walked through the
+/// host's modules, one public component at a time, and the leaf is the
+/// attribute the module that path names holds).
+///
+/// The lookup is never consulted for a dotted name: a module attribute is
+/// the only thing such a name can name. A name the modules do not hold is
+/// not found: the walk stops at the first component that is missing,
+/// protected, or not a module. A leaf the module holds but cannot call
+/// raises CPython's `'<type>' object is not callable`.
+Future<pb.ParentRequest> _moduleCall(
+  HostAnswers host,
+  pb.FunctionCall call,
+  ArenaReader reader,
+  String name,
+) async {
+  final dot = name.lastIndexOf('.');
+  final module = _moduleAt(host.externalModules, name.substring(0, dot));
+  if (module == null) {
+    return _resume(call.callId, pb.ExtFunctionResult(notFound: name));
+  }
+  final attrs = module.publicAttrs;
+  final leaf = name.substring(dot + 1);
+  if (!attrs.containsKey(leaf)) {
+    return _resume(call.callId, pb.ExtFunctionResult(notFound: name));
+  }
+  final entry = attrs[leaf];
+  if (entry is! MontyHostFunction) {
+    // Upstream calls the attribute, whatever it is.
+    return _resume(
+      call.callId,
+      pb.ExtFunctionResult(error: _notCallableValue(entry)),
+    );
+  }
+
+  return _functionCall(host, call, reader, entry);
+}
+
+/// The module the dotted path [path] names, or null when the path names
+/// none: a component that is missing, protected, or not a module ends the
+/// walk, as upstream's `module_of` stops at the first missing component.
+ExternalModule? _moduleAt(Map<String, ExternalModule> modules, String path) {
+  final parts = path.split('.');
+  var module = modules[parts.firstOrNull ?? ''];
+  for (final part in parts.skip(1)) {
+    if (module == null) return null;
+    final attrs = module.publicAttrs;
+    if (!attrs.containsKey(part)) return null;
+    final child = attrs[part];
+    if (child is! ExternalModule) return null;
+    module = child;
+  }
+
+  return module;
 }
 
 /// Answers a method call on the host object [call] names: refused for an
@@ -1086,6 +1148,48 @@ pb.RaisedException _notCallable(MontyValue entry) => raisedException(
   const {},
 );
 
+/// The exception a call to the raw host value [entry] raises: CPython's
+/// `TypeError` for a value that is not callable.
+///
+/// The name is the type of the value's Python counterpart, read from the
+/// value's own type and not from a conversion of it, so a value the
+/// conversion refuses still names its type.
+pb.RaisedException _notCallableValue(Object? entry) => raisedException(
+  'TypeError',
+  "'${_rawTypeName(entry)}' object is not callable",
+  const {},
+);
+
+/// The CPython type name of the raw host value [value], as the binding
+/// names it in `'<type>' object is not callable`: the type of the value's
+/// Python counterpart, read from the value's own type, without converting
+/// the value.
+///
+/// A value of the value family names its own type ([_typeName]); an
+/// ordinary Dart value names the type it converts to; a value with no
+/// Python counterpart names its Dart type, as the conversion refusal
+/// does.
+String _rawTypeName(Object? value) => switch (value) {
+  null => 'NoneType',
+  // A byte list is a list, so it is named before the list arm.
+  final Uint8List _ => 'bytes',
+  final BigInt _ => 'int',
+  final List<Object?> _ => 'list',
+  final Map<Object?, Object?> _ => 'dict',
+  final Set<Object?> _ => 'set',
+  final MontyValue monty => _typeName(monty),
+  _ => _dartTypeNames[value.runtimeType] ?? '${value.runtimeType}',
+};
+
+/// The CPython type each plain Dart value stands for, by CPython name.
+const Map<Type, String> _dartTypeNames = {
+  bool: 'bool',
+  int: 'int',
+  double: 'float',
+  String: 'str',
+  DateTime: 'datetime.datetime',
+};
+
 /// The host type each plain [MontyValue] stands for, by CPython name.
 const Map<Type, String> _hostTypeNames = {
   MontyNone: 'NoneType',
@@ -1108,10 +1212,13 @@ const Map<Type, String> _hostTypeNames = {
   MontyTimeZone: 'datetime.timezone',
   MontyEllipsis: 'ellipsis',
   MontyNotImplemented: 'NotImplementedType',
+  MontyComplex: 'complex',
   // Values that decode upstream to the binding's own proxy classes.
   MontyFileHandle: 'pydantic_monty.MontyFileHandle',
   MontyClassProxy: 'pydantic_monty.MontyClassProxy',
+  MontyClassTypeProxy: 'pydantic_monty.MontyClassTypeProxy',
   MontyStdTypeProxy: 'pydantic_monty.MontyStdTypeProxy',
+  ExternalModule: 'pydantic_monty.ExternalModule',
 };
 
 /// `ResumeCall` declining [callId]'s OS call.
