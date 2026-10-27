@@ -11,6 +11,7 @@ import 'package:test/test.dart';
 
 import '../../unit/worker/_mount_cwd_cases.dart';
 import '../../unit/worker/_mount_sleep_cases.dart';
+import '../../unit/worker/_open_cases.dart';
 import '_worker_harness.dart';
 
 // Expected values and error text: owner-approved P01-P08, P11/P11b, P14,
@@ -19,6 +20,56 @@ TypeMatcher<MontyRuntimeError> _raised(String type, Object message) =>
     isA<MontyRuntimeError>()
         .having((e) => e.exception.excType, 'type', type)
         .having((e) => e.exception.message, 'message', message);
+
+/// Runs [body] against the mounted session, with the mount the shared open()
+/// cases need.
+///
+/// The session and the host directory are borrowed from the test's setup; the
+/// runner owns its own read-write mount, which is closed when the case ends.
+Future<void> _withOpenRunner(
+  MontySession session,
+  Directory dir,
+  Future<void> Function(OpenCaseRunner runner) body,
+) async {
+  final openMount = MountDir(
+    hostPath: dir.path,
+    virtualPath: '/d',
+    mode: 'read-write',
+  );
+  try {
+    await body(_MountRunner(session, dir, openMount));
+  } finally {
+    openMount.close();
+  }
+}
+
+/// The shared open() cases, run against the mounted session.
+///
+/// Every feed gets the `Path` import the cases need, and the host bytes are
+/// read from the mount's host directory.
+final class _MountRunner implements OpenCaseRunner {
+  const _MountRunner(this._session, this._hostDir, this._mount);
+
+  final MontySession _session;
+  final Directory _hostDir;
+  final MountDir _mount;
+
+  @override
+  Future<MontyValue> run(String code) =>
+      _session.feedRun('from pathlib import Path\n$code', mount: [_mount]);
+
+  @override
+  List<int> hostBytes(String path) {
+    const prefix = '/d/';
+    if (!path.startsWith(prefix)) {
+      throw ArgumentError.value(path, 'path', "must start with '$prefix'");
+    }
+
+    return File(
+      '${_hostDir.path}/${path.substring(prefix.length)}',
+    ).readAsBytesSync();
+  }
+}
 
 Future<MontyValue> _finish(MontySnapshot snapshot) async {
   var current = snapshot;
@@ -75,6 +126,24 @@ void main() {
 
   mountCwdTests(mountsFor: (path) => [mount(path: path)]);
   mountCwdTests();
+
+  // The open() contract, shared with the browser runner. Each case owns a
+  // read-write mount at /d, so the bytes it writes reach the host.
+  test('the newline argument is validated after the open', () async {
+    await _withOpenRunner(session, dir, expectOpenNewline);
+  });
+
+  test('reading with each newline mode reads what CPython reads', () async {
+    await _withOpenRunner(session, dir, expectOpenReadMatrix);
+  });
+
+  test('writing with each newline mode writes what CPython writes', () async {
+    await _withOpenRunner(session, dir, expectOpenWriteMatrix);
+  });
+
+  test('iterating a text file keeps one shared position', () async {
+    await _withOpenRunner(session, dir, expectOpenIteration);
+  });
 
   test('P01 construction canonical fields normalization repr and close', () {
     final alias = Link('${dir.path}/alias')..createSync(dir.path);
