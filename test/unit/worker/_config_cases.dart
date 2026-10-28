@@ -159,7 +159,7 @@ final Map<String, SessionConfig> configCases = {
     OsPolicy(fixedDatetime: _frozen, timezone: 'Factory'),
   ),
   'frozen_zone_link': _policy(
-    OsPolicy(fixedDatetime: _frozen, timezone: 'Europe/Kiev'),
+    OsPolicy(fixedDatetime: _frozen, timezone: 'Europe/Mariehamn'),
   ),
   'datetime_call_host': _policy(const OsPolicy(datetime: 'call_host')),
   'seed_int': _seed(RandomSeed.integer(BigInt.from(42))),
