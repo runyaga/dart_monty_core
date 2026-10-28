@@ -180,8 +180,8 @@ void main() {
       final root = requireRecord(spans.firstOrNull);
       final run = requireRecord(spans.lastOrNull);
       expect(root.parent, 'checkout');
-      expect(root.attributes['monty_version'], '1.1.0');
-      expect(channel.requests.firstOrNull?.configure.montyVersion, '1.1.0');
+      expect(root.attributes['monty_version'], '1.2.0');
+      expect(channel.requests.firstOrNull?.configure.montyVersion, '1.2.0');
       expect(run.parent, ('checkout', root));
       expect(run.attributes['code.language'], 'python');
       expect(run.attributes['output'], 'null');

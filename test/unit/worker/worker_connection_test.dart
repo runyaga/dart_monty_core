@@ -388,6 +388,11 @@ void main() {
   test(
     'Configure sends 6 and readiness accepts only supported peers 5 and 6',
     () async {
+      // The versions this driver speaks, spelled out so that a bump cannot
+      // pass unnoticed.
+      expect(workerProtocolVersion, 6);
+      expect(protocolVersion, 6);
+
       // The Configure a session sends, as the worker receives it.
       final channel = scripted.ScriptedChannel([
         scripted.expecting(pb.ParentRequest_Kind.configure, [scripted.ok()]),
@@ -398,27 +403,55 @@ void main() {
       expect(configure.montyVersion, '1.2.0');
       await session.close();
 
+      // The greetings the peers below send, spelled out once.
+      final hello5 = _hello(protocol: 5);
+      final hello6 = _hello(protocol: 6);
+
       // A peer on the oldest supported version is still served: a version
       // bump keeps the window open for the peers that never send the new
       // thing (upstream's oldest supported version is accepted).
       final oldest = _FakePort();
-      final oldestConnection = WorkerConnection.accept(
-        oldest,
-        _hello(protocol: 5),
-      );
+      final oldestConnection = WorkerConnection.accept(oldest, hello5);
       expect(oldestConnection.isAlive, isTrue);
+      expect(oldestConnection.protocol, 5);
       expect(oldest.terminated, 0);
       expect(oldest.posted, isEmpty);
 
       // The version the driver itself speaks.
       final current = _FakePort();
-      final currentConnection = WorkerConnection.accept(
-        current,
-        _hello(protocol: 6),
-      );
+      final currentConnection = WorkerConnection.accept(current, hello6);
       expect(currentConnection.isAlive, isTrue);
+      expect(currentConnection.protocol, 6);
       expect(current.terminated, 0);
       expect(current.posted, isEmpty);
+
+      // An explicit null expectation is the default window, not a refusal.
+      final explicitNull = _FakePort();
+      final explicitNullConnection = WorkerConnection.accept(
+        explicitNull,
+        hello5,
+        // The explicit null is the point of this case.
+        // ignore: avoid_redundant_argument_values
+        expectedProtocol: null,
+      );
+      expect(explicitNullConnection.isAlive, isTrue);
+      expect(explicitNullConnection.protocol, 5);
+      expect(explicitNull.terminated, 0);
+      expect(explicitNull.posted, isEmpty);
+
+      // The same window at the version the driver itself speaks.
+      final explicitNullCurrent = _FakePort();
+      final explicitNullCurrentConnection = WorkerConnection.accept(
+        explicitNullCurrent,
+        hello6,
+        // The explicit null is the point of this case.
+        // ignore: avoid_redundant_argument_values
+        expectedProtocol: null,
+      );
+      expect(explicitNullCurrentConnection.isAlive, isTrue);
+      expect(explicitNullCurrentConnection.protocol, 6);
+      expect(explicitNullCurrent.terminated, 0);
+      expect(explicitNullCurrent.posted, isEmpty);
 
       // Every other peer is refused before any request.
       const WorkerMessage missing = (
@@ -432,20 +465,93 @@ void main() {
         print: null,
         stderr: null,
       );
-      void refused(String label, WorkerMessage hello) {
+      void refused(
+        String label,
+        WorkerMessage hello, {
+        int? expectedProtocol,
+        Object? detail,
+      }) {
         final port = _FakePort();
         expect(
-          () => WorkerConnection.accept(port, hello),
-          throwsA(_crashed(CrashCause.fatal)),
+          () => WorkerConnection.accept(
+            port,
+            hello,
+            expectedProtocol: expectedProtocol,
+          ),
+          throwsA(_crashed(CrashCause.fatal, detail)),
           reason: '$label is refused',
         );
         expect(port.terminated, 1, reason: '$label is terminated');
         expect(port.posted, isEmpty, reason: '$label gets no request');
       }
 
-      refused('a peer without a protocol', missing);
-      refused('a peer on protocol 4', _hello(protocol: 4));
-      refused('a peer on protocol 7', _hello(protocol: 7));
+      void served(String label, int expectedProtocol, int peer) {
+        final port = _FakePort();
+        final connection = WorkerConnection.accept(
+          port,
+          _hello(protocol: peer),
+          expectedProtocol: expectedProtocol,
+        );
+        expect(connection.isAlive, isTrue, reason: '$label stays alive');
+        expect(connection.protocol, peer, reason: '$label reports its version');
+        expect(port.terminated, 0, reason: '$label is not terminated');
+        expect(port.posted, isEmpty, reason: '$label gets no request');
+      }
+
+      // The refusal names the protocol the peer spoke, and the window this
+      // driver serves.
+      final noProtocol = contains('protocol null');
+      final protocol5 = contains('protocol 5');
+      final protocol6 = contains('protocol 6');
+      final protocol7 = contains('protocol 7');
+      final window = contains('protocol 5 to 6');
+      final notWindow = isNot(window);
+      refused(
+        'a peer without a protocol',
+        missing,
+        detail: noProtocol,
+      );
+      refused(
+        'a peer on protocol 4',
+        _hello(protocol: 4),
+        detail: allOf(contains('protocol 4'), window),
+      );
+      refused(
+        'a peer on protocol 7',
+        _hello(protocol: 7),
+        detail: allOf(protocol7, window),
+      );
+
+      // An explicit expectation is exact, not a maximum: the peer must speak
+      // exactly that version, even one outside the default window. The
+      // refusal names that expectation, not the window.
+      served('a peer on protocol 5, expected exactly', 5, 5);
+      refused(
+        'a peer on protocol 6, expected as 5',
+        hello6,
+        expectedProtocol: 5,
+        detail: allOf(protocol6, protocol5, notWindow),
+      );
+      served('a peer on protocol 6, expected exactly', 6, 6);
+      refused(
+        'a peer on protocol 5, expected as 6',
+        hello5,
+        expectedProtocol: 6,
+        detail: allOf(protocol5, protocol6, notWindow),
+      );
+      served('a peer on protocol 7, expected exactly', 7, 7);
+      refused(
+        'a peer on protocol 6, expected as 7',
+        hello6,
+        expectedProtocol: 7,
+        detail: allOf(protocol6, protocol7, notWindow),
+      );
+      refused(
+        'a peer without a protocol, expected exactly',
+        missing,
+        expectedProtocol: 7,
+        detail: allOf(noProtocol, protocol7, notWindow),
+      );
     },
   );
 
