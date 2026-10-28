@@ -280,6 +280,42 @@ void main() {
       expect(fixtureGcInterval('x = 1\n'), isNull);
     });
 
+    // Upstream 1.2.0 writes a fixture's config as a TOML-style block: a
+    // `# /// monty` line, the directives as `key = value` lines, and a closing
+    // `# ///`. The block says what the flat `# key=value` lines said, so the
+    // worker reads the zone, the gc interval and the xfail marker out of it
+    // exactly as it reads them out of the flat form.
+    //
+    // WHERE THE EXPECTED VALUES COME FROM: the pinned upstream corpus at
+    // v1.2.0 (tool/upstream/upstream-pin.json), verbatim —
+    // datetime__zone_kathmandu.py, recursion__deep_drop.py,
+    // type_error__list_iadd_int.py and fstring__error_invalid_spec.py.
+    test(
+      'a # /// monty block sets timezone, gc-interval and xfail as the flat '
+      'directives do',
+      () {
+        expect(
+          fixtureTimezone(fixtureCorpusV1['datetime__zone_kathmandu.py']!),
+          'Asia/Kathmandu',
+        );
+        expect(
+          fixtureGcInterval(fixtureCorpusV1['recursion__deep_drop.py']!),
+          200,
+        );
+        // `xfail = ['monty']` marks the fixture as one monty must fail.
+        expect(
+          parseFixture(fixtureCorpusV1['type_error__list_iadd_int.py']!),
+          isA<ExpectXfail>(),
+        );
+        // `xfail = ['cpython']` marks the other backend, not monty: the
+        // fixture still runs here and is expected to pass.
+        expect(
+          parseFixture(fixtureCorpusV1['fstring__error_invalid_spec.py']!),
+          isNot(isA<ExpectXfail>()),
+        );
+      },
+    );
+
     test('# Return= is compared by repr when the backend renders one', () {
       final e = _parse('x = [1]\nx.append(x)\nx\n# Return=[1, [...]]');
       expect(e, isA<ExpectReturn>());
