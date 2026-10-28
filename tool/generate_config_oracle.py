@@ -116,7 +116,8 @@ RUNS = [
     # jiff resolves UTC by name, in any ASCII case, whatever the database.
     ('frozen_zone_utc_mixed_case', {'os_policy': {'datetime': FROZEN, 'timezone': 'uTc'}}, CLOCK),
     ('frozen_zone_factory', {'os_policy': {'datetime': FROZEN, 'timezone': 'Factory'}}, CLOCK),
-    ('frozen_zone_link', {'os_policy': {'datetime': FROZEN, 'timezone': 'Europe/Kiev'}}, CLOCK),
+    # A link to Europe/Helsinki, which the host's zoneinfo holds.
+    ('frozen_zone_link', {'os_policy': {'datetime': FROZEN, 'timezone': 'Europe/Mariehamn'}}, CLOCK),
     ('datetime_call_host', {'os_policy': {'datetime': 'call_host'}}, CLOCK),
     ('seed_int', {'os_policy': {'random_start': {'seed': 42}}}, RANDOM),
     ('seed_negative_int', {'os_policy': {'random_start': {'seed': -5}}}, RANDOM),
