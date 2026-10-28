@@ -70,7 +70,7 @@ abstract final class FrameScan {
     final scan = _Scan(body, math.min(budget, Frame.maxDecodeBytes))..run();
     final pb.ChildEvent event;
     try {
-      event = _parse(pb.ChildEvent(), _withoutUnknowns(body, scan));
+      event = parseRustMessage(pb.ChildEvent(), _withoutUnknowns(body, scan));
     } on InvalidProtocolBufferException catch (error) {
       throw FrameDecodeException(error.message);
     }
@@ -114,7 +114,11 @@ String cutSourceFilename(String name) {
 
 /// [message] merged from [bytes] as `fromBuffer` merges it, but with every
 /// string decoded as Rust decodes it.
-T _parse<T extends GeneratedMessage>(T message, Uint8List bytes) {
+///
+/// This is the reader [FrameScan] reads a frame with, so a message the
+/// native side sent keeps a leading U+FEFF in its strings, as
+/// `String::from_utf8` keeps it and `fromBuffer` would not.
+T parseRustMessage<T extends GeneratedMessage>(T message, List<int> bytes) {
   final reader = _StrictReader(bytes);
   message.mergeFromCodedBufferReader(reader);
   reader.checkLastTagWas(0);
@@ -125,8 +129,9 @@ T _parse<T extends GeneratedMessage>(T message, Uint8List bytes) {
 /// package:protobuf's reader, with strings that keep a leading U+FEFF.
 ///
 /// `Utf8Decoder` drops a byte-order mark at the start of what it converts;
-/// prost's `String::from_utf8` keeps it. The scan has already checked every
-/// string is UTF-8.
+/// prost's `String::from_utf8` keeps it. Every string read here is UTF-8:
+/// the scan has checked the frames it reads, and the native side sends Rust
+/// strings.
 final class _StrictReader extends CodedBufferReader {
   _StrictReader(super.buffer);
 
@@ -682,7 +687,7 @@ final class _Scan {
   void completeNode(_Frame frame, _Vec nodes) {
     final kind = frame.state.nodeKind;
     if (checksKind(kind) || kind == pb.MontyNode_Kind.bigint) {
-      final node = _parse(pb.MontyNode(), _body(frame));
+      final node = parseRustMessage(pb.MontyNode(), _body(frame));
       try {
         checkNode(node);
       } on FormatException catch (error) {
@@ -696,7 +701,7 @@ final class _Scan {
 
   /// `WireFunctionCall`'s `object_id`: exactly 16 bytes.
   void completeObjectId(_Frame frame) {
-    final length = _parse(pb.Uuid(), _body(frame)).data.length;
+    final length = parseRustMessage(pb.Uuid(), _body(frame)).data.length;
     if (length != 16) {
       _fail(
         'invalid value for FunctionCall.object_id: uuid must be 16 bytes, '

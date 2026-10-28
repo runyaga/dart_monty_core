@@ -16,6 +16,8 @@ import 'package:dart_monty_core/src/worker/arena_nodes.dart'
     show exceptionTypeNames, rustDebug, uuidString;
 import 'package:dart_monty_core/src/worker/arena_reader.dart';
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
+import 'package:dart_monty_core/src/worker/frame_scan.dart'
+    show parseRustMessage;
 import 'package:dart_monty_core/src/worker/host_objects.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart'
     show MontyCrashedError, MontyRuntimeError, encodingInput, protocolError;
@@ -631,7 +633,12 @@ final class HostAnswers {
     if (module != null) return module;
     final mounted = _mounts.route?.call(call.writeToBuffer());
     if (mounted != null) {
-      return pb.ParentRequest(resumeCall: pb.ResumeCall.fromBuffer(mounted));
+      // The mount's reply holds Rust strings, so a leading U+FEFF is part
+      // of the text the mount read: `fromBuffer` would drop it, and the
+      // reader the frames use keeps it.
+      return pb.ParentRequest(
+        resumeCall: parseRustMessage(pb.ResumeCall(), mounted),
+      );
     }
     final handler = os;
     if (handler == null) return _notHandled(call.callId);
