@@ -307,22 +307,33 @@ SessionConfig _depth(int depth) =>
     SessionConfig(limits: ResourceLimits(maxRecursionDepth: depth));
 
 void _dumpLimits(String label, _Start start) {
-  // Upstream's rule (docs/snapshots.md: the dump carries its own
-  // configuration): a restored session runs under the limits the dump was
-  // taken with, whatever the loader asked for.
-  test("a restored dump keeps its own limits; the loading session's do not "
-      'replace them ($label)', () async {
+  // Upstream's rule (up/crates/monty-proto/src/worker.rs:955,
+  // `tighten_limits`): a restored session runs under the tighter of the
+  // limits the dump was taken with and the limits the loader asked for, so
+  // a loader can tighten a dump but never loosen it.
+  test("a restored dump keeps the tighter limit; the loading session's do not "
+      'loosen it ($label)', () async {
     final pool = await _pool(start);
-    // A dump taken under one depth limit, restored under the other.
-    for (final (taken, loader, rec100) in <(int, int, Matcher)>[
-      (30, 1000, throwsA(_runtimeError('RecursionError'))),
-      (1000, 30, completion(const MontyInt(0))),
+    // A dump taken under one depth limit, restored under the other: either
+    // way the restored session runs under the tighter of the two.
+    for (final (taken, loader) in <(int, int)>[
+      (30, 1000),
+      (1000, 30),
     ]) {
       final source = await _open(pool, _depth(taken));
       await source.feedRun(_rec);
+      final saved = await source.dump();
+      await source.close();
       final restored = await _open(pool, _depth(loader));
-      await restored.loadSession(await source.dump());
-      await expectLater(restored.feedRun('rec(100)'), rec100);
+      try {
+        await restored.loadSession(saved);
+        await expectLater(
+          restored.feedRun('rec(100)'),
+          throwsA(_runtimeError('RecursionError')),
+        );
+      } finally {
+        await restored.close();
+      }
     }
   });
 }
