@@ -16,7 +16,7 @@
 # up from here).
 [package]
 name = "dart_monty_worker"
-version = "0.110.0"
+version = "0.120.0-dev.1"
 edition = "2024"
 rust-version = "1.96"
 license = "MIT"
@@ -39,17 +39,17 @@ test = false
 # Exact pins: the worker mirrors one upstream tag. The crates come from
 # crates.io, so Cargo.lock records their checksums.
 [dependencies]
-monty-proto = { version = "=1.1.0", features = ["worker"] }
-monty-types = { version = "=1.1.0", features = ["tzdb-bundled"] }
-monty-alloc = "=1.1.0"
+monty-proto = { version = "=1.2.0", features = ["worker"] }
+monty-types = { version = "=1.2.0", features = ["tzdb-bundled"] }
+monty-alloc = "=1.2.0"
 
 # Native, as crates/monty-runtime/Cargo.toml: monty-alloc reports allocation
 # failure as an exit code (65), monty-types reads the host tz database.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-monty-fs = "=1.1.0"
+monty-fs = "=1.2.0"
 prost = "0.14.3"
-monty-alloc = { version = "=1.1.0", features = ["exit-code"] }
-monty-types = { version = "=1.1.0", features = ["tzdb", "tzdb-bundled"] }
+monty-alloc = { version = "=1.2.0", features = ["exit-code"] }
+monty-types = { version = "=1.2.0", features = ["tzdb", "tzdb-bundled"] }
 
 # Upstream's workspace lints, so the verbatim subprocess.rs is held to the
 # rules it was written under.
