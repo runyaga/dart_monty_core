@@ -12,17 +12,30 @@ import 'dart:typed_data';
 
 import 'package:collection/collection.dart';
 import 'package:dart_monty_core/dart_monty_core.dart'
-    show MontyBigInt, MontyBool, MontyFloat, MontyInt, MontyTuple, MontyValue;
+    show
+        MontyBigInt,
+        MontyBool,
+        MontyFloat,
+        MontyInt,
+        MontySession,
+        MontyTuple,
+        MontyValue,
+        MountDir;
+import 'package:dart_monty_core/src/mount/native_mount_lookup.dart';
 import 'package:dart_monty_core/src/worker/arena_reader.dart';
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
+import 'package:dart_monty_core/src/worker/monty.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart'
     show MontyCrashedErrorInternal;
 import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
+import 'package:dart_monty_core/src/worker/proto_session.dart'
+    show protocolVersion;
 import 'package:dart_monty_core/src/worker/wire_scalars.dart';
 import 'package:dart_monty_core/src/worker/worker_locator.dart';
 import 'package:dart_monty_core/src/worker/worker_manifest.dart';
+import 'package:dart_monty_core/src/worker/worker_pool.dart' show PoolOptions;
 import 'package:fixnum/fixnum.dart';
 // The corpus manifest is imported from the conformance package's src/ on
 // purpose: its public library also exports the generated corpus, and this
@@ -32,8 +45,15 @@ import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import '../../_accessors.dart';
+// The four selected upstream sources, as the corpus tests hold them. This
+// aggregate RUNS the sources themselves, so it needs their texts, not the
+// generated corpus the manifest import above measures.
+import '../../corpus/_corpus_common.dart';
+import '../../unit/mount/native_mounts_io_test.dart';
+import '../../unit/worker/_boundary_cases.dart';
 import '../../unit/worker/_display_cases.dart';
 import '../../unit/worker/_kind_round_trips.dart';
+import '../../unit/worker/_open_cases.dart';
 import '_worker_harness.dart';
 
 /// Upstream monty-proto 1.1.0's `PROTOCOL_VERSION`.
@@ -347,6 +367,14 @@ void main() {
     _expectPackageVersionsTrackV120();
     _expectLocalMirrorAndVersionChecksPass();
   });
+
+  // The aggregate of the v1.2.0 migration's regressions. It runs after the
+  // metadata test above, which must pass before it means anything.
+  test(
+    'native v1.2.0 worker and mount service pass migration regressions',
+    _migrationRegressions,
+    timeout: const Timeout(Duration(minutes: 30)),
+  );
 
   test('migration test floors and change fragment match completed suites', () {
     // The monty v1.2.0 migration registered its suites -- the pin test above
@@ -2304,4 +2332,480 @@ Future<void> _corpusScorecardAcceptance() async {
   _cleanupStage(checkout, problems);
 
   expect(problems, isEmpty, reason: problems.join('\n'));
+}
+
+// ---------------------------------------------------------------------------
+// The v1.2.0 migration aggregate.
+//
+// One test runs the regressions the monty v1.2.0 migration must not bring
+// back: the open() lifecycle, the restored session limits, the native Scan
+// calls and the four selected upstream sources.
+//
+// The aggregate owns no behaviour: the case bodies live with the units that
+// own them, and this file only starts the pools they need -- every one of
+// them bound to the worker executable this tree verified -- and collects
+// what they report. A group that fails is reported, and the groups after it
+// still run.
+// ---------------------------------------------------------------------------
+
+/// The four shared open() cases, with the label each one's failures are
+/// reported under.
+const List<({String label, Future<void> Function(OpenCaseRunner) body})>
+_openGroups = [
+  (
+    label: 'open: the newline argument is validated after the open',
+    body: expectOpenNewline,
+  ),
+  (
+    label: 'open: each newline mode reads what CPython reads',
+    body: expectOpenReadMatrix,
+  ),
+  (
+    label: 'open: each newline mode writes what CPython writes',
+    body: expectOpenWriteMatrix,
+  ),
+  (
+    label: 'open: iterating a text file keeps one shared position',
+    body: expectOpenIteration,
+  ),
+];
+
+/// The four selected upstream sources the execution tests run, named here
+/// independently of the map that holds them.
+const List<String> _selectedUpstreamNames = [
+  'fstring__all.py',
+  'str__format.py',
+  'dataclass__options.py',
+  'repr__mutation.py',
+];
+
+/// Upstream monty-proto v1.2.0's `PROTOCOL_VERSION`
+/// (`up/crates/monty-proto/src/lib.rs:36`): the protocol version a driver
+/// sends in `Configure`, as upstream's own pool client sends it
+/// (`up/crates/monty-pool/src/checkout.rs:2156`). The v1.2.0 worker serves
+/// the window 5 to 6 (`MIN_SUPPORTED_PROTOCOL_VERSION..=PROTOCOL_VERSION`),
+/// so a driver that still announces the 1.1.0 version drives the migrated
+/// worker against the wrong contract.
+const int _upstreamProtocolVersionV120 = 6;
+
+/// The aggregate: the v1.2.0 regressions, in one test.
+///
+/// The artefacts are checked first: a missing or stale worker fails the
+/// test before any pool starts and before any mount is touched, so what
+/// follows is about behaviour and never about a missing build. Nothing here
+/// builds anything and nothing is skipped.
+Future<void> _migrationRegressions() async {
+  await _workerFreshness();
+
+  final failures = <String>[];
+  final checkedPath = await _checkedExecutable();
+  var attempted = <String>[];
+  var successes = 0;
+
+  // The driver must speak the protocol of the worker it drives. The
+  // verification above named the worker; this names the contract the
+  // driver speaks to it, which the migration moves to the v1.2.0 version.
+  if (protocolVersion != _upstreamProtocolVersionV120) {
+    failures.add(
+      'the worker protocol: this driver speaks protocol $protocolVersion, '
+      'but the v1.2.0 worker speaks $_upstreamProtocolVersionV120',
+    );
+  }
+
+  // The mount service is the library beside the verified worker, so the
+  // lookup is scoped to it for as long as this aggregate runs.
+  nativeMountLookup.overridePackageDirectory(File(checkedPath).parent.uri);
+  try {
+    final outcome = await _runMigrationPhases(failures, checkedPath);
+    attempted = outcome.attempted;
+    successes = outcome.successes;
+  } on Object catch (error, stack) {
+    failures.add('the migration regressions: $error\n$stack');
+  } finally {
+    // Every resource the aggregate took is released by now: the reset
+    // comes after the cleanup, never before it.
+    nativeMountLookup.overridePackageDirectory(null);
+  }
+
+  _expectMigrationOutcomes(failures, attempted, successes);
+}
+
+/// The outcome of the aggregate: every selected source attempted once, every
+/// one of them run to its end, and nothing failed.
+///
+/// Every assertion carries the diagnostics collected so far, so a failure
+/// names what the other phases found too.
+void _expectMigrationOutcomes(
+  List<String> failures,
+  List<String> attempted,
+  int successes,
+) {
+  final diagnostics = failures.isEmpty ? '' : '\n${failures.join('\n')}';
+  expect(
+    attempted.toSet(),
+    equals(_selectedUpstreamNames.toSet()),
+    reason: 'every selected source must be attempted$diagnostics',
+  );
+  expect(
+    attempted,
+    hasLength(_selectedUpstreamNames.length),
+    reason: 'every selected source must be attempted exactly once$diagnostics',
+  );
+  expect(
+    successes,
+    _selectedUpstreamNames.length,
+    reason: 'every selected source must run to its end$diagnostics',
+  );
+  expect(
+    failures,
+    isEmpty,
+    reason: 'the v1.2.0 migration regressions:$diagnostics',
+  );
+}
+
+/// The four phases of the aggregate, in order.
+///
+/// Every phase runs, whatever the phases before it found: a phase that
+/// failed is reported, and the phase after it is still attempted.
+Future<({List<String> attempted, int successes})> _runMigrationPhases(
+  List<String> failures,
+  String checkedPath,
+) async {
+  await _openCasesRun(failures, checkedPath);
+  await _restoreLimitsRun(failures, checkedPath);
+  await _scanCasesRun(failures);
+
+  return _selectedUpstreamSourcesRun(failures, checkedPath);
+}
+
+/// Whether the built worker is fresh: `tool/build_worker.sh --check` must
+/// pass, and it must not build anything.
+///
+/// A check that cannot be launched and a check that fails both fail the
+/// test, with what the check said.
+Future<void> _workerFreshness() async {
+  final ProcessResult result;
+  try {
+    result = await Process.run('bash', ['tool/build_worker.sh', '--check']);
+  } on Object catch (error, stack) {
+    fail(
+      'bash tool/build_worker.sh --check could not be launched: $error\n$stack',
+    );
+  }
+  if (result.exitCode != 0) {
+    fail(
+      'bash tool/build_worker.sh --check must pass, but it exited '
+      '${result.exitCode}:\n${result.stdout}\n${result.stderr}',
+    );
+  }
+}
+
+/// The worker executable this tree verified: the package's own worker for
+/// this host, checked against the path the build script writes.
+Future<String> _checkedExecutable() async {
+  final launch = await _resolvedWorker();
+  if (launch is! WorkerExecutable) {
+    fail('the worker launch must be an executable, but it was $launch');
+  }
+  final resolved = _canonicalPath(launch.path);
+  final packaged = _canonicalPath('lib/${workerPackagePath(Abi.current())}');
+  if (resolved != packaged) {
+    fail(
+      'the resolved worker $resolved must be the packaged worker $packaged',
+    );
+  }
+
+  return resolved;
+}
+
+/// The worker launch this tree resolves, or a failure naming what is wrong
+/// with it.
+Future<WorkerLaunch> _resolvedWorker() async {
+  try {
+    return await realWorker();
+  } on Object catch (error, stack) {
+    fail('the worker executable could not be resolved: $error\n$stack');
+  }
+}
+
+/// The canonical path of [path], or a failure naming what is wrong with it.
+String _canonicalPath(String path) {
+  try {
+    return File(path).absolute.resolveSymbolicLinksSync();
+  } on FileSystemException catch (error) {
+    fail('the worker path $path cannot be resolved: ${error.message}');
+  }
+}
+
+/// A pool on the verified worker.
+///
+/// Every setting of [options] is forwarded unchanged, and only the worker's
+/// location is replaced: no pool of this aggregate runs on a worker the
+/// aggregate did not verify.
+Future<Monty> _startCheckedWorker(
+  String checkedPath,
+  PoolOptions options,
+) => startMonty(
+  PoolOptions(
+    minProcesses: options.minProcesses,
+    maxProcesses: options.maxProcesses,
+    checkoutTimeout: options.checkoutTimeout,
+    requestTimeout: options.requestTimeout,
+    maxCheckoutsPerWorker: options.maxCheckoutsPerWorker,
+    feedDurationLimitGrace: options.feedDurationLimitGrace,
+    turnDurationLimitGrace: options.turnDurationLimitGrace,
+    workerLocation: checkedPath,
+  ),
+);
+
+/// Runs [action] and records what it raised under [label].
+///
+/// The failures already collected stay: this collector only appends, and it
+/// never throws, so a later attempt still runs. It reports whether the
+/// action failed.
+Future<bool> _collectFailure(
+  List<String> failures,
+  String label,
+  FutureOr<void> Function() action,
+) async {
+  try {
+    await action();
+
+    return false;
+  } on Object catch (error, stack) {
+    failures.add('$label: $error\n$stack');
+
+    return true;
+  }
+}
+
+/// The shared open() cases, each in its own directory, pool, session and
+/// mount, so one group's failure cannot omit another group's case.
+Future<void> _openCasesRun(
+  List<String> failures,
+  String checkedPath,
+) async {
+  for (final group in _openGroups) {
+    await _runOpenGroup(failures, group.label, group.body, checkedPath);
+  }
+}
+
+/// Runs one shared open() case, and collects what its setup, its body and
+/// its cleanup failed with.
+///
+/// Every resource is released before the next one is taken, and a cleanup
+/// that fails does not stop the cleanups after it.
+Future<void> _runOpenGroup(
+  List<String> failures,
+  String label,
+  Future<void> Function(OpenCaseRunner) body,
+  String checkedPath,
+) async {
+  Directory? directory;
+  try {
+    directory = Directory.systemTemp.createTempSync('native-open-');
+    final pool = await _startCheckedWorker(
+      checkedPath,
+      const PoolOptions(maxProcesses: 1),
+    );
+    try {
+      await _runOpenCase(failures, label, body, directory, pool);
+    } finally {
+      await _collectFailure(failures, '$label: the pool cleanup', pool.close);
+    }
+  } on Object catch (error, stack) {
+    failures.add('$label: $error\n$stack');
+  } finally {
+    await _removeOpenDirectory(failures, label, directory);
+  }
+}
+
+/// Runs the open() case in the session and the mount the group owns.
+///
+/// The mount is closed before the session, and the session before the pool
+/// the caller closes.
+Future<void> _runOpenCase(
+  List<String> failures,
+  String label,
+  Future<void> Function(OpenCaseRunner) body,
+  Directory directory,
+  Monty pool,
+) async {
+  final session = await pool.checkout();
+  try {
+    final mount = MountDir(
+      hostPath: directory.path,
+      virtualPath: '/d',
+      mode: 'read-write',
+    );
+    try {
+      await body(_WorkerOpenRunner(session, directory, mount));
+    } finally {
+      await _collectFailure(failures, '$label: the mount cleanup', mount.close);
+    }
+  } finally {
+    await _collectFailure(
+      failures,
+      '$label: the session cleanup',
+      session.close,
+    );
+  }
+}
+
+/// Removes the directory the group owned, and reports what went wrong.
+Future<void> _removeOpenDirectory(
+  List<String> failures,
+  String label,
+  Directory? directory,
+) async {
+  final owned = directory;
+  if (owned == null) {
+    return;
+  }
+  await _collectFailure(failures, '$label: the directory cleanup', () {
+    if (owned.existsSync()) {
+      owned.deleteSync(recursive: true);
+    }
+  });
+}
+
+/// The shared open() cases' sandbox: a mounted session over the host
+/// directory the case reads and writes.
+final class _WorkerOpenRunner implements OpenCaseRunner {
+  /// Creates a runner over the session, the host directory and the mount.
+  const _WorkerOpenRunner(this._session, this._hostDirectory, this._mount);
+
+  /// The session the case runs in.
+  final MontySession _session;
+
+  /// The host directory behind the mount.
+  final Directory _hostDirectory;
+
+  /// The read-write mount the case sees at /d.
+  final MountDir _mount;
+
+  @override
+  Future<MontyValue> run(String code) =>
+      _session.feedRun('from pathlib import Path\n$code', mount: [_mount]);
+
+  @override
+  List<int> hostBytes(String path) {
+    const prefix = '/d/';
+    if (!path.startsWith(prefix)) {
+      throw ArgumentError.value(path, 'path', "must start with '$prefix'");
+    }
+
+    return File(
+      '${_hostDirectory.path}/${path.substring(prefix.length)}',
+    ).readAsBytesSync();
+  }
+}
+
+/// The shared restored-session limits: the split unit's own runner, once,
+/// with the checked starter.
+Future<void> _restoreLimitsRun(
+  List<String> failures,
+  String checkedPath,
+) async {
+  await _collectFailure(failures, 'the restored session limits', () async {
+    final collected = await expectRestoredSessionLimits(
+      (options) => _startCheckedWorker(checkedPath, options),
+    );
+    failures.addAll(collected);
+  });
+}
+
+/// The shared Scan cases: the split unit's own runner, once, under the
+/// library override.
+Future<void> _scanCasesRun(List<String> failures) async {
+  await _collectFailure(failures, 'the native scan cases', () {
+    failures.addAll(expectScanCases());
+  });
+}
+
+/// The four selected upstream sources, each run unchanged in its own pool.
+///
+/// The names are declared here, independently of the map that holds the
+/// sources: a map that holds other names is a failure of the selection, not
+/// a different selection.
+Future<({List<String> attempted, int successes})> _selectedUpstreamSourcesRun(
+  List<String> failures,
+  String checkedPath,
+) async {
+  const sources = selectedUpstreamV120ExecutionSources;
+  final held = sources.keys.toList()..sort();
+  final expected = List.of(_selectedUpstreamNames)..sort();
+  if (!const ListEquality<String>().equals(held, expected)) {
+    failures.add(
+      'the selected upstream sources: the map holds '
+      '${held.join(', ')}, not ${expected.join(', ')}',
+    );
+  }
+
+  final attempted = <String>[];
+  var successes = 0;
+  for (final name in _selectedUpstreamNames) {
+    // The attempt is recorded before the source is looked up and before any
+    // pool starts, so a source that cannot even be found is an attempt.
+    attempted.add(name);
+    final source = sources[name];
+    if (source == null) {
+      failures.add('the upstream source $name: the map holds no such source');
+      continue;
+    }
+    if (await _runUpstreamSource(name, source, checkedPath, failures)) {
+      successes++;
+    }
+  }
+
+  return (attempted: attempted, successes: successes);
+}
+
+/// Runs one upstream source unchanged in its own pool and session.
+///
+/// The execution and the cleanup are collected separately, the session is
+/// closed before the pool, and the source counts as run only when its whole
+/// lifecycle finished without a failure.
+Future<bool> _runUpstreamSource(
+  String name,
+  String source,
+  String checkedPath,
+  List<String> failures,
+) async {
+  var ran = true;
+  Monty? pool;
+  MontySession? session;
+  try {
+    pool = await _startCheckedWorker(
+      checkedPath,
+      const PoolOptions(maxProcesses: 1),
+    );
+    session = await pool.checkout();
+    await session.feedRun(source);
+  } on Object catch (error, stack) {
+    ran = false;
+    failures.add('the upstream source $name: $error\n$stack');
+  }
+  final ownedSession = session;
+  if (ownedSession != null) {
+    if (await _collectFailure(
+      failures,
+      'the upstream source $name: the session cleanup',
+      ownedSession.close,
+    )) {
+      ran = false;
+    }
+  }
+  final ownedPool = pool;
+  if (ownedPool != null) {
+    if (await _collectFailure(
+      failures,
+      'the upstream source $name: the pool cleanup',
+      ownedPool.close,
+    )) {
+      ran = false;
+    }
+  }
+
+  return ran;
 }
