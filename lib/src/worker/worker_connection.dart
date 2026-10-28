@@ -24,7 +24,13 @@ import 'package:dart_monty_core/src/worker/telemetry_recorder.dart';
 
 /// The protocol version this driver speaks: upstream monty-proto's
 /// `PROTOCOL_VERSION` at the pinned tag.
-const int workerProtocolVersion = 5;
+const int workerProtocolVersion = 6;
+
+/// The oldest protocol version this driver still serves: upstream
+/// monty-proto's `MIN_SUPPORTED_PROTOCOL_VERSION` at the pinned tag. A peer
+/// in the window [_minimumSupportedWorkerProtocolVersion] to
+/// [workerProtocolVersion] is served; one outside it is refused.
+const int _minimumSupportedWorkerProtocolVersion = 5;
 
 /// How long [WorkerConnection.close] waits for the `Shutdown` reply before it
 /// terminates the Worker: upstream's `SHUTDOWN_EXIT_GRACE`, which its pool
@@ -65,6 +71,40 @@ const int outcomeContinue = 0;
 /// `dmw_last_outcome()` after a turn that shut the instance down.
 const int outcomeShutdown = 1;
 
+/// The protocol a Worker greeting may be served with, or null when it is
+/// refused.
+///
+/// Without an [expectedProtocol] the accepted window runs from
+/// [_minimumSupportedWorkerProtocolVersion] to [workerProtocolVersion]
+/// inclusive. An [expectedProtocol] is an exact expectation, not a maximum:
+/// only that version is served, whatever the window says.
+int? _acceptedProtocol(int? protocol, int? expectedProtocol) {
+  if (protocol == null) return null;
+  if (expectedProtocol != null) {
+    return protocol == expectedProtocol ? protocol : null;
+  }
+
+  return protocol >= _minimumSupportedWorkerProtocolVersion &&
+          protocol <= workerProtocolVersion
+      ? protocol
+      : null;
+}
+
+/// The detail a refused protocol reports: the protocol the Worker spoke, and
+/// the versions this driver serves.
+///
+/// Without an [expectedProtocol] the versions are the window, from
+/// [_minimumSupportedWorkerProtocolVersion] to [workerProtocolVersion]; with
+/// one, they are that exact version.
+String _protocolRefusal(int? protocol, int? expectedProtocol) {
+  final spoken = protocol == null ? 'null' : '$protocol';
+  final served = expectedProtocol == null
+      ? '$_minimumSupportedWorkerProtocolVersion to $workerProtocolVersion'
+      : '$expectedProtocol';
+
+  return 'worker speaks protocol $spoken; this driver speaks protocol $served';
+}
+
 /// [MontyChannel] over a [WorkerPort]: one turn at a time.
 ///
 /// The binding feeds every Worker message to [onReply], [onTrap] or
@@ -83,13 +123,24 @@ final class WorkerConnection with RecordedChannel implements MontyChannel {
   /// Accepts the Worker behind [port] from its first message, [hello].
   ///
   /// A Worker that did not start is terminated and this throws
-  /// [MontyCrashedError] with [CrashCause.vanished]. A protocol other than
-  /// [expectedProtocol] is refused before any `Configure`: the Worker is
+  /// [MontyCrashedError] with [CrashCause.vanished].
+  ///
+  /// Without an [expectedProtocol] the Worker is accepted when it speaks a
+  /// supported protocol: from [_minimumSupportedWorkerProtocolVersion] to
+  /// [workerProtocolVersion] inclusive. A ready greeting with no protocol, or
+  /// one outside that window, is refused before any `Configure`: the Worker is
   /// terminated and this throws [CrashCause.fatal].
+  ///
+  /// An [expectedProtocol] is an exact expectation, not a maximum: the
+  /// Worker is accepted only when it speaks exactly that protocol, including
+  /// a version outside the default window.
+  ///
+  /// The accepted connection reports the protocol the greeting named, in
+  /// [protocol]; it is not the expectation.
   factory WorkerConnection.accept(
     WorkerPort port,
     WorkerMessage hello, {
-    int expectedProtocol = workerProtocolVersion,
+    int? expectedProtocol,
     Duration closeGrace = workerCloseGrace,
   }) {
     if (hello.ready != true) {
@@ -100,20 +151,19 @@ final class WorkerConnection with RecordedChannel implements MontyChannel {
       );
     }
     final protocol = hello.protocol;
-    if (protocol != expectedProtocol) {
+    final accepted = _acceptedProtocol(protocol, expectedProtocol);
+    if (accepted == null) {
       port.terminate();
       throw crashedError(
         CrashCause.fatal,
-        detail:
-            'worker speaks protocol $protocol; this driver speaks '
-            '$expectedProtocol',
+        detail: _protocolRefusal(protocol, expectedProtocol),
       );
     }
 
     return WorkerConnection._(
       port,
       jspi: hello.jspi ?? false,
-      protocol: expectedProtocol,
+      protocol: accepted,
       closeGrace: closeGrace,
     );
   }
@@ -121,7 +171,8 @@ final class WorkerConnection with RecordedChannel implements MontyChannel {
   /// Whether `dmw_dispatch` runs under JSPI (`WebAssembly.promising`).
   final bool jspi;
 
-  /// The protocol version the module reported.
+  /// The protocol version the Worker's greeting named: the version this
+  /// connection was accepted for.
   final int protocol;
 
   final WorkerPort _port;

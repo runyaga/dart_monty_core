@@ -35,11 +35,11 @@ export 'package:dart_monty_core/src/worker/host_answers.dart'
 
 /// The monty-proto schema version this driver speaks: upstream's
 /// `PROTOCOL_VERSION` at the pinned tag.
-const int protocolVersion = 5;
+const int protocolVersion = 6;
 
 /// What the driver reports as its version in `Configure`. Informational
 /// only; the worker never checks it.
-const String _driverVersion = '1.1.0';
+const String _driverVersion = '1.2.0';
 
 /// One Python session on one worker.
 ///
