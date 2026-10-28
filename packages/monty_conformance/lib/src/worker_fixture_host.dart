@@ -310,6 +310,12 @@ final class WorkerFixtureRegistry {
     final cls = fixture.className;
     final isPoint = cls == 'Point';
 
+    // The host decides callability; none of its fixtures is callable
+    // (upstream's `(_, "__call__")` arm, crates/monty-datatest/src/main.rs).
+    if (method == '__call__') {
+      return HostRaise('TypeError', "'$cls' object is not callable");
+    }
+
     if ((isPoint || cls == 'MutablePoint') && method == 'sum') {
       return HostReturn(MontyInt(fixture.intAttr('x') + fixture.intAttr('y')));
     }
