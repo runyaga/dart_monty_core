@@ -33,6 +33,44 @@ const workerFixtureFunctions = <String>{
   'async_fail',
 };
 
+/// The functions the upstream `tools` module holds as its attributes
+/// (upstream's `make_tools_module`,
+/// `crates/monty-datatest/src/main.rs:591-623`).
+///
+/// These are the fixture functions and nothing else: a module the sandbox
+/// imports holds what upstream's holds, so `tools.add_ints(1, 2)` dispatches
+/// like the bare `add_ints(1, 2)` and no other name reaches the host
+/// through the module.
+const workerFixtureModuleFunctions = {
+  'add_ints',
+  'concat_strings',
+  'return_value',
+  'get_list',
+  'raise_error',
+  'async_call',
+  'async_fail',
+};
+
+/// The functions the upstream `tools.nested` module holds as its attributes
+/// (upstream's `make_tools_module`,
+/// `crates/monty-datatest/src/main.rs:591-623`).
+const workerFixtureNestedFunctions = {'return_value'};
+
+/// The upstream tools that are asynchronous: they hand the sandbox a future
+/// to await (upstream's `DispatchResult::Async`, against the `Sync` of the
+/// others).
+const workerFixtureAsyncTools = {'async_call', 'async_fail'};
+
+/// The upstream `tools` module's identity: `MontyUuid::from_u128(5)`.
+const int workerFixtureModuleId = 5;
+
+/// The upstream `tools.nested` module's identity:
+/// `MontyUuid::from_u128(6)`.
+const int workerFixtureNestedModuleId = 6;
+
+/// The upstream `tools.nested.VERSION`: 7.
+const int workerFixtureNestedVersion = 7;
+
 /// The constants upstream's name lookup resolves (`run_iter_loop`'s
 /// `NameLookup` arm).
 const Map<String, MontyValue> workerFixtureConstants = {
@@ -364,6 +402,125 @@ final class WorkerFixtureRegistry {
     );
   }
 }
+
+/// The host module upstream's datatest harness supplies: `tools`, with the
+/// submodule `tools.nested`.
+///
+/// Upstream builds the module in `make_tools_module`
+/// (`crates/monty-datatest/src/main.rs:591-623`): the fixture functions as
+/// the module's attributes, so that a call through the module dispatches
+/// like a bare call, and the submodule beside them. The identities are
+/// upstream's: `MontyUuid::from_u128(5)` for the module and `from_u128(6)`
+/// for the submodule, whose `VERSION` is 7.
+///
+/// The module's functions dispatch through the [registry] the harness
+/// answers the bare calls with, so a call through the module and a bare
+/// call are one call.
+final class WorkerFixtureTools {
+  /// Creates the module the calls of [registry] answer.
+  factory WorkerFixtureTools(WorkerFixtureRegistry registry) {
+    final nested = ExternalModule(
+      {
+        for (final name in workerFixtureNestedFunctions)
+          name: _toolFunction(registry, name),
+        'VERSION': workerFixtureNestedVersion,
+      },
+      id: _uuid(workerFixtureNestedModuleId),
+    );
+
+    return WorkerFixtureTools._(
+      registry,
+      ExternalModule(
+        {
+          for (final name in workerFixtureModuleFunctions)
+            name: _toolFunction(registry, name),
+          'nested': nested,
+        },
+        id: _uuid(workerFixtureModuleId),
+      ),
+    );
+  }
+
+  const WorkerFixtureTools._(this.registry, this.module);
+
+  /// The registry the module's functions dispatch through.
+  final WorkerFixtureRegistry registry;
+
+  /// The module as the sandbox imports it: its fixture functions, and the
+  /// submodule `tools.nested` beside them.
+  final ExternalModule module;
+
+  /// The fixture tool the qualified call [name] names, or null when the
+  /// name is not one of the module's own.
+  ///
+  /// The qualified names are the module's path and the function's name:
+  /// `tools.add_ints` and `tools.nested.return_value`. A dotted name that
+  /// is not one of them names nothing: the lookup is never consulted for a
+  /// dotted name, so such a call is not found.
+  String? toolNamed(String name) {
+    for (final tool in workerFixtureModuleFunctions) {
+      if (name == 'tools.$tool') return tool;
+    }
+    for (final tool in workerFixtureNestedFunctions) {
+      if (name == 'tools.nested.$tool') return tool;
+    }
+
+    return null;
+  }
+}
+
+/// The module's attribute for the tool [name]: a host function that
+/// dispatches through [registry], as the module's own function dispatches
+/// upstream.
+///
+/// An asynchronous tool is a coroutine, as upstream's are: it hands the
+/// sandbox a future to await, where the others answer at once.
+MontyHostFunction _toolFunction(
+  WorkerFixtureRegistry registry,
+  String name,
+) {
+  FutureOr<MontyValue> answer(
+    List<MontyValue> args,
+    Map<String, MontyValue> kwargs,
+  ) => _toolAnswer(registry, name, args, kwargs);
+
+  return MontyHostFunction(
+    name,
+    workerFixtureAsyncTools.contains(name) ? coroutine(answer) : answer,
+  );
+}
+
+/// The tool [name]'s answer to the call [args]: the registry's outcome, as
+/// the sandbox sees it.
+///
+/// A pending outcome is a future the sandbox awaits; it settles with the
+/// outcome the registry names.
+FutureOr<MontyValue> _toolAnswer(
+  WorkerFixtureRegistry registry,
+  String name,
+  List<MontyValue> args,
+  Map<String, MontyValue> kwargs,
+) => switch (registry.call(name, args, kwargs)) {
+  HostReturn(:final value) => value,
+  HostRaise(:final excType, :final message) => throw ExternalException(
+    excType,
+    message,
+  ),
+  HostPending(:final settled) => _settles(settled),
+};
+
+/// The future a pending outcome settles with: the value it returns, or the
+/// exception it raises.
+Future<MontyValue> _settles(HostOutcome settled) => Future.sync(
+  () => switch (settled) {
+    HostReturn(:final value) => value,
+    HostRaise(:final excType, :final message) => throw ExternalException(
+      excType,
+      message,
+    ),
+    HostPending() => throw StateError('a pending answer is not settled'),
+  },
+);
 
 // ---------------------------------------------------------------------------
 // The OS handler
