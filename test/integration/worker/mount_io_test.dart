@@ -7,6 +7,7 @@ import 'dart:typed_data';
 
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/dart_monty_core_testing.dart';
+import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:test/test.dart';
 
 import '../../unit/worker/_mount_cwd_cases.dart';
@@ -68,6 +69,50 @@ final class _MountRunner implements OpenCaseRunner {
     return File(
       '${_hostDir.path}/${path.substring(prefix.length)}',
     ).readAsBytesSync();
+  }
+}
+
+/// The three answers the BOM program gives, read through a native mount.
+///
+/// The feed runs on the worker this tree builds from the pinned upstream
+/// tag, because the answers are upstream 1.2.0's and the published asset
+/// the shared pool starts predates upstream 1.2.0. Without that build the
+/// shared session answers instead, so the test still measures the read and
+/// fails on the answer rather than raising.
+Future<MontyValue> _bomAnswers(
+  MontySession shared,
+  String program,
+  MountDir Function() mount,
+) async {
+  final worker = await _upstreamWorkerPath();
+  if (worker == null) {
+    return shared.feedRun(program, mount: [mount()]);
+  }
+  final pool = await Monty.start(maxProcesses: 1, workerLocation: worker);
+  try {
+    final session = await pool.checkout();
+    try {
+      return await session.feedRun(program, mount: [mount()]);
+    } finally {
+      await session.close();
+    }
+  } finally {
+    await pool.close();
+  }
+}
+
+/// The path of the worker this tree builds from the pinned upstream tag
+/// (tool/build_worker.sh), or null when it is not built.
+Future<String?> _upstreamWorkerPath() async {
+  try {
+    final launch = await realWorker();
+
+    return switch (launch) {
+      final WorkerExecutable executable => executable.path,
+      _ => null,
+    };
+  } on Object {
+    return null;
   }
 }
 
@@ -581,6 +626,78 @@ void main() {
       const MontyString('A'),
     );
   }, skip: Platform.isWindows ? 'POSIX directory rename' : false);
+
+  // A file written with a UTF-8 BOM reads back as text that KEEPS the mark:
+  // the binary read gives the bytes, the text read gives the BOM and the
+  // JSON. `json.load` of the bytes accepts them (it decodes them as
+  // utf-8-sig), while `json.load` of the text rejects them, as CPython
+  // does. Upstream's own fixture writes these bytes and asserts these
+  // answers (`crates/monty/test_cases/json__file_io.py:51`).
+  //
+  // The answers are upstream 1.2.0's, so the feed runs on the worker this
+  // tree builds from the pinned upstream tag (tool/build_worker.sh), not on
+  // the published asset the shared pool starts: that one predates upstream
+  // 1.2.0, and its `json` module has neither `load` nor the BOM rules.
+  test('a text read through a native mount keeps a leading BOM', () async {
+    // Every answer is taken through `attempt`, so a worker that cannot
+    // answer one of them reports the error as the answer instead of
+    // raising it: the test then fails on the answer, not on the raise.
+    const program = r'''
+import json
+from pathlib import Path
+
+def attempt(body):
+    try:
+        return body()
+    except Exception as exc:
+        return 'raised %s: %s' % (type(exc).__name__, exc)
+
+def write_bom():
+    Path('/mnt/b.json').write_bytes(b'\xef\xbb\xbf{"bom": 1}')
+
+def binary_load():
+    with open('/mnt/b.json', 'rb') as f:
+        return json.load(f)
+
+def text_message():
+    with open('/mnt/b.json', encoding='utf-8') as f:
+        try:
+            json.load(f)
+            return 'no JSONDecodeError'
+        except json.JSONDecodeError as exc:
+            return str(exc)
+
+def head():
+    with open('/mnt/b.json', encoding='utf-8') as f:
+        return repr(f.read(2))
+
+# The write goes through `attempt` too: a worker that cannot write the file
+# then reports it in the answers below, which read the file back.
+attempt(write_bom)
+(attempt(binary_load), attempt(text_message), attempt(head))
+''';
+    const expected = <MontyValue>[
+      MontyDict([(MontyString('bom'), MontyInt(1))]),
+      MontyString(
+        'Unexpected UTF-8 BOM (decode using utf-8-sig): '
+        'line 1 column 1 (char 0)',
+      ),
+      // Python's repr of the two characters: the BOM escapes as \ufeff.
+      MontyString(r"'\ufeff{'"),
+    ];
+
+    for (final mode in ['overlay', 'read-write']) {
+      final answers = await _bomAnswers(
+        session,
+        program,
+        () => mount(path: '/mnt', mode: mode),
+      );
+      // A worker that answered something other than the tuple answers with
+      // the one value it has, so the comparison names what came back.
+      final items = answers is MontyTuple ? answers.items : [answers];
+      expect(items, expected, reason: 'mount mode $mode');
+    }
+  });
 
   test(
     'P14 overlay across suspension and closing root retains active feed',
