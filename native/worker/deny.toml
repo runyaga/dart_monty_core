@@ -16,7 +16,7 @@ ignore = [
     "RUSTSEC-2026-0369",
     # zstd-safe 5.0.2 and zstd-sys 2.1.0 come only through zstd 0.11.2 <-
     # zip 0.6.6, a [build-dependencies] entry of upstream's monty-typeshed
-    # 1.2.0. They are compiled for the build machine and run in that crate's
+    # 1.3.0. They are compiled for the build machine and run in that crate's
     # build script, so neither is in a shipped native or wasm worker.
     # RUSTSEC-2026-0410 concerns zstd-sys's malloc shim on wasm32, and zstd-sys
     # is never built for wasm32 here. RUSTSEC-2026-0403's fix needs zstd-safe

@@ -163,8 +163,13 @@ void _timeLimits(String label, _Start start) {
     final watch = Stopwatch()..start();
     // Upstream kills at the limit plus its 1 s grace: "monty worker killed
     // after exceeding request timeout of 3s". Never an unbounded wait.
+    //
+    // 150 open brackets stay under upstream's parser limit of 200, so the
+    // source parses and the type check is the phase that runs into the
+    // deadline. A source past that limit is rejected by the parser instead,
+    // before any deadline is reached.
     await expectLater(
-      session.feedRun('[' * 250),
+      session.feedRun('[' * 150),
       throwsA(
         isA<MontyCrashedError>()
             .having((e) => e.timedOut, 'timedOut', true)
