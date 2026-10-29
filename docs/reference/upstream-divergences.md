@@ -34,6 +34,26 @@ Iterator-consuming builtins cannot call external functions. Calls such as
 | C-11 | [`MontyExceptionValue`](../../lib/src/platform/monty_value_structured.dart) and [`MontyFileHandle`](../../lib/src/platform/monty_value_structured.dart) | — | See the declarations | NO-ANALOGUE | `test/unit/platform/monty_value_equality_rules_test.dart`, `test/unit/platform/monty_file_handle_test.dart` "C-11" tests |
 | C-12 | `MontyError.display(format)` with an unknown format | Raises `ValueError` with `"Invalid display format: '<format>'. Expected 'traceback', 'type-msg', or 'msg'"` | Throws Dart `ArgumentError` with the same message | NO-ANALOGUE | `test/unit/worker/raised_record_test.dart`, `test/unit/worker/monty_error_test.dart` "C-12" tests |
 
+## The working directory
+
+The working directory follows upstream 1.2.0's rule, not the 1.1.0
+specification above. The driver counts the directory as established once a
+feed reaches the worker, a feed the type check refuses included, so a later
+feed without an explicit `cwd` sends none and the worker keeps the
+directory it has (`os.chdir` included). Upstream 1.1.0's driver treated a
+refused feed as leaving the directory unset and sent the default again.
+
+The worker adopts the directory before it type-checks the snippet, so a
+feed the type check refuses keeps the directory it was given: the explicit
+`cwd` when one was given, the first mount's virtual path when a mount
+chose it, `/` otherwise (upstream 1.2.0, measured). A feed the
+source-nesting check refuses is answered before the worker adopts the
+directory, so it leaves the session where it was (upstream 1.2.0,
+measured).
+
+`test/unit/worker/_mount_cwd_cases.dart` and
+`test/unit/worker/_session_cases.dart` pin the rule.
+
 ## Host wrappers: Dart hashability and Python input validation
 
 A `ClassType` or a `ClassInstance` is hashable in Dart: `==` and `hashCode`

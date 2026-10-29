@@ -90,9 +90,11 @@ final class ProtoSession {
   bool _busy = false;
 
   /// Whether the worker's working directory has been established: a feed
-  /// reached it and was not refused by the type check. Until then, an omitted
-  /// cwd chooses the first mount or [defaultCwd]. Afterwards it sends none,
-  /// keeping the worker's directory, `os.chdir` included (Checkout.cwd_set).
+  /// reached it, whatever its outcome. Until then, an omitted cwd chooses the
+  /// first mount or [defaultCwd]. Afterwards it sends none, keeping the
+  /// worker's directory, `os.chdir` included. A feed the source-nesting check
+  /// refuses leaves the worker's directory as it was: the worker answers
+  /// that refusal before it adopts the directory.
   bool _cwdSet = false;
 
   /// Configures a session on a worker channel.
@@ -266,10 +268,16 @@ final class ProtoSession {
       sink.rethrowFailure();
       rethrow;
     }
-    // The worker adopts the directory after its type check and before it
-    // runs the code, so every reply but a typing rejection means it took
-    // effect. A request never sent (oversized) threw above.
-    if (feed && event.whichKind() != pb.ChildEvent_Kind.typingError) {
+    // The driver counts the directory as established once the request
+    // reached the worker (upstream 1.2.0's pool: `if self.request_sent {
+    // self.cwd_set = true; }`), whatever the reply: the worker adopts the
+    // directory before it type-checks the snippet, so a feed the type check
+    // refuses keeps the directory it was given. A feed the source-nesting
+    // check refuses leaves the worker's directory as it was: the worker
+    // answers that refusal before it adopts the directory, and the driver
+    // names no directory afterwards. A request never sent (oversized)
+    // threw above.
+    if (feed) {
       _cwdSet = true;
     }
     if (sink.failed && isSuspension(event)) {
@@ -358,8 +366,9 @@ final class ProtoSession {
 extension ProtoSessionFeed on ProtoSession {
   /// Encodes inputs, then validates explicit [cwd], before the caller builds
   /// a mount table. An omitted cwd chooses [firstMount] or `/` only while
-  /// cwd is unestablished. The sent feed's non-typing reply commits the
-  /// choice; a successful load adopts its saved cwd independently of mounts.
+  /// cwd is unestablished. The sent feed commits the choice, whatever its
+  /// outcome; a successful load adopts its saved cwd independently of
+  /// mounts.
   pb.ParentRequest prepareFeed(
     String code,
     Map<String, MontyValue> inputs, {
@@ -424,7 +433,8 @@ extension ProtoSessionTransfer on ProtoSession {
       _desync('Load', event);
     }
     // The adopted dump carries the working directory (checkout.rs
-    // `restore`, only once the load succeeded).
+    // `restore`, only once the load succeeded). The driver does not know
+    // which directory that is, so it names none and the worker keeps it.
     _cwdSet = true;
 
     return (
