@@ -799,14 +799,14 @@ void _expectMontyHashDependencies(
 void _expectPackageVersionsTrackV120() {
   expect(
     _packageVersion('pubspec.yaml'),
-    '0.120.0-dev.1',
+    '0.120.0',
     reason:
         'pubspec.yaml must carry the 0.120.x version that tracks '
         'upstream monty 1.2.0',
   );
   expect(
     _packageVersion(_workerManifestPath),
-    '0.120.0-dev.1',
+    '0.120.0',
     reason:
         '$_workerManifestPath must carry the 0.120.x version that '
         'tracks upstream monty 1.2.0',
