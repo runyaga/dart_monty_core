@@ -400,7 +400,7 @@ void main() {
       final session = await ProtoSession.open(channel);
       final configure = onlyItem(channel.requests).configure;
       expect(configure.protocolVersion, 6);
-      expect(configure.montyVersion, '1.2.0');
+      expect(configure.montyVersion, '1.3.0');
       await session.close();
 
       // The greetings the peers below send, spelled out once.
