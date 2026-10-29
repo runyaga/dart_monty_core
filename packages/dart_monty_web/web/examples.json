@@ -1,0 +1,86 @@
+[
+  {
+    "id": "state",
+    "title": "Persistent state",
+    "description": "Run twice to increment the retained counter.",
+    "source": "try:\n    counter += 1\nexcept NameError:\n    counter = 1\ncounter",
+    "setup": "default",
+    "expected": {
+      "result": "1",
+      "secondResult": "2"
+    }
+  },
+  {
+    "id": "print",
+    "title": "Print and result",
+    "description": "Streamed output and an expression.",
+    "source": "print('hello from Python')\n6 * 7",
+    "setup": "default",
+    "expected": {
+      "result": "42",
+      "print": "hello from Python"
+    }
+  },
+  {
+    "id": "caught",
+    "title": "Caught Python error",
+    "description": "Catch a Python exception.",
+    "source": "try:\n    1 / 0\nexcept ZeroDivisionError:\n    message = 'caught division'\nmessage",
+    "setup": "default",
+    "expected": {
+      "result": "caught division"
+    }
+  },
+  {
+    "id": "modules",
+    "title": "Host module",
+    "description": "Import a host function and constant.",
+    "source": "import tools\nfrom tools import double, ANSWER\n(double(3), tools.ANSWER, ANSWER)",
+    "setup": "tools",
+    "expected": {
+      "result": "(6, 42, 42)"
+    }
+  },
+  {
+    "id": "dataclass",
+    "title": "Dataclass",
+    "description": "Define and instantiate a Python dataclass.",
+    "source": "from dataclasses import dataclass\n@dataclass\nclass Point:\n    x: int\n    y: int\np = Point(3, 4)\np.x + p.y",
+    "setup": "default",
+    "expected": {
+      "result": "7"
+    }
+  },
+  {
+    "id": "files",
+    "title": "Memory files",
+    "description": "Read and write an in-memory file.",
+    "source": "from pathlib import Path\np = Path('/work/hello.txt')\np.write_text(p.read_text() + ' world')\np.read_text()",
+    "setup": "files",
+    "expected": {
+      "result": "hello world"
+    }
+  },
+  {
+    "id": "typing",
+    "title": "Type checking",
+    "description": "A checked session rejects a wrong annotation.",
+    "source": "value: int = 'wrong'\nvalue",
+    "setup": "typing",
+    "expected": {
+      "error": "typing"
+    }
+  },
+  {
+    "id": "csv",
+    "title": "CSV across runs",
+    "description": "Write output.csv, then replace the source with print(open('output.csv').read()) and Run again.",
+    "source": "import csv\nwith open('output.csv', mode='w', newline='', encoding='utf-8') as f:\n    csv.writer(f).writerows([[\"Name\",\"Age\"],[\"Alice\",30]])",
+    "setup": "default",
+    "expected": {
+      "result": "None",
+      "nextSource": "print(open('output.csv').read())",
+      "nextPrint": "Name,Age\nAlice,30\n"
+    }
+  }
+]
