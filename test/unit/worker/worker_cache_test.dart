@@ -51,8 +51,46 @@ void main() {
       );
     });
 
+    test('falls back to USERPROFILE when LOCALAPPDATA is absent', () {
+      expect(
+        workerCacheRoot(
+          environment: {'USERPROFILE': r'C:\Users\Ada'},
+          operatingSystem: 'windows',
+        ),
+        r'C:\Users\Ada\AppData\Local\dart_monty\Cache',
+      );
+    });
+
+    test('prefers LOCALAPPDATA over USERPROFILE when both are set', () {
+      expect(
+        workerCacheRoot(
+          environment: {
+            'LOCALAPPDATA': r'D:\cache',
+            'USERPROFILE': r'C:\Users\Ada',
+          },
+          operatingSystem: 'windows',
+        ),
+        r'D:\cache\dart_monty\Cache',
+      );
+    });
+
     for (final localAppData in [r'\srv\cache', '/srv/cache']) {
-      test('rejects root-relative Windows LOCALAPPDATA $localAppData', () {
+      test('falls back to USERPROFILE for root-relative '
+          'LOCALAPPDATA $localAppData', () {
+        expect(
+          workerCacheRoot(
+            environment: {
+              'LOCALAPPDATA': localAppData,
+              'USERPROFILE': r'C:\Users\Ada',
+            },
+            operatingSystem: 'windows',
+          ),
+          r'C:\Users\Ada\AppData\Local\dart_monty\Cache',
+        );
+      });
+
+      test('rejects root-relative Windows LOCALAPPDATA $localAppData '
+          'with no USERPROFILE', () {
         expect(
           () => workerCacheRoot(
             environment: {'LOCALAPPDATA': localAppData},
@@ -82,7 +120,7 @@ void main() {
       });
     }
 
-    test('rejects a missing LOCALAPPDATA', () {
+    test('rejects when neither LOCALAPPDATA nor USERPROFILE is set', () {
       expect(
         () =>
             workerCacheRoot(environment: const {}, operatingSystem: 'windows'),
@@ -90,7 +128,7 @@ void main() {
           isA<WorkerCacheError>().having(
             (error) => error.toString(),
             'message',
-            contains('LOCALAPPDATA'),
+            contains('USERPROFILE'),
           ),
         ),
       );
