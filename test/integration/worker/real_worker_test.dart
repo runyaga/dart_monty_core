@@ -735,7 +735,7 @@ void _expectWorkerManifestPinsV120() {
 }
 
 /// The lock's monty packages: exactly the eight the mirror pins, each with
-/// one 1.2.0 resolution.
+/// one 1.3.0 resolution.
 void _expectWorkerLockResolvesV120(Map<String, List<String>> versionsByName) {
   final montyVersions = <String, List<String>>{
     for (final entry in versionsByName.entries)
@@ -760,7 +760,7 @@ void _expectWorkerLockResolvesV120(Map<String, List<String>> versionsByName) {
     expect(
       versions.singleOrNull,
       '1.3.0',
-      reason: '$name must resolve to 1.2.0 in native/worker/Cargo.lock',
+      reason: '$name must resolve to 1.3.0 in native/worker/Cargo.lock',
     );
   }
 }
