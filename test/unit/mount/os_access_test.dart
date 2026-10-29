@@ -1548,4 +1548,28 @@ void _scan() {
       );
     },
   );
+
+  _scanRootPathBytes();
+}
+
+/// The root of a scan is estimated before anything below it is walked.
+///
+/// So a root path that is long enough on its own stops the scan, even
+/// though the tree below it holds a single empty file. The file has to be
+/// there: the lookup of the root comes before the estimate.
+void _scanRootPathBytes() {
+  test(
+    'a scan whose root path alone exceeds the path data limit stops',
+    () async {
+      final file = MemoryFile('/${'a' * 25000000}', '');
+      final fs = OSAccess(files: [file]);
+      await expectLater(
+        call(fs, 'Path.scan', file.path),
+        raises(
+          'RuntimeError',
+          'directory scan exceeded 100000000 bytes of path data',
+        ),
+      );
+    },
+  );
 }
