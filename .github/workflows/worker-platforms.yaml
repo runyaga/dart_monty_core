@@ -24,6 +24,7 @@ jobs:
     timeout-minutes: 60
     strategy:
       fail-fast: false
+      # Windows is not built in CI for now.
       matrix:
         include:
           - key: macos-arm64
@@ -32,8 +33,6 @@ jobs:
             runner: ubuntu-24.04
           - key: linux-arm64
             runner: ubuntu-24.04-arm
-          - key: windows-x64
-            runner: windows-2025
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
