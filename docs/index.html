@@ -1,9 +1,18 @@
 <!DOCTYPE html>
+<!--
+  The shell of the published GitHub Pages site. tool/build_pages.py
+  assembles site/index.html from this file: it substitutes the @...@
+  tokens below (the versions come from pubspec.yaml and
+  tool/upstream/upstream-pin.json, the example count from example/) and
+  injects one card per catalogue entry, then copies each linked example
+  source to site/examples/. Keep versions and demo links out of this file:
+  the builder derives the first and refuses the second.
+-->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>dart_monty_core — Monty Python Interpreter</title>
+  <title>dart_monty_core — Examples</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -47,12 +56,30 @@
 
     .sub a:hover { text-decoration: underline; }
 
+    .intro {
+      max-width: 660px;
+      color: #9a9a9a;
+      font-size: 0.9rem;
+      line-height: 1.6;
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+
+    .intro code, .more code {
+      font-family: 'Consolas', 'Courier New', monospace;
+      color: #d4d4d4;
+      background: #252526;
+      border: 1px solid #333;
+      border-radius: 4px;
+      padding: 1px 5px;
+    }
+
     .cards {
       display: flex;
       gap: 1.25rem;
       flex-wrap: wrap;
       justify-content: center;
-      max-width: 900px;
+      max-width: 1200px;
     }
 
     .card {
@@ -60,13 +87,11 @@
       border: 1px solid #333;
       border-radius: 8px;
       padding: 1.5rem 1.75rem;
-      width: 260px;
-      text-decoration: none;
-      color: inherit;
+      width: 300px;
       transition: border-color 0.15s, transform 0.1s;
       display: flex;
       flex-direction: column;
-      gap: 0.5rem;
+      gap: 0.6rem;
     }
 
     .card:hover {
@@ -85,9 +110,7 @@
       width: fit-content;
     }
 
-    .badge-dart2js  { background: #007acc; color: #fff; }
-    .badge-dart2wasm { background: #4ec9b0; color: #1e1e1e; }
-    .badge-flutter  { background: #0553b1; color: #fff; }
+    .badge-native { background: #4ec9b0; color: #1e1e1e; }
 
     .card-title {
       font-size: 1.1rem;
@@ -102,11 +125,38 @@
       line-height: 1.5;
     }
 
-    .card-note {
-      font-size: 0.75rem;
-      color: #555;
-      margin-top: 0.25rem;
+    .card-cmd {
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 0.8rem;
+      color: #ce9178;
+      background: #1e1e1e;
+      border: 1px solid #333;
+      border-radius: 4px;
+      padding: 6px 8px;
+      overflow-wrap: break-word;
     }
+
+    .card-src {
+      font-size: 0.8rem;
+      color: #569cd6;
+      text-decoration: none;
+    }
+
+    .card-src:hover { text-decoration: underline; }
+
+    .more {
+      margin-top: 2.5rem;
+      color: #777;
+      font-size: 0.85rem;
+      text-align: center;
+    }
+
+    .more a {
+      color: #569cd6;
+      text-decoration: none;
+    }
+
+    .more a:hover { text-decoration: underline; }
 
     footer {
       margin-top: 4rem;
@@ -121,52 +171,37 @@
 </head>
 <body>
   <div class="logo">&gt;_ monty</div>
-  <p class="tagline">A sandboxed Python interpreter in Rust</p>
+  <p class="tagline">Sandboxed Python scripting for Dart</p>
   <p class="sub">
     <a href="https://github.com/pydantic/monty">pydantic/monty</a> ·
     <a href="https://github.com/runyaga/dart_monty_core">dart_monty_core</a>
   </p>
-  <p class="sub version">dart_monty_core v0.110.0-dev.4 &middot; monty v1.1.0</p>
+  <p class="sub version">dart_monty_core v@dart_monty_core_version@
+    &middot; monty v@monty_version@</p>
+
+  <p class="intro">
+    Every card below is a downloadable native example: a standalone Dart
+    program that runs the sandboxed Python interpreter in native worker
+    processes on your machine — not in the browser. Download the source
+    with the link on the card, or clone the repository, and run it with
+    the Dart SDK; inside a clone, the interpreter's native worker is
+    picked up from <code>lib/src/bin/</code>, built by
+    <code>tool/build_worker.sh</code>.
+  </p>
 
   <div class="cards">
-    <a href="repl/index_js.html" class="card">
-      <span class="card-badge badge-dart2js">dart2js</span>
-      <div class="card-title">Web REPL</div>
-      <div class="card-desc">
-        Interactive Python REPL in the browser. Compiled with dart2js,
-        backed by a WASM Worker running the Monty engine.
-      </div>
-      <div class="card-note">No install · works everywhere</div>
-    </a>
-
-    <a href="repl/index_wasm.html" class="card">
-      <span class="card-badge badge-dart2wasm">dart2wasm</span>
-      <div class="card-title">Web REPL</div>
-      <div class="card-desc">
-        The same REPL compiled to WebAssembly instead of JavaScript — the same
-        engine and the same assets, run through the other Dart web toolchain.
-      </div>
-      <div class="card-note">dart2wasm · same engine, different Dart target</div>
-    </a>
-
+@example_cards@
   </div>
+
+  <p class="more">
+    The repository ships @example_count@ example programs under
+    <code>example/</code> — see them all
+    <a href="https://github.com/runyaga/dart_monty_core/tree/main/example">on GitHub</a>.
+  </p>
 
   <footer>
     <a href="https://github.com/runyaga/dart_monty_core">GitHub</a> ·
     MIT License
   </footer>
-
-  <script>
-  /* Clean up stale coi-serviceworker registrations from prior deployments
-     that had a scope broad enough to cover /flutter/ and /repl/ together. */
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.getRegistrations().then(function (regs) {
-      regs.forEach(function (reg) {
-        var url = (reg.active || reg.installing || reg.waiting || {}).scriptURL || '';
-        if (url.includes('coi-serviceworker')) reg.unregister();
-      });
-    });
-  }
-  </script>
 </body>
 </html>
