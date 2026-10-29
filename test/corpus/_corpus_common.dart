@@ -161,7 +161,7 @@ void manifestTests() {
 
   test('the manifest is well formed', () {
     expect(manifestProblems(fixtureCorpusV1.keys), isEmpty);
-    expect(fixtureCorpusV1, hasLength(695));
+    expect(fixtureCorpusV1, hasLength(703));
   });
 
   test(
