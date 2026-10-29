@@ -39,7 +39,7 @@ const int protocolVersion = 6;
 
 /// What the driver reports as its version in `Configure`. Informational
 /// only; the worker never checks it.
-const String _driverVersion = '1.2.0';
+const String _driverVersion = '1.3.0';
 
 /// One Python session on one worker.
 ///
