@@ -261,7 +261,7 @@ final class ArenaWriter {
     if (!open.add(v)) {
       throw PythonRefusal(
         v,
-        'contains itself; such a cycle cannot be sent to the worker',
+        'contains itself; a cycle cannot be sent to the worker',
         'ValueError',
         'Circular reference detected',
       );
@@ -362,7 +362,7 @@ final class ArenaWriter {
     if (open.contains(w)) {
       throw PythonRefusal(
         w,
-        'contains itself; such a cycle cannot be sent to the worker',
+        'contains itself; a cycle cannot be sent to the worker',
         'ValueError',
         'Circular reference detected',
       );
