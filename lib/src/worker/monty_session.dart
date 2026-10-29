@@ -61,11 +61,16 @@ import 'package:fixnum/fixnum.dart';
 ///
 /// The working directory persists across feeds, including changes from
 /// `os.chdir`. Before establishment, it uses the first mount's virtual path or
-/// `/`. The session leaves it unestablished when type checking rejects a feed.
-/// A syntax error, runtime error, or successful restore establishes it. A
-/// relative path or NUL raises a
-/// recoverable `ValueError` before code or mounts run. An unpaired surrogate
-/// throws [ArgumentError].
+/// `/`. The first feed that reaches the worker establishes it, as upstream
+/// 1.2.0 does: from then on the session names no directory, and the worker
+/// keeps the one it has. A feed the type check rejects keeps the directory it
+/// was given, because the worker adopts the directory before it type-checks
+/// the snippet. A feed the source-nesting check refuses leaves the directory
+/// as it was, because the worker answers that refusal before it adopts the
+/// directory. A syntax error, runtime error, or successful restore
+/// establishes it too. A relative path or NUL raises a recoverable
+/// `ValueError` before code or mounts run. An unpaired surrogate throws
+/// [ArgumentError].
 abstract interface class MontySession {
   /// Runs one Python snippet to completion and returns its last expression.
   ///

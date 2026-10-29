@@ -1261,7 +1261,10 @@ void main() {
     // The bytes of each `ParentRequest`, as monty-pool 1.1.0's
     // `Checkout::feed_with_cwd` builds it (no mounts, no explicit cwd) and
     // prost encodes it: the arena always present, zero and empty fields left
-    // out, `cwd` "/" on the session's first feed only.
+    // out, `cwd` "/" on the session's first feed only. Upstream 1.2.0 counts
+    // the directory as established once a feed is sent, one the type check
+    // refuses included, so the feed after a refused one carries no cwd
+    // (1.1.0 named the default again there).
     const firstNoInputs = '1a0c0a0531202b20311a002a012f';
     const laterNoInputs = '1a090a0531202b20311a00';
     const firstTwoInputs =
@@ -1329,22 +1332,32 @@ void main() {
       expect(feedsSent(ch), [firstTwoInputs, laterOneInput]);
     });
 
-    test('a feed the type check refuses leaves the directory unset', () async {
-      final ch = _configured([
-        answer([
-          pb.ChildEvent(typingError: pb.TypingError(diagnostics: 'x')),
-        ]),
-        done,
-        done,
-      ]);
-      final s = await ProtoSession.open(
-        ch,
-        const SessionConfig(typeCheck: true),
-      );
-      await expectLater(s.feed(code), throwsA(isA<MontyTypingError>()));
-      await feedTimes(s, 2);
-      expect(feedsSent(ch), [firstNoInputs, firstNoInputs, laterNoInputs]);
-    });
+    // Measured on upstream pydantic-monty 1.2.0 (one checkout with
+    // type_check=True): the worker adopts a feed's directory before it
+    // type-checks the snippet, so a feed the type check refuses establishes
+    // the directory all the same. A refused first feed (no mounts, no
+    // explicit cwd) leaves the session at "/" (measured), and the feed
+    // after it carries no cwd (measured: the session still reports "/"),
+    // as does the one after that.
+    test(
+      'a feed the type check refuses still establishes the directory',
+      () async {
+        final ch = _configured([
+          answer([
+            pb.ChildEvent(typingError: pb.TypingError(diagnostics: 'x')),
+          ]),
+          done,
+          done,
+        ]);
+        final s = await ProtoSession.open(
+          ch,
+          const SessionConfig(typeCheck: true),
+        );
+        await expectLater(s.feed(code), throwsA(isA<MontyTypingError>()));
+        await feedTimes(s, 2);
+        expect(feedsSent(ch), [firstNoInputs, laterNoInputs, laterNoInputs]);
+      },
+    );
 
     test('a Python error still sets the directory', () async {
       final ch = _configured([

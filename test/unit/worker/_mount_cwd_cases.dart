@@ -86,8 +86,17 @@ void mountCwdTests({List<MountDir> Function(String)? mountsFor}) {
           expect(await session.feedRun(_getcwd), const MontyString('/next'));
         });
         for (final explicit in [false, true]) {
+          // Measured on upstream pydantic-monty 1.2.0 (one checkout with
+          // type_check=True): the worker adopts a feed's directory before
+          // it type-checks the snippet, so the feed the type check refuses
+          // keeps the directory it was given, and the feed after it carries
+          // no cwd (measured: the session still reports that directory).
+          // The refused feed's directory is the cwd it was given
+          // ("/explicit", measured), the first mount's virtual path when a
+          // mount chose it ("/first", measured), and "/" when it had
+          // neither (measured).
           test(
-            'first typing rejection leaves cwd unset explicit=$explicit',
+            'first typing rejection adopts the cwd explicit=$explicit',
             () async {
               final typed = await pool.checkout(typeCheck: true);
               addTearDown(typed.close);
@@ -101,6 +110,14 @@ void mountCwdTests({List<MountDir> Function(String)? mountsFor}) {
                 ),
                 throwsA(isA<MontyTypingError>()),
               );
+              // The refused feed's directory: the cwd it was given, the
+              // first mount's virtual path when a mount chose it, "/" when
+              // it had neither.
+              final refused = switch ((explicit, mounted)) {
+                (true, _) => '/explicit',
+                (false, true) => '/first',
+                (false, false) => '/',
+              };
               expect(
                 await _feed(
                   typed,
@@ -108,13 +125,18 @@ void mountCwdTests({List<MountDir> Function(String)? mountsFor}) {
                   start: start,
                   mount: mountsFor?.call('/second'),
                 ),
-                MontyString(mounted ? '/second' : '/'),
+                MontyString(refused),
               );
             },
           );
         }
+        // Measured on upstream pydantic-monty 1.2.0 (one checkout with
+        // type_check=True): the refused feed adopts the cwd it was given
+        // ("/rejected", measured), not the one the session had ("/saved"),
+        // and the feed after the refusal carries no cwd (measured: the
+        // session still reports "/rejected"), so it keeps it.
         test(
-          'typing rejection after establishment keeps previous cwd',
+          'typing rejection after establishment adopts its own cwd',
           () async {
             final typed = await pool.checkout(typeCheck: true);
             addTearDown(typed.close);
@@ -139,7 +161,7 @@ void mountCwdTests({List<MountDir> Function(String)? mountsFor}) {
                 start: start,
                 mount: mountsFor?.call('/second'),
               ),
-              const MontyString('/saved'),
+              const MontyString('/rejected'),
             );
           },
         );

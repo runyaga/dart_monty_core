@@ -168,31 +168,44 @@ void main() {
   }
 
   for (final mounted in [false, true]) {
-    test('typing rejection retries default on wire mounted=$mounted', () async {
-      final (session, channel) = await open([
-        expecting(pb.ParentRequest_Kind.feed, [
-          pb.ChildEvent(typingError: pb.TypingError(diagnostics: 'bad type')),
-        ]),
-        expecting(pb.ParentRequest_Kind.feed, [_none]),
-        expecting(pb.ParentRequest_Kind.feed, [_none]),
-      ]);
-      await expectLater(
-        session.feedRun(
-          'bad',
-          cwd: '/explicit',
-          mount: mounted ? [first] : null,
-        ),
-        throwsA(isA<MontyTypingError>()),
-      );
-      await session.feedRun('good', mount: mounted ? [second] : null);
-      await session.feedRun('later', mount: mounted ? [first] : null);
-      expect(
-        channel.requests.where((r) => r.hasFeed()).map((r) => r.feed.cwd),
-        ['/explicit', if (mounted) '/second' else '/', ''],
-      );
-    });
+    // Measured on upstream pydantic-monty 1.2.0 (one checkout with
+    // type_check=True): the worker adopts a feed's directory before it
+    // type-checks the snippet, so the feed the type check refuses
+    // establishes the directory all the same. A refused feed with the cwd
+    // "/explicit" leaves the session there (measured), mount or no mount,
+    // and the feed after it carries no cwd (measured: the session still
+    // reports "/explicit"), as does the one after that.
+    test(
+      'typing rejection establishes the directory mounted=$mounted',
+      () async {
+        final (session, channel) = await open([
+          expecting(pb.ParentRequest_Kind.feed, [
+            pb.ChildEvent(typingError: pb.TypingError(diagnostics: 'bad type')),
+          ]),
+          expecting(pb.ParentRequest_Kind.feed, [_none]),
+          expecting(pb.ParentRequest_Kind.feed, [_none]),
+        ]);
+        await expectLater(
+          session.feedRun(
+            'bad',
+            cwd: '/explicit',
+            mount: mounted ? [first] : null,
+          ),
+          throwsA(isA<MontyTypingError>()),
+        );
+        await session.feedRun('good', mount: mounted ? [second] : null);
+        await session.feedRun('later', mount: mounted ? [first] : null);
+        expect(
+          channel.requests.where((r) => r.hasFeed()).map((r) => r.feed.cwd),
+          ['/explicit', '', ''],
+        );
+      },
+    );
   }
 
+  // Measured on upstream pydantic-monty 1.2.0: a restored session keeps
+  // the directory the dump carried ("/saved" for the dump taken there), and
+  // the first feed after the restore sends no cwd, so the worker keeps it.
   test('restored session sends empty cwd on first feed', () async {
     final (session, channel) = await open([
       expecting(pb.ParentRequest_Kind.load, [_ok]),
