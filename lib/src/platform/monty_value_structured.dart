@@ -497,14 +497,51 @@ String _pyReprRune(int rune, String quote) {
 /// A host module the sandbox imports: upstream's `PyExternalModule`
 /// (monty-proto `src/python/external_module.rs`).
 ///
-/// The host builds one and gives it to the session's `external_modules`
-/// mapping, and the sandbox imports it by name. [attrs] is copied and
-/// checked once, at construction, so a module never changes after: its keys
-/// must be strings and identifiers (a keyword is not one), and a nested
-/// [ExternalModule] may sit only under a key naming a module the sandbox
-/// does not itself provide. Ordinary values are neither checked nor
-/// converted at construction; [attrValue] converts one when it is read, the
-/// moment an import would.
+/// The host builds one and gives it to a session through the
+/// `externalModules` parameter of `Monty.checkout` or `Monty.withSession`,
+/// and the sandbox imports it by name:
+///
+/// ```dart
+/// final tools = ExternalModule({
+///   'VERSION': 3,
+///   'add': MontyHostFunction('add', (arguments, keywords) {
+///     final left = arguments[0] as MontyInt;
+///     final right = arguments[1] as MontyInt;
+///
+///     return MontyInt(left.value + right.value);
+///   }),
+///   'sub': ExternalModule({'TAG': 'nested'}),
+/// });
+///
+/// await Monty.withPool(
+///   (monty) => monty.withSession(
+///     (session) => session.feedRun('import tools\ntools.add(2, 3)'),
+///     externalModules: {'tools': tools},
+///   ),
+/// );
+/// ```
+///
+/// The attributes are the module's public surface, and the sandbox sees the
+/// public ones only, in insertion order: [publicAttrs] holds them, and a
+/// name that starts with `_` is protected and reaches no host code. A
+/// [MontyHostFunction] attribute is a function the sandbox calls by its
+/// name (`tools.add(2, 3)`), and a nested [ExternalModule] is a submodule of
+/// its own, imported by its dotted path (`import tools.sub`). [stubs] is the
+/// module's `.pyi` source, `null` when it has none; the type checker reads
+/// it when it type checks an import of the module.
+///
+/// [attrs] is copied and checked once, at construction, so the module's
+/// attribute mapping never changes after: its keys must be strings and
+/// identifiers (a keyword is not one), and a nested [ExternalModule] may
+/// sit only under a key naming a module the sandbox does not itself
+/// provide. The copy is shallow: the values are the very objects the host
+/// gave, so a mutable value is shared with the module and not copied into
+/// it, and a change the host makes to it is seen by the sandbox the next
+/// time the value is converted, that is by a later import. A value the
+/// sandbox already imported is not changed: it was converted and sent when
+/// that import happened. Ordinary values are neither checked nor converted
+/// at construction; [attrValue] converts one when it is read, the moment an
+/// import would.
 ///
 /// Two are equal, as upstream's `__eq__`, when their ids, stubs and
 /// attributes match: the attribute values are compared structurally, as
@@ -516,8 +553,14 @@ String _pyReprRune(int rune, String quote) {
 /// back unchanged, and its [dartValue] is the module itself. It has no
 /// tagged JSON projection, so [_toJson] refuses one with an
 /// [UnsupportedError]. Nor is it a value the sandbox can hold: it enters
-/// the sandbox through the session's `external_modules` mapping, and the
+/// the sandbox through the session's `externalModules` mapping, and the
 /// arena writer refuses one that arrives as an ordinary value.
+///
+/// The rules the sandbox follows for an import, a module call and a
+/// factory, and every difference from upstream, are in
+/// `docs/reference/upstream-divergences.md`. The map a module is given
+/// through is the `externalModules` parameter of `Monty.checkout` and
+/// `Monty.withSession`, whose contract the `Monty` class documents.
 final class ExternalModule extends MontyValue {
   /// Creates a module from a shallow copy of [attrs].
   ///
@@ -545,16 +588,19 @@ final class ExternalModule extends MontyValue {
   final String id;
 
   /// The module's attributes, copied once at construction and never changed
-  /// after. The values are the very objects given, so the copy is shallow.
+  /// after. The values are the very objects given, so the copy is shallow
+  /// and a mutable value among them is shared with the module.
   final Map<String, Object?> _attrs;
 
   /// A copy of the module's attributes, protected ones included. Editing it,
   /// or the map given at construction, changes neither the module nor the
-  /// next copy read; the values are the very objects given.
+  /// next copy read; the values are the very objects given, so a mutable
+  /// value among them is shared, not copied.
   Map<String, Object?> get attrs => Map.of(_attrs);
 
   /// The public attributes, in insertion order: every attribute whose name
-  /// does not start with `_`.
+  /// does not start with `_`. A nested [ExternalModule] is one of them, and
+  /// the sandbox imports it as a submodule of its own.
   Map<String, Object?> get publicAttrs {
     final public = <String, Object?>{};
     for (final entry in _attrs.entries) {
