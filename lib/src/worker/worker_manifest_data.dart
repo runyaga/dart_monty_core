@@ -13,8 +13,7 @@ import 'package:dart_monty_core/src/worker/worker_manifest.dart';
 /// that answers the old upstream's behaviour, so the build hook installs
 /// none and the locator falls through to the worker built from
 /// `native/worker` (tool/build_worker.sh), which carries the pinned upstream.
-const workerManifestJson =
-    '{"schema":1,"version":"v0.110.0-dev.4","targets":{}}';
+const workerManifestJson = '{"schema":1,"version":"v0.120.0","targets":{}}';
 
 /// The parsed manifest bundled with this package.
 final bundledWorkerManifest = WorkerManifest.fromJson(workerManifestJson);

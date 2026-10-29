@@ -649,12 +649,23 @@ int _observedCount(Map<String, int> observed, String suite) {
   return count;
 }
 
-/// The `changes/<slug>.md` fragment recording the monty v1.3.0 migration: a
-/// markdown file directly under changes/ (README excluded, as
-/// tool/check_changelog_fragments.sh does not assemble it) whose text covers
-/// every topic in [_migrationFragmentTopics]. The empty string when no
-/// fragment covers them all.
+/// The `changes/<slug>.md` fragment recording the monty v1.3.0 migration, or
+/// CHANGELOG.md once a release has assembled it: a markdown file directly
+/// under changes/ (README excluded, as tool/check_changelog_fragments.sh does
+/// not assemble it) or the `## 0.130.0` section, whose text covers every
+/// topic in [_migrationFragmentTopics]. The empty string when none covers
+/// them all.
 String _migrationChangeFragment() {
+  final changelog = File('CHANGELOG.md').readAsStringSync();
+  final released = RegExp(
+    r'^## 0\.130\.0 .*?(?=^## )',
+    multiLine: true,
+    dotAll: true,
+  ).firstMatch(changelog)?.group(0);
+  if (released != null &&
+      _migrationFragmentTopics.every(released.toLowerCase().contains)) {
+    return 'CHANGELOG.md';
+  }
   final fragments = <String>[
     if (Directory('changes').existsSync())
       for (final entity in Directory('changes').listSync())
