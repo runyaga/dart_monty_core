@@ -1,5 +1,5 @@
 // Generates packages/monty_conformance/lib/src/fixture_corpus_v1.dart from a
-// checkout of upstream's pinned test_cases (the 1.1.0 corpus the worker runs).
+// checkout of upstream's pinned test_cases (the corpus the worker runs).
 //
 //   dart tool/generate_fixture_corpus_v1.dart <upstream-checkout> [--check]
 //
@@ -33,6 +33,7 @@ void main(List<String> args) {
 
     return;
   }
+  // ignore: avoid-unsafe-collection-methods, the guard above pins the count.
   final checkout = paths.single;
 
   final pin =
@@ -40,6 +41,7 @@ void main(List<String> args) {
           as Map<String, Object?>;
   final tree = (pin['trees']! as List<Object?>)
       .cast<Map<String, Object?>>()
+      // ignore: avoid-unsafe-collection-methods, one tree record per path.
       .singleWhere((t) => t['path'] == _corpusPath);
 
   final head = _git(checkout, ['rev-parse', 'HEAD']);

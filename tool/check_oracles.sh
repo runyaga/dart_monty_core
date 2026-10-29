@@ -3,8 +3,8 @@
 # .g.dart that differs from what upstream's pydantic-monty records fails.
 #
 # The generators are found by glob, so a new one is covered with no edit here.
-# They need Python 3.12 with pydantic-monty 1.1.0 (the oracle), installed from
-# the hash-pinned tool/upstream/requirements.lock into a venv that is reused:
+# They need Python 3.12 with the pinned pydantic-monty (the oracle), installed
+# from the hash-pinned tool/upstream/requirements.lock into a reused venv:
 #
 #   bash tool/check_oracles.sh
 #

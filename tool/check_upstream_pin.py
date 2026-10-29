@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify the upstream reference pin: pydantic/monty 1.1.0 by content hash.
+"""Verify the upstream reference pin: pydantic/monty by content hash.
 
 The pin is the oracle every parity number is measured against, so it has to
 be checkable rather than asserted. Two records, one script:
