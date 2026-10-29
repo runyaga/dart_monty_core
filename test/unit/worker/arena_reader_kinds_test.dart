@@ -973,6 +973,36 @@ void main() {
       );
     },
   );
+
+  test(
+    'the functools._lru_cache_wrapper type name round-trips through the arena',
+    () {
+      // The name of the wrapper `functools.lru_cache` returns: upstream
+      // v1.3.0's `MontyType` knows it (`type.rs:299`), so
+      // `MontyType::from_type_name` accepts it and the type crosses the
+      // arena as the builtin type it names.
+      const name = 'functools._lru_cache_wrapper';
+      // The reader accepts the name and builds the type proxy of the same
+      // meaning.
+      expect(
+        _accepted(
+          () => _decode([builtinType(name)]),
+          'builtin type node $name',
+        ),
+        montyStdTypeProxy('type', name),
+      );
+      // The writer sends the name back as it is, as a builtin type with
+      // neither an id nor attrs.
+      final typeNode = _accepted(
+        () => _written(montyStdTypeProxy('type', name)),
+        'encoded builtin type $name',
+      );
+      expect(typeNode.type.name, name);
+      expect(typeNode.type.origin, originBuiltin);
+      expect(typeNode.type.hasId(), isFalse);
+      expect(typeNode.type.hasAttrs(), isFalse);
+    },
+  );
 }
 
 /// A host object equal to any other with the same [n].
