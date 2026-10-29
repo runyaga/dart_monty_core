@@ -382,7 +382,8 @@ const String _typeNames =
     'itertools.zip_longest types.GenericAlias typing.Union '
     'itertools.combinations itertools.combinations_with_replacement '
     'itertools.permutations itertools.product itertools.groupby '
-    'itertools._grouper itertools._tee itertools._tee_dataobject';
+    'itertools._grouper itertools._tee itertools._tee_dataobject '
+    'functools._lru_cache_wrapper';
 
 const String _excNames =
     'Exception BaseException SystemExit KeyboardInterrupt ArithmeticError '
