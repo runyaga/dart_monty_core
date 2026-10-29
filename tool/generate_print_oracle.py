@@ -3,7 +3,7 @@
 
 usage: PYTHON -I tool/generate_print_oracle.py [--check]
 
-PYTHON is an interpreter with pydantic-monty 1.1.0 installed (the oracle).
+PYTHON is an interpreter with the pydantic-monty that tool/upstream/requirements.lock pins installed (the oracle).
 Each case is one print sink, a collector or a print callback that raises,
 used for every step of one checkout of upstream's AsyncMonty with
 `print_flush_interval=0`, so each completed line is its own fragment. The
