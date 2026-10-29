@@ -28,6 +28,14 @@ argument.
 [`OSAccess`](../../lib/src/mount/os_access.dart) routes those calls by the
 handle's virtual path.
 
+Two calls do not reach the handler: the `import` of a host module, and the
+stub request the worker sends before it type checks a feed. The session's
+module map answers both, before the mounts and the handler see them. The
+two system sleeps do not reach the handler while a feed runs through
+`feedRun` either: the driver waits for them itself, up to the session's
+sleep limit. A snapshot resumed with `resumeAuto` hands them to the mounts
+and the handler instead. See [host modules](host-modules.md).
+
 ## Host-backed virtual files
 
 `package:dart_monty_core/unsafe_callback_file.dart` exports `CallbackFile`.

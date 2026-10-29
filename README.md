@@ -14,13 +14,13 @@
 `dart_monty_core` runs Python in Dart through
 [pydantic-monty](https://github.com/pydantic/monty), a sandboxed Python
 interpreter written in Rust. Dart programs can provide typed inputs, host
-functions, OS operations, host-directory mounts, resource limits, and type
-checking. Results return as typed `MontyValue` objects.
+functions, host modules, OS operations, host-directory mounts, resource
+limits, and type checking. Results return as typed `MontyValue` objects.
 
 Dart applications cannot load new behavior without shipping a new binary.
 Monty lets an application run supplied Python under resource limits while
-exposing only selected host functions and OS operations. Pydantic runs a
-security bug bounty for the interpreter at
+exposing only selected host functions, host modules, and OS operations.
+Pydantic runs a security bug bounty for the interpreter at
 [hackmonty.com](https://hackmonty.com/).
 
 Each session runs outside the application process. Native sessions use child
@@ -73,6 +73,7 @@ browsers. `OSAccess` provides an in-memory filesystem on every platform.
 - [Documentation index](docs/README.md)
 - [Execution model](docs/reference/execution-model.md)
 - [Host functions and async](docs/deep-dives/async-matrix.md)
+- [Host modules](docs/reference/host-modules.md)
 - [OS access](docs/reference/os-access.md)
 - [Host directory mounts](docs/reference/host-directory-mounts.md)
 - [Telemetry](docs/reference/telemetry.md)
