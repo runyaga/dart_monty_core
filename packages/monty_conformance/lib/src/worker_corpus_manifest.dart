@@ -1,4 +1,4 @@
-// The expected outcomes of the upstream 1.1.0 corpus on the worker engine.
+// The expected outcomes of the upstream 1.2.0 corpus on the worker engine.
 //
 // Every corpus file the engine fails is listed here, tied to a divergence ID
 // and a reason, and a run is judged against the list in BOTH directions: a
@@ -121,6 +121,25 @@ const workerCorpusDivergences = <String, CorpusDivergence>{
         'rule: pydantic_monty 1.1.0 is the reference, and `@pydantic/monty` '
         '1.1.0 `/wasm` (the wasm32 build) fails the same four '
         'files with the same exceptions (measured on Chrome 155)',
+  ),
+  'worker-fixture-memory-limit': CorpusDivergence(
+    'worker-fixture-memory-limit',
+    "Upstream's datatest runs every fixture with no memory limit, and the "
+        '1.2.0 percent-format precision cases pass for it: the largest one '
+        'formats with a precision of 2147482623 '
+        '(`bytes__percent_format.py:184`, `str__percent_format.py:370`), '
+        'whose buffer allocates about 2.1 GB. This '
+        'repository bounds every worker it starts, and the corpus harness '
+        'bounds a fixture at `workerFixtureMaxMemory` = 256 MB, so the '
+        "allocation is refused with the allocator's `MemoryError`, whose "
+        "text ends 'bytes > 268435456 bytes'. A wasm32 browser worker "
+        'could not allocate the 2 GB either. The bound is not raised for '
+        'these two files.',
+    'the fixture bound is worker_fixture_runner.dart:35 '
+        "(workerFixtureMaxMemory = 256 MB); the datatest's default_test_limits "
+        '(crates/monty-datatest/src/main.rs:76) sets '
+        'only the recursion depth; kept by owner decision at the 1.2.0 '
+        'corpus re-measure',
   ),
 };
 
@@ -286,6 +305,18 @@ const workerCorpusExpected = <ExpectedFailure>[
     'expected no error, got '
         'AssertionError: assert 4294967295 == 9223372036854775807',
     profiles: {WorkerCorpusProfile.browser},
+  ),
+
+  // worker-fixture-memory-limit
+  ExpectedFailure.tail(
+    'bytes__percent_format.py',
+    'worker-fixture-memory-limit',
+    'bytes > 268435456 bytes',
+  ),
+  ExpectedFailure.tail(
+    'str__percent_format.py',
+    'worker-fixture-memory-limit',
+    'bytes > 268435456 bytes',
   ),
 ];
 

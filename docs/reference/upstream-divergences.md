@@ -1,6 +1,6 @@
 # Upstream divergences
 
-pydantic-monty 1.1.0 is the specification for everything Python code can observe. This page lists every known place where dart_monty_core behaves differently, and why. A behaviour that differs from upstream and is missing from this list is a bug.
+pydantic-monty 1.2.0 is the specification for everything Python code can observe. This page lists every known place where dart_monty_core behaves differently, and why. A behaviour that differs from upstream and is missing from this list is a bug.
 
 Classes:
 
@@ -19,7 +19,7 @@ Iterator-consuming builtins cannot call external functions. Calls such as
 `map(ext_fn, ...)`, `filter(ext_fn, ...)`, and `sorted(..., key=ext_fn)` raise
 `RuntimeError` upstream.
 
-| Id | Case | Upstream 1.1.0 | dart_monty_core | Class | Pinned by |
+| Id | Case | Upstream 1.2.0 | dart_monty_core | Class | Pinned by |
 |---|---|---|---|---|---|
 | C-1 | Host-directory mounts (`MountDir`) | Available | Unavailable on dart2js and dart2wasm, which have no `dart:ffi` or host filesystem | PLATFORM | `test/unit/mount/native_mounts_web_test.dart`, `test/unit/worker/mount_web_test.dart` |
 | C-2 | A Python object passed as an input | Passed by reference | No Dart form; inputs are `MontyValue`s | NO-ANALOGUE | none (cannot be expressed) |
@@ -86,8 +86,8 @@ whose `__eq__` compares the id, the stubs and the attrs dict. The model
 here is the same one, as a Dart class,
 [`ExternalModule`](../../lib/src/platform/monty_value_structured.dart),
 exported from the package. The differences are these; they are against
-upstream 1.2.0, the version that carries the module model, while the
-declaration at the top of this page still names 1.1.0 for everything else.
+upstream 1.2.0, the version that carries the module model, as is every
+other table on this page.
 
 | Id | Case | Upstream 1.2.0 | dart_monty_core | Class | Pinned by |
 |---|---|---|---|---|---|
