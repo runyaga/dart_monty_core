@@ -1032,6 +1032,22 @@ void main() {
   );
 
   test(
+    'import answers an attribute whose type cannot be read with its own '
+    'error',
+    () async {
+      await _importTypeFailure();
+    },
+  );
+
+  test(
+    'import answers an attribute whose error cannot be read without a '
+    'message',
+    () async {
+      await _importHostileFailure();
+    },
+  );
+
+  test(
     'ImportStubs observes the factory future it abandons while collecting '
     'stubs',
     () async {
@@ -1047,6 +1063,14 @@ void main() {
         ),
       );
       expect(uncaught, isEmpty, reason: 'an abandoned failure is observed');
+    },
+  );
+
+  test(
+    'ImportStubs answers an invalid entry a factory replaced a direct '
+    'module with, under the ask id',
+    () async {
+      await _stubCollectionRefused();
     },
   );
 
@@ -2218,6 +2242,54 @@ Future<void> _stubCollectionAbandons() async {
   expect(replacedCalls, 2, reason: 'the abandoned result was not installed');
 }
 
+/// A factory that replaces a direct module with an invalid entry while it
+/// stages: the collection of the stubs meets the entry again, and the ask
+/// answers the refusal of the entry as a structured TypeError, under the
+/// request's own id.
+Future<void> _stubCollectionRefused() async {
+  final modules = <String, Object?>{
+    'a': ExternalModule({'VERSION': 1}),
+  };
+  var bCalls = 0;
+  final host = HostAnswers(externalModules: modules);
+  modules['b'] = () {
+    bCalls++;
+
+    // The factory replaces the direct module with an entry the mapping
+    // cannot hold, so the collection of the stubs refuses it.
+    modules['a'] = 42;
+
+    return ExternalModule({'VERSION': 2});
+  };
+  const id = 102;
+  final answer = await host
+      .osCall(
+        pb.OsCall(
+          callId: id,
+          importStubs: pb.OsCall_ImportStubs(modules: ['a', 'b']),
+        ),
+        parentSleeps: true,
+      )
+      .timeout(const Duration(seconds: 5));
+  expect(answer.resumeCall.callId, id, reason: 'the answer keeps the call id');
+  final result = answer.resumeCall.result;
+  expect(result.hasError(), isTrue);
+  expect(result.error.excType, 'TypeError');
+  expect(
+    result.error.message,
+    contains("external_modules['a'] must be an ExternalModule or a callable"),
+  );
+
+  // The module the factory built before the refusal stays installed: the
+  // import that follows is answered from the cache.
+  final imported = await host.osCall(
+    pb.OsCall(callId: 103, import: pb.OsCall_Import(module: 'b')),
+    parentSleeps: true,
+  );
+  expect(imported.resumeCall.result.hasError(), isFalse);
+  expect(bCalls, 1, reason: 'the installed module answers the import');
+}
+
 /// The function the module a stubs ask builds holds.
 final MontyHostFunction _stubAdd = MontyHostFunction(
   'add',
@@ -2318,12 +2390,80 @@ Future<void> _stubResolverAbandons(
   expect(pendingCalls(), 2, reason: 'the abandoned result was not installed');
 }
 
+/// An import of a module that holds an attribute whose own type cannot be
+/// read: the conversion of the attribute fails, and the import answers the
+/// failure as an `Exception` with its own text, under its own id.
+Future<void> _importTypeFailure() async {
+  final host = HostAnswers(
+    externalModules: {
+      'broken': ExternalModule({'entry': const _TypeThrowingEntry()}),
+    },
+  );
+  const id = 83;
+  final answer = await host.osCall(
+    pb.OsCall(
+      callId: id,
+      import: pb.OsCall_Import(module: 'broken'),
+    ),
+    parentSleeps: true,
+  );
+  final resumed = answer.resumeCall;
+  expect(resumed.callId, id, reason: 'the answer keeps the call id');
+  final result = resumed.result;
+  expect(result.hasError(), isTrue);
+  expect(result.error.excType, 'Exception');
+  expect(result.error.message, 'Bad state: boom');
+}
+
+/// An import of a module that holds an attribute whose type cannot be read
+/// and whose error cannot be read either: the import answers an `Exception`
+/// without a message, under its own id.
+Future<void> _importHostileFailure() async {
+  final host = HostAnswers(
+    externalModules: {
+      'hostile': ExternalModule({'entry': const _HostileTypeEntry()}),
+    },
+  );
+  const id = 84;
+  final answer = await host.osCall(
+    pb.OsCall(
+      callId: id,
+      import: pb.OsCall_Import(module: 'hostile'),
+    ),
+    parentSleeps: true,
+  );
+  final resumed = answer.resumeCall;
+  expect(resumed.callId, id, reason: 'the answer keeps the call id');
+  final result = resumed.result;
+  expect(result.hasError(), isTrue);
+  expect(result.error.excType, 'Exception');
+  expect(result.error.hasMessage(), isFalse, reason: 'no message is read');
+}
+
 /// An entry the refusal that names it cannot read the type of.
 final class _TypeThrowingEntry {
   const _TypeThrowingEntry();
 
   @override
   Type get runtimeType => throw StateError('boom');
+}
+
+/// An [ArgumentError] whose own message cannot be read: the getter itself
+/// throws, so the failure that would carry its text cannot read it.
+final class _MessageThrowingArgumentError extends ArgumentError {
+  _MessageThrowingArgumentError();
+
+  @override
+  Never get message => throw StateError('no message');
+}
+
+/// An entry whose refusal cannot even be named: its type getter throws an
+/// error whose own message getter throws too.
+final class _HostileTypeEntry {
+  const _HostileTypeEntry();
+
+  @override
+  Type get runtimeType => throw _MessageThrowingArgumentError();
 }
 
 /// The dict the call [call] returned, or a failure naming what it
