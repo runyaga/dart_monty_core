@@ -1,6 +1,6 @@
 # Upstream divergences
 
-pydantic-monty 1.2.0 is the specification for everything Python code can observe. This page lists every known place where dart_monty_core behaves differently, and why. A behaviour that differs from upstream and is missing from this list is a bug.
+pydantic-monty 1.3.0 is the specification for everything Python code can observe. This page lists every known place where dart_monty_core 0.130.0 behaves differently, and why. A behaviour that differs from upstream and is missing from this list is a bug.
 
 Classes:
 
@@ -19,7 +19,7 @@ Iterator-consuming builtins cannot call external functions. Calls such as
 `map(ext_fn, ...)`, `filter(ext_fn, ...)`, and `sorted(..., key=ext_fn)` raise
 `RuntimeError` upstream.
 
-| Id | Case | Upstream 1.2.0 | dart_monty_core | Class | Pinned by |
+| Id | Case | Upstream 1.3.0 | dart_monty_core | Class | Pinned by |
 |---|---|---|---|---|---|
 | C-1 | Host-directory mounts (`MountDir`) | Available | Unavailable on dart2js and dart2wasm, which have no `dart:ffi` or host filesystem | PLATFORM | `test/unit/mount/native_mounts_web_test.dart`, `test/unit/worker/mount_web_test.dart` |
 | C-2 | A Python object passed as an input | Passed by reference | No Dart form; inputs are `MontyValue`s | NO-ANALOGUE | none (cannot be expressed) |
@@ -34,10 +34,28 @@ Iterator-consuming builtins cannot call external functions. Calls such as
 | C-11 | [`MontyExceptionValue`](../../lib/src/platform/monty_value_structured.dart) and [`MontyFileHandle`](../../lib/src/platform/monty_value_structured.dart) | — | See the declarations | NO-ANALOGUE | `test/unit/platform/monty_value_equality_rules_test.dart`, `test/unit/platform/monty_file_handle_test.dart` "C-11" tests |
 | C-12 | `MontyError.display(format)` with an unknown format | Raises `ValueError` with `"Invalid display format: '<format>'. Expected 'traceback', 'type-msg', or 'msg'"` | Throws Dart `ArgumentError` with the same message | NO-ANALOGUE | `test/unit/worker/raised_record_test.dart`, `test/unit/worker/monty_error_test.dart` "C-12" tests |
 
+## The deep-feed rejection
+
+Upstream 1.3.0 adds a public item the port does not mirror:
+`monty::type_check_nesting_exception` (`crates/monty/src/parse.rs`), the
+preflight a worker runs before it type-checks a feed. It refuses a source
+whose expressions nest deeper than the parser's limit, with the syntax
+error `Source is too deeply nested`.
+
+The port answers such a feed the same way, and at once: the worker is
+upstream's own code, so the refusal comes from the same check. On 1.2.0 the
+type check walked the deep AST instead, and the feed ran into its deadline:
+the worker was killed after the limit plus its grace (finding 39).
+`test/unit/worker/_migration_130_cases.dart` pins the answer.
+
+The Dart API has no counterpart to call, and the new public item has no row
+in the capability manifest: the manifest counts capabilities, and the owner
+decided that this one does not get a row.
+
 ## The working directory
 
-The working directory follows upstream 1.2.0's rule, not the 1.1.0
-specification above. The driver counts the directory as established once a
+The working directory follows upstream 1.3.0's rule, not the rule the 1.1.0
+specification had. The driver counts the directory as established once a
 feed reaches the worker, a feed the type check refuses included, so a later
 feed without an explicit `cwd` sends none and the worker keeps the
 directory it has (`os.chdir` included). Upstream 1.1.0's driver treated a
@@ -46,9 +64,9 @@ refused feed as leaving the directory unset and sent the default again.
 The worker adopts the directory before it type-checks the snippet, so a
 feed the type check refuses keeps the directory it was given: the explicit
 `cwd` when one was given, the first mount's virtual path when a mount
-chose it, `/` otherwise (upstream 1.2.0, measured). A feed the
+chose it, `/` otherwise (upstream 1.3.0, measured). A feed the
 source-nesting check refuses is answered before the worker adopts the
-directory, so it leaves the session where it was (upstream 1.2.0,
+directory, so it leaves the session where it was (upstream 1.3.0,
 measured).
 
 `test/unit/worker/_mount_cwd_cases.dart` and
@@ -87,10 +105,10 @@ here is the same one, as a Dart class,
 [`ExternalModule`](../../lib/src/platform/monty_value_structured.dart),
 exported from the package. The guide to the module API itself is
 [host modules](host-modules.md). The differences are these; they are against
-upstream 1.2.0, the version that carries the module model, as is every
+upstream 1.3.0, the version that carries the module model, as is every
 other table on this page.
 
-| Id | Case | Upstream 1.2.0 | dart_monty_core | Class | Pinned by |
+| Id | Case | Upstream 1.3.0 | dart_monty_core | Class | Pinned by |
 |---|---|---|---|---|---|
 | E-1 | Attribute values compared | The two `attrs` dicts are compared with Python's `==`, so two lists with the same contents match | The id, the stubs and the attribute names are compared first, and then the values, structurally: a list element by element in order, a map entry by entry with the keys equal and the values equal, whatever order the entries come in, and any other value with its own Dart `==`, as is a map key. Two containers that are the very same object are equal without being walked into. A value that holds itself ends the comparison with a StateError whose message is `recursive ExternalModule equality`, as Python's RecursionError does. Not covered: an identity map holding several Python-equal keys, a list or a map used as a key, an arbitrary iterable, and Python's own scalar equality, so a Dart `1` and a Dart `true` are not equal | PLATFORM | `test/unit/platform/monty_value_test.dart` "ExternalModule copies attributes and validates names identity and stubs", `test/unit/platform/external_module_equality_test.dart` "ExternalModule structurally compares Python-shaped attribute values" |
 | E-2 | Hashing | Python's `ExternalModule` is unhashable: `TypeError: unhashable type: 'ExternalModule'` | The hash is Object.hash(id, stubs, Object.hashAllUnordered(keys)): the id, the stubs and the attribute names, never the values. Two modules that differ only in a value share a hash | PLATFORM | `test/unit/platform/monty_value_test.dart` "ExternalModule copies attributes and validates names identity and stubs" |
@@ -136,7 +154,7 @@ is a map key: Python's own scalar equality is not emulated.
 
 A call the sandbox makes by a name that carries a dot is a module call: it
 names an attribute of one of the session's host modules. The dispatch is
-the one upstream's `callable` performs (monty-python 1.2.0
+the one upstream's `callable` performs (monty-python 1.3.0
 `src/external.rs`), and it runs after the call's arguments are checked and
 after a call that names a host object has been dispatched to that object.
 
@@ -172,10 +190,10 @@ dotted name in the lookup is not a module attribute, and is not called.
 ## Module imports: the dispatch rules
 
 An `import` of a name the sandbox does not provide itself is an OS call the
-worker sends to the parent (`OsCall.import`, field 31 of the v1.2.0
+worker sends to the parent (`OsCall.import`, field 31 of the v1.3.0
 `OsCall`). The driver answers it from the session's `external_modules`,
 before the mounts and the OS handler see it, as upstream's binding answers
-it (monty-python 1.2.0 `src/external.rs`, `import_module`). The
+it (monty-python 1.3.0 `src/external.rs`, `import_module`). The
 `import_stubs` arm (field 32) is answered from the same mapping, before the
 mounts and the OS handler see it too, as upstream's `import_stubs` does
 (`src/external.rs`).
@@ -212,7 +230,7 @@ mounts and the OS handler see it too, as upstream's `import_stubs` does
 An entry of the session's mapping is a module itself, or a factory that
 builds one. Upstream calls such an entry a factory too, and the rules are
 the ones upstream's `resolve_module` and `install_module` apply (monty-
-python 1.2.0 `src/external.rs`).
+python 1.3.0 `src/external.rs`).
 
 - A factory is a function of no arguments that returns the module. It may
   return a future instead: the driver is asynchronous, so the future is
@@ -257,9 +275,9 @@ returning one, not the class String`.
 
 An `import_stubs` of the names the sandbox does not provide itself is an
 OS call the worker sends to the parent (`OsCall.import_stubs`, field 32 of
-the v1.2.0 `OsCall`). The driver answers it from the session's
+the v1.3.0 `OsCall`). The driver answers it from the session's
 `external_modules`, before the mounts and the OS handler see it, as
-upstream's `import_stubs` does (monty-python 1.2.0 `src/external.rs`).
+upstream's `import_stubs` does (monty-python 1.3.0 `src/external.rs`).
 
 - The names the call carries are resolved in the order they were asked
   for, through the same resolver an import uses: the cache of the installed
