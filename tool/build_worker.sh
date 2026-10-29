@@ -54,7 +54,34 @@ lib_dest="lib/src/bin/$os-$arch/$library"
 
 stamp="$dest.stamp"
 
-sha() { shasum -a 256 | awk '{print $1}'; }
+# The digest tool. `sha256sum` is the GNU coreutils name: Linux has it, and
+# so does the Git Bash the Windows runner runs this script under. `shasum -a
+# 256` is the Perl script macOS ships under that name. The rule is: use
+# `sha256sum` when it exists, `shasum -a 256` otherwise, and fail loudly when
+# neither is there. The Windows runner has no `shasum`, so a fixed
+# `shasum -a 256` call failed there and every hash came back EMPTY, with the
+# stamp recording empty digests and the log never saying why. The choice is
+# printed, so it is visible in the log.
+if command -v sha256sum >/dev/null 2>&1; then
+  sha_tool=sha256sum
+elif command -v shasum >/dev/null 2>&1; then
+  sha_tool=shasum
+else
+  echo "build_worker: neither sha256sum nor shasum is available" >&2
+  exit 1
+fi
+
+# The bare 64-character hex digest of stdin, whatever the tool is called.
+sha() {
+  case "$sha_tool" in
+    sha256sum) sha256sum | awk '{print $1}' ;;
+    shasum) shasum -a 256 | awk '{print $1}' ;;
+    *)
+      echo "build_worker: no digest tool (sha_tool=$sha_tool)" >&2
+      return 1
+      ;;
+  esac
+}
 
 # Every input of the build: source paths and bytes, sorted, then the
 # compiler and its settings.
