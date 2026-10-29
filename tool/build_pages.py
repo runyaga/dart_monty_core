@@ -1,44 +1,10 @@
 #!/usr/bin/env python3
-"""Assemble the GitHub Pages site from repository files alone.
+"""Build the compiled Pages site offline with a preinstalled Dart SDK and pub cache.
 
-The site is a static catalogue of the package's downloadable native
-examples: one page -- docs/index.html as the shell -- plus a copy of each
-catalogue entry's Dart source under site/examples/, linked from the page.
-Nothing is compiled, fetched or served from outside the repository: the
-versions the page shows are read from pubspec.yaml and
-tool/upstream/upstream-pin.json, so the page cannot advertise a version
-the tree does not carry, and every local link resolves to a file the
-builder copied out of example/.
-
-Usage:
-  python3 -B tool/build_pages.py          # assemble site/ at the repo root
-  python3 -B tool/build_pages.py --check  # build into a temporary
-                                          # directory and verify it
-
---check never writes site/: it assembles into a temporary directory
-and verifies what it assembled (every local link on the page resolves
-inside the site; every examples/ copy is byte-identical to its
-repository source; examples 15-18 are all present, described and
-linked), then re-reads the deployment workflow
-(.github/workflows/deploy-pages.yml must run this builder as exactly
-`python3 -B tool/build_pages.py` in a `run:` step -- the builder's
-plain mode, the only one that writes site/ -- and upload exactly
-`site/` with actions/upload-pages-artifact, with no leftover
-in-browser-demo toolchain), then throws the site away. That proves
-assembly and local links only: the Pages upload, the
-OIDC/environment authorization and live serving need a real workflow
-run and stay unverified until one.
-
-Scope, by owner decision: the check verifies honest edits, not
-tampering. Its reads of the page and of the workflow are string and
-line matching -- a link counts when it appears in the assembled page
-outside an HTML comment, and a build step counts when its command
-line is exactly the literal above -- so crafted bypasses (links
-wrapped in hidden or inert elements, shell punctuation or quoting
-around the command, interpreter flags such as -c, -m or -V) are out
-of scope and are not defended against.
-
-Standard library only. Exit 0 on pass, 1 on any failure, 2 on bad usage.
+--check-sources validates data, shells, links, versions and workflow without
+compiling or writing site/. Plain mode resolves dependencies offline, compiles
+both entry points with dart2js and dart2wasm and validates the assembled tree.
+Browser execution and GitHub authorization require separate operator checks.
 """
 
 from __future__ import annotations
@@ -133,22 +99,6 @@ REQUIRED_EXAMPLES = (
     '16_step_debugger.dart',
     '17_restore_limits.dart',
     '18_durable_agent.dart',
-)
-
-# Residual references to the retired in-browser demo, looked for in the
-# page shell and in the deployment workflow: its pages, its toolchains,
-# its asset copies. Lowercase; the scans lowercase their text.
-RETIRED_DEMO_STRINGS = (
-    'repl',
-    'dart2js',
-    'dart2wasm',
-    'setup-node',
-    'setup-dart',
-    'dart pub get',
-    'dart compile',
-    'dart_monty_web',
-    'lib/assets',
-    'coi-serviceworker',
 )
 
 # A version literal in the shell would be a second place for versions to
@@ -266,13 +216,6 @@ def build(out_dir: Path) -> tuple[str, list[str]]:
     findings: list[str] = []
     shell = read(PAGE, findings)
 
-    for retired in RETIRED_DEMO_STRINGS:
-        if retired in shell.lower():
-            fail(
-                findings,
-                f'docs/index.html: residual reference to the retired demo: '
-                f'{retired!r}',
-            )
     for literal in VERSION_LITERAL.findall(shell):
         fail(
             findings,
@@ -329,7 +272,7 @@ def build(out_dir: Path) -> tuple[str, list[str]]:
         target = PurePosixPath(value)
         if target.is_absolute() or '..' in target.parts:
             fail(findings, f'link escapes the site: {value}')
-        elif not (out_dir / target).is_file():
+        elif not (out_dir / target).is_file() and not str(target).startswith('repl/'):
             fail(findings, f'broken local link: {value}')
     for entry in CATALOGUE:
         name = entry['file']
@@ -489,46 +432,89 @@ def workflow_findings() -> list[str]:
     for key in ('workflow_dispatch:', 'permissions:', 'environment:', 'concurrency:'):
         if key not in text:
             fail(findings, f'deploy-pages.yml lost its {key[:-1]} block')
-    for retired in RETIRED_DEMO_STRINGS:
-        if retired in text.lower():
-            fail(
-                findings,
-                f'deploy-pages.yml still builds the retired demo: {retired!r}',
-            )
+    if "if: github.ref == 'refs/heads/main'" not in text or 'needs: build' not in text:
+        fail(findings, 'deployment must require the build and be restricted to main')
+    if 'persist-credentials: false' not in text:
+        fail(findings, 'checkout must disable persisted credentials')
+    return findings
+
+
+WEB = ROOT / 'packages/dart_monty_web/web'
+SHELLS = ('index_js.html', 'index_wasm.html', 'matrix_js.html', 'matrix_wasm.html')
+
+
+def assemble(out: Path, compile_code: bool) -> list[str]:
+    import subprocess
+    findings = []
+    try:
+        data = json.loads((WEB / 'examples.json').read_text())
+        ids = set()
+        for item in data:
+            assert all(item.get(k) for k in ('id', 'title', 'description', 'source', 'setup', 'expected'))
+            assert item['id'] not in ids
+            ids.add(item['id'])
+            assert item['setup'] in ('default', 'tools', 'files', 'typing')
+            assert set(item['expected']) & {'result', 'error'}
+        assert len(data) >= 7
+    except (ValueError, AssertionError, KeyError, OSError) as e:
+        fail(findings, f'invalid examples.json: {e}')
+    _, native_findings = build(out)
+    findings += native_findings
+    repl = out / 'repl'
+    repl.mkdir(parents=True, exist_ok=True)
+    for name in (*SHELLS, 'pages.css', 'examples.json', 'bootstrap.mjs', 'coi-serviceworker.js'):
+        text = read(WEB / name, findings)
+        if name in SHELLS:
+            if 'bridge' in text or "bootstrap('" not in text:
+                fail(findings, f'{name}: missing COI bootstrap or obsolete bridge')
+            for token in (PACKAGE_VERSION_TOKEN, UPSTREAM_VERSION_TOKEN):
+                if text.count(token) != 1: fail(findings, f'{name}: missing version token {token}')
+            text = text.replace(PACKAGE_VERSION_TOKEN, package_version(findings)).replace(UPSTREAM_VERSION_TOKEN, upstream_version(findings))
+        (repl / name).write_text(text)
+    assets = repl / 'packages/dart_monty_core/assets'
+    assets.mkdir(parents=True, exist_ok=True)
+    for ext in ('js', 'wasm'):
+        shutil.copy2(ROOT / f'lib/assets/dart_monty_core_worker.{ext}', assets)
+    if compile_code and not findings:
+        import os
+        env = dict(os.environ)
+        if (ROOT / '.cache/pub').is_dir():
+            env.setdefault('PUB_CACHE', str(ROOT / '.cache/pub'))
+        for directory in (ROOT, WEB.parent):
+            subprocess.run(['dart', '--suppress-analytics', 'pub', 'get', '--offline'], cwd=directory, env=env, check=True)
+        for entry in ('repl_demo', 'feature_matrix'):
+            for compiler, ext, flags in [('js', 'js', ['-O2', '--no-source-maps']), ('wasm', 'wasm', [])]:
+                subprocess.run(['dart', '--suppress-analytics', 'compile', compiler, *flags, f'web/{entry}.dart', '-o', str(repl / f'{entry}.{ext}')], cwd=WEB.parent, env=env, check=True)
+        for entry in ('repl_demo', 'feature_matrix'):
+            for ext in ('js', 'wasm', 'mjs'):
+                if not (repl / f'{entry}.{ext}').is_file(): fail(findings, f'missing compiler artifact {entry}.{ext}')
+    for page in (out / 'index.html', *(repl / name for name in SHELLS)):
+        text = page.read_text()
+        if re.search(r'@[a-z_]+@', text): fail(findings, f'unsubstituted token in {page.name}')
+        links, _ = page_contents(text)
+        for link in links:
+            if not link or EXTERNAL_LINK.match(link): continue
+            target = (page.parent / link).resolve()
+            if not target.is_relative_to(out.resolve()) or not target.is_file():
+                fail(findings, f'broken or escaping local link: {page.name}: {link}')
     return findings
 
 
 def main(argv: list[str]) -> int:
-    if not argv:
-        _, findings = build(SITE)
-        if findings:
-            return 1
-        print(
-            'OK:   site/index.html assembled; '
-            f'{len(CATALOGUE)} example sources copied under site/examples/.'
-        )
-        return 0
-    if argv == ['--check']:
-        with tempfile.TemporaryDirectory() as temporary:
-            _, findings = build(Path(temporary) / 'site')
-        findings += workflow_findings()
-        if findings:
-            print(f'FAIL: {len(findings)} problem(s); the site check did not pass.')
-            return 1
-        print(
-            'OK:   site assembles from repository files; examples 15-18 '
-            'present, described and linked.'
-        )
-        print('OK:   every local page link and source copy verified in a '
-              'temporary build.')
-        print('OK:   deploy-pages.yml builds with tool/build_pages.py and '
-              'uploads site/.')
-        print('NOTE: the Pages upload, OIDC authorization and live serving '
-              'need a workflow run; not verified here.')
-        return 0
-    print(__doc__)
-    print('usage: python3 -B tool/build_pages.py [--check]', file=sys.stderr)
-    return 2
+    if argv not in ([], ['--check-sources']):
+        print('usage: python3 -B tool/build_pages.py [--check-sources]')
+        return 2
+    if argv:
+        with tempfile.TemporaryDirectory() as temp:
+            findings = assemble(Path(temp) / 'site', False)
+    else:
+        if SITE.exists(): shutil.rmtree(SITE)
+        findings = assemble(SITE, True)
+    findings += workflow_findings()
+    if findings: return 1
+    print('OK: Pages sources, examples, shells, local links, versions and workflow verified.')
+    if not argv: print('OK: site/ compiled with dart2js and dart2wasm; worker assets and runtime companions assembled.')
+    return 0
 
 
 if __name__ == '__main__':

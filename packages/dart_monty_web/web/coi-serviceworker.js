@@ -2,7 +2,8 @@
  * coi-serviceworker — Cross-Origin Isolation via Service Worker
  *
  * Intercepts all fetch responses and adds the COOP/COEP headers required
- * for SharedArrayBuffer (needed by the dart2wasm WASM Worker).
+ * for cross-origin isolation in the page runtime. The message-passing
+ * Monty worker and its optional JSPI dispatch do not require isolation.
  *
  * Adapted from https://github.com/gzuidhof/coi-serviceworker (MIT)
  */

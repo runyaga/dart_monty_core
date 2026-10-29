@@ -1,10 +1,7 @@
 name: Deploy GitHub Pages
 
 on:
-  # Dispatch only: the site is a static catalogue assembled from
-  # repository files, and one Pages environment per repository means a
-  # dispatch from any branch deploys to the LIVE site -- so publishing
-  # stays a deliberate act, never a side effect of a push.
+  # Dispatch any ref to build; only main may publish the live site.
   workflow_dispatch:
 
 permissions:
@@ -16,9 +13,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-    # deploy-pages publishes with an OIDC token: pages + id-token.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
+        with:
+          sdk: 3.13.5
+      - run: dart pub get
+      - run: dart pub get --directory packages/dart_monty_web
+      - run: python3 -B tool/build_pages.py
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
+        with:
+          path: site
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       pages: write
@@ -27,26 +40,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-
-      # ── Assemble site/ ──────────────────────────────────────────────────────
-      # Standard-library Python: no Node, no Dart SDK, no package fetch, no
-      # compiled artifacts. The builder reads repository files only
-      # (docs/index.html, pubspec.yaml, tool/upstream/upstream-pin.json and
-      # the example sources), verifies every local link and source copy as
-      # it builds, and writes site/ ready to upload.
-      - name: Assemble site
-        run: python3 -B tool/build_pages.py
-
-      # ── Deploy ──────────────────────────────────────────────────────────────
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
-
-      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
-        with:
-          path: site
-
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5

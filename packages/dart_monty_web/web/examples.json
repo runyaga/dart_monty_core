@@ -1,0 +1,193 @@
+[
+  {
+    "id": "state",
+    "title": "Persistent state",
+    "description": "Run twice to increment the retained counter.",
+    "source": "try:\n    counter += 1\nexcept NameError:\n    counter = 1\ncounter",
+    "setup": "default",
+    "expected": {
+      "result": "1",
+      "secondResult": "2"
+    },
+    "group": "Basics"
+  },
+  {
+    "id": "print",
+    "title": "Print and result",
+    "description": "Streamed output and an expression.",
+    "source": "print('hello from Python')\n6 * 7",
+    "setup": "default",
+    "expected": {
+      "result": "42",
+      "print": "hello from Python\n"
+    },
+    "group": "Basics"
+  },
+  {
+    "id": "dataclass",
+    "title": "Dataclass",
+    "description": "Define and instantiate a Python dataclass.",
+    "source": "from dataclasses import dataclass\n@dataclass\nclass Point:\n    x: int\n    y: int\np = Point(3, 4)\np.x + p.y",
+    "setup": "default",
+    "expected": {
+      "result": "7"
+    },
+    "group": "Basics"
+  },
+  {
+    "id": "modules",
+    "title": "Host module",
+    "description": "Import a host function and constant.",
+    "source": "import tools\nfrom tools import double, ANSWER\n(double(3), tools.ANSWER, ANSWER)",
+    "setup": "tools",
+    "expected": {
+      "result": "(6, 42, 42)"
+    },
+    "group": "Host integration"
+  },
+  {
+    "id": "files",
+    "title": "Memory files",
+    "description": "Read and write an in-memory file.",
+    "source": "from pathlib import Path\np = Path('/work/hello.txt')\np.write_text(p.read_text() + ' world')\np.read_text()",
+    "setup": "files",
+    "expected": {
+      "result": "hello world"
+    },
+    "group": "Files"
+  },
+  {
+    "id": "csv",
+    "title": "CSV across runs",
+    "description": "Write output.csv, then replace the source with print(open('output.csv').read()) and Run again.",
+    "source": "import csv\nwith open('output.csv', mode='w', newline='', encoding='utf-8') as f:\n    csv.writer(f).writerows([[\"Name\",\"Age\"],[\"Alice\",30]])",
+    "setup": "default",
+    "expected": {
+      "result": "None",
+      "nextSource": "print(open('output.csv').read())",
+      "nextPrint": "Name,Age\nAlice,30\n\n"
+    },
+    "group": "Files"
+  },
+  {
+    "id": "os_walk",
+    "title": "Walk an in-memory tree",
+    "description": "Walk an in-memory tree. Files persist until Reset or another example is selected.",
+    "source": "import os\nfrom pathlib import Path\nwalk_root = Path('/work/walk-demo')\nwalk_root.mkdir(exist_ok=True)\n(walk_root / 'nested').mkdir(exist_ok=True)\n(walk_root / 'a.txt').write_text('A')\n(walk_root / 'nested' / 'b.csv').write_text('B')\nprint(sorted((os.path.relpath(root, str(walk_root)), sorted(dirs), sorted(files)) for root, dirs, files in os.walk(str(walk_root))))",
+    "setup": "default",
+    "group": "Files",
+    "expected": {
+      "result": "None",
+      "print": "[('.', ['nested'], ['a.txt']), ('nested', [], ['b.csv'])]\n"
+    }
+  },
+  {
+    "id": "path_glob",
+    "title": "Glob in-memory files",
+    "description": "Glob in-memory files. Files persist until Reset or another example is selected.",
+    "source": "from pathlib import Path\nglob_root = Path('/work/glob-demo')\nglob_root.mkdir(exist_ok=True)\n(glob_root / 'b.csv').write_text('B')\n(glob_root / 'a.csv').write_text('A')\n(glob_root / 'notes.txt').write_text('notes')\nprint(sorted(p.name for p in glob_root.glob('*.csv')))",
+    "setup": "default",
+    "group": "Files",
+    "expected": {
+      "result": "None",
+      "print": "['a.csv', 'b.csv']\n"
+    }
+  },
+  {
+    "id": "open_newline",
+    "title": "Preserve and translate newlines",
+    "description": "Preserve and translate newlines. Files persist until Reset or another example is selected.",
+    "source": "with open('/work/lines.txt', 'w', newline='', encoding='utf-8') as f:\n    f.write('a\\r\\nb\\rc\\n')\nwith open('/work/lines.txt', newline='', encoding='utf-8') as f:\n    print(repr(f.read()))\nwith open('/work/lines.txt', encoding='utf-8') as f:\n    print(repr(f.read()))",
+    "setup": "default",
+    "group": "Files",
+    "expected": {
+      "result": "None",
+      "print": "'a\\r\\nb\\rc\\n'\n'a\\nb\\nc\\n'\n"
+    }
+  },
+  {
+    "id": "bisect",
+    "title": "Sorted insertion and search",
+    "description": "Sorted insertion and search.",
+    "source": "import bisect\nnumbers = [1, 3, 5]\nbisect.insort(numbers, 3)\nprint(numbers, bisect.bisect_left(numbers, 3))",
+    "setup": "default",
+    "group": "Standard library 1.2.0",
+    "expected": {
+      "result": "None",
+      "print": "[1, 3, 3, 5] 1\n"
+    }
+  },
+  {
+    "id": "csv_dict",
+    "title": "CSV dictionaries across runs",
+    "description": "CSV dictionaries across runs. Files persist until Reset or another example is selected.",
+    "source": "import csv\nwith open('/work/people.csv', 'w', newline='', encoding='utf-8') as f:\n    writer = csv.DictWriter(f, fieldnames=['name', 'age'])\n    writer.writeheader()\n    writer.writerow({'name': 'Alice', 'age': 30})\nwith open('/work/people.csv', encoding='utf-8') as f:\n    print(list(csv.DictReader(f)))",
+    "setup": "default",
+    "group": "Standard library 1.2.0",
+    "expected": {
+      "result": "None",
+      "print": "[{'name': 'Alice', 'age': '30'}]\n",
+      "nextSource": "with open('/work/people.csv', encoding='utf-8') as f:\n    print(list(csv.DictReader(f)))",
+      "nextResult": "None",
+      "nextPrint": "[{'name': 'Alice', 'age': '30'}]\n"
+    }
+  },
+  {
+    "id": "hashlib",
+    "title": "SHA-256 digest",
+    "description": "SHA-256 digest.",
+    "source": "import hashlib\nprint(hashlib.sha256(b'monty').hexdigest())",
+    "setup": "default",
+    "group": "Standard library 1.2.0",
+    "expected": {
+      "result": "None",
+      "print": "f8eb31164222d7342e12b949e43fb4cc5e6bf2de3a16fc484e1e04d078de2cea\n"
+    }
+  },
+  {
+    "id": "os_path",
+    "title": "POSIX path operations",
+    "description": "POSIX path operations. Files persist until Reset or another example is selected.",
+    "source": "import os.path\nreport = os.path.join('/work', 'report.csv')\nprint(report)\nprint(os.path.splitext(report))\nprint(os.path.basename(report))",
+    "setup": "default",
+    "group": "Standard library 1.2.0",
+    "expected": {
+      "result": "None",
+      "print": "/work/report.csv\n('/work/report', '.csv')\nreport.csv\n"
+    }
+  },
+  {
+    "id": "tomllib",
+    "title": "Read TOML configuration",
+    "description": "Read TOML configuration.",
+    "source": "import tomllib\nconfig = tomllib.loads('answer = 42\\n[project]\\nname = \"monty\"')\nprint(config['answer'], config['project']['name'])",
+    "setup": "default",
+    "group": "Standard library 1.2.0",
+    "expected": {
+      "result": "None",
+      "print": "42 monty\n"
+    }
+  },
+  {
+    "id": "caught",
+    "title": "Caught Python error",
+    "description": "Catch a Python exception.",
+    "source": "try:\n    1 / 0\nexcept ZeroDivisionError:\n    message = 'caught division'\nmessage",
+    "setup": "default",
+    "expected": {
+      "result": "caught division"
+    },
+    "group": "Errors"
+  },
+  {
+    "id": "typing",
+    "title": "Type checking",
+    "description": "A checked session rejects a wrong annotation.",
+    "source": "value: int = 'wrong'\nvalue",
+    "setup": "typing",
+    "expected": {
+      "error": "typing"
+    },
+    "group": "Errors"
+  }
+]
