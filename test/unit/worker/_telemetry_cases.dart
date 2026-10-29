@@ -49,7 +49,7 @@ void _checkoutSpan(Future<Monty> Function() start, RecordingAdapter adapter) {
       final span = requireRecord(adapter.spans.singleOrNull);
       expect(span.name, 'session {script_name}');
       expect(span.parent, 'checkout');
-      expect(span.attributes['monty_version'], '1.2.0');
+      expect(span.attributes['monty_version'], '1.3.0');
       expect(span.end, isNull);
 
       await session.close();
@@ -97,7 +97,7 @@ void _lifecycle(
       expect(printed.join(), 'hello\n');
       final root = requireRecord(adapter.spans.firstOrNull);
       expect(root.parent, 'host');
-      expect(root.attributes['monty_version'], '1.2.0');
+      expect(root.attributes['monty_version'], '1.3.0');
       expect(root.attributes.containsKey('worker_pid'), native);
       expect(adapter.spans.every((s) => s.end != null), isTrue);
       final run = requireRecord(adapter.spans.elementAtOrNull(1));
