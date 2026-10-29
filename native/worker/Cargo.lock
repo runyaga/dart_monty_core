@@ -512,7 +512,7 @@ dependencies = [
 
 [[package]]
 name = "dart_monty_worker"
-version = "0.120.0-dev.1"
+version = "0.120.0"
 dependencies = [
  "monty-alloc",
  "monty-fs",

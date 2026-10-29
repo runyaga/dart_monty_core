@@ -629,11 +629,23 @@ int _observedCount(Map<String, int> observed, String suite) {
   return count;
 }
 
-/// The `changes/<slug>.md` fragment recording the monty v1.2.0 migration,
-/// or a failure naming what is missing: a markdown file directly under
-/// changes/ (README excluded, as tool/check_changelog_fragments.sh does not
-/// assemble it) whose text covers every topic in [_migrationFragmentTopics].
+/// The `changes/<slug>.md` fragment recording the monty v1.2.0 migration, or
+/// CHANGELOG.md once a release has assembled it, or a failure naming what is
+/// missing: a markdown file directly under changes/ (README excluded, as
+/// tool/check_changelog_fragments.sh does not assemble it) or the
+/// `## 0.120.0` section, whose text covers every topic in
+/// [_migrationFragmentTopics].
 String _migrationChangeFragment() {
+  final changelog = File('CHANGELOG.md').readAsStringSync();
+  final released = RegExp(
+    r'^## 0\.120\.0 .*?(?=^## )',
+    multiLine: true,
+    dotAll: true,
+  ).firstMatch(changelog)?.group(0);
+  if (released != null &&
+      _migrationFragmentTopics.every(released.toLowerCase().contains)) {
+    return 'CHANGELOG.md';
+  }
   final fragments = <String>[
     if (Directory('changes').existsSync())
       for (final entity in Directory('changes').listSync())
@@ -654,8 +666,9 @@ String _migrationChangeFragment() {
   }
 
   fail(
-    'no changes/<slug>.md fragment describes the monty v1.2.0 migration; one '
-    'must cover: ${_migrationFragmentTopics.join(', ')}',
+    'neither a changes/<slug>.md fragment nor the CHANGELOG.md 0.120.0 '
+    'section describes the monty v1.2.0 migration; one must cover: '
+    '${_migrationFragmentTopics.join(', ')}',
   );
 }
 
@@ -799,14 +812,14 @@ void _expectMontyHashDependencies(
 void _expectPackageVersionsTrackV120() {
   expect(
     _packageVersion('pubspec.yaml'),
-    '0.120.0-dev.1',
+    '0.120.0',
     reason:
         'pubspec.yaml must carry the 0.120.x version that tracks '
         'upstream monty 1.2.0',
   );
   expect(
     _packageVersion(_workerManifestPath),
-    '0.120.0-dev.1',
+    '0.120.0',
     reason:
         '$_workerManifestPath must carry the 0.120.x version that '
         'tracks upstream monty 1.2.0',

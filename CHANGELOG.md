@@ -2,6 +2,95 @@
 
 ## Unreleased
 
+## 0.120.0 - 2026-10-29
+
+### Added
+
+- A documentation guide for host modules: `docs/reference/host-modules.md`
+  states how a host builds an `ExternalModule`, registers it with the
+  `externalModules` parameter of `Monty.withSession` or `Monty.checkout`,
+  and how the sandbox imports and calls it. It covers the nested modules,
+  the protected attributes, the `.pyi` stubs and the stub request the worker
+  sends before it type checks a feed, the factories and their lifetime,
+  the failures of a stub ask and what each of them leaves installed, the
+  routing of the import and stub requests before the mounts and the OS
+  handler, and the difference between a module and the `externalLookup`
+  values of a feed, whose values outlive the map that carried them.
+
+- The GitHub Pages site runs Python in the browser: a REPL in a JavaScript
+  and a WebAssembly build, with a persistent session and a persistent
+  in-memory filesystem under `/work`, typed errors, Reset, and runnable
+  examples from `packages/dart_monty_web/web/examples.json` (host modules,
+  the 1.2.0 standard library modules, `os.walk` and `Path.glob`, `open()`
+  newlines, CSV across runs, a dataclass, type checking). Matrix pages
+  measure host-feature probes and the upstream corpus in the browser.
+  `tool/build_pages.py` builds the site, `bash tool/test_pages.sh --offline`
+  drives every page in headless Chrome, and `deploy-pages.yml` builds on any
+  ref and deploys only from `main`.
+
+### Changed
+
+- `ExternalModule` and the `externalModules` parameter of `Monty.checkout`
+  and `Monty.withSession` now document the module contract: the public
+  attributes and the protected ones, the nested modules, the host functions,
+  the optional `.pyi` stubs, the shallow copy of the attribute mapping and
+  the deferred conversion of a value. The claim that a module never changes
+  is qualified: its attribute mapping is copied, but the mutable objects
+  that mapping holds are shared with the host's own, so a host change to
+  one of them reaches the sandbox the next time the value is converted, and
+  a value already imported is not changed. A compact usage example shows a
+  module given to a session through `Monty.withPool`.
+- The `Monty` class documentation now states the whole contract of the
+  module map: the map is read live, an entry is a module or a factory, a
+  factory may return a future, a factory that succeeds is cached for the
+  session and one that fails is not, so the next request runs it again.
+
+- Upgraded to upstream pydantic/monty 1.2.0 (the `v1.2.0` tag). The worker
+  protocol moves from version 5 to version 6: the driver now sends
+  `protocolVersion` 6, the pinned worker answers it, and a worker that
+  speaks a version the driver does not serve is still refused with upstream's
+  `monty worker protocol error`.
+- Python can import a host module: the worker asks the host for a module (the
+  `import` OS call) and for the stubs of the modules it is about to type check
+  (the `import_stubs` OS call), and the host answers both from the session's
+  module map. A host module travels as a module value, not as a plain
+  dictionary, and a module that cannot be named raises `ValueError` while a
+  missing one raises `ModuleNotFoundError` in the sandbox.
+- The worker can ask the host to scan a path subtree (the `scan` OS call), so
+  `os.walk`, `os.scandir`, `Path.walk` and `Path.glob` see the mounted tree
+  instead of an empty one.
+- `open()` follows CPython's text-mode semantics as upstream 1.2.0 pins them:
+  the `newline` argument is validated after the file is opened, so a missing
+  file still raises `FileNotFoundError` and a write mode still creates the
+  file before the `ValueError`; `None`, `''` and an explicit terminator read
+  and write what CPython reads and writes.
+- A restored session keeps the destination's ceilings: the dump's resource
+  limits and the loader's are tightened into the stricter of the two, so a
+  session loaded under a feed or turn duration limit is still bounded by it.
+  Upstream 1.1.0 forgot the destination's limits; 1.2.0 keeps them.
+- The browser worker module grew with the release: its gzip -9 download
+  budget is 6.25 MB, and the 1.2.0 build measures 5.98 MB.
+
+### Fixed
+
+- A Python exception now carries its structured payload: the codec error
+  fields of a `UnicodeDecodeError` or `UnicodeEncodeError` (encoding, the
+  failing object, the failing range and CPython's reason) and the message,
+  document, position, line and column of a `JSONDecodeError`. The host
+  rebuilds the real exception from them instead of a message-only fallback.
+- A string that starts with a byte-order mark keeps it. The native side sends
+  Rust strings, and `String::from_utf8` keeps a leading U+FEFF, while
+  package:protobuf's reader dropped it; the frame reader now decodes strings
+  the way the native side does, so a BOM in a path, a file name or a printed
+  line survives the round trip.
+
+### Internal
+
+- CI's `PARITY_PIN` moves to parity `7bfc6c1`, the suite's port to upstream
+  1.2.0 and core 0.120. It handles `ExternalModule`, copies core's 1.2.0
+  upstream pins, and regenerates its expected outcomes.
+
+
 ## 0.110.0-dev.4 - 2026-10-20
 
 ### Breaking

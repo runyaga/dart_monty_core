@@ -16,7 +16,7 @@
 # up from here).
 [package]
 name = "dart_monty_worker"
-version = "0.120.0-dev.1"
+version = "0.120.0"
 edition = "2024"
 rust-version = "1.96"
 license = "MIT"
