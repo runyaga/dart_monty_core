@@ -607,11 +607,16 @@ int _workerWebFloor() {
 /// The observed complete-suite counts the raised floors must stay under,
 /// keyed by suite ('unit_tests', 'worker_web').
 ///
-/// STUB: the monty v1.2.0 suites' final counts are not recorded in this
-/// bundle and must not be invented, so this returns an empty record, which
-/// is wrong for every suite; the `lessThan` assertions fail until the
-/// measured counts replace it. It never throws.
-Map<String, int> _observedSuiteCounts() => const {};
+/// The counts are the operator's measurements of the complete suites of the
+/// monty v1.2.0 migration, with every registration in place:
+///
+///     unit_tests  3968 passed, 5 skipped   (dart test --exclude-tags=...)
+///     worker_web   645 passed, 5 skipped   (the lower of the two compilers,
+///                                         because the floor is per compiler)
+Map<String, int> _observedSuiteCounts() => const {
+  'unit_tests': 3968,
+  'worker_web': 645,
+};
 
 /// The observed count recorded for [suite] in [observed], or a failure
 /// naming the suite nothing was recorded for.
