@@ -216,7 +216,7 @@ final class HostClass<T extends Object>
   HostClass.isDataclass: final field bool
   HostClass.methods: final field Map<String, FutureOr@dart:async<Object> Function(List<MontyValue>, Map<String, MontyValue>)>
   HostClass.name: final field String
-  HostClass.new: const constructor(String name, {bool isDataclass = false, ({Map<String, Object Function(T)> fields, Map<String, FutureOr@dart:async<Object> Function(T, List<MontyValue>, Map<String, MontyValue>)> methods, Map<String, Object Function(T)> properties}) instance = (fields: <String, Never>{}, properties: <String, Never>{}, methods: <String, Never>{}), Map<String, Object Function()> attributes = const {}, Map<String, FutureOr@dart:async<Object> Function(List<MontyValue>, Map<String, MontyValue>)> methods = const {}, T Function(List<MontyValue>, Map<String, MontyValue>)? construct})
+  HostClass.new: const constructor(String name, {bool isDataclass = false, ({Map<String, Object Function(T)> fields, Map<String, FutureOr@dart:async<Object> Function(T, List<MontyValue>, Map<String, MontyValue>)> methods, Map<String, Object Function(T)> properties}) instance = const (fields: <String, Never>{}, properties: <String, Never>{}, methods: <String, Never>{}), Map<String, Object Function()> attributes = const {}, Map<String, FutureOr@dart:async<Object> Function(List<MontyValue>, Map<String, MontyValue>)> methods = const {}, T Function(List<MontyValue>, Map<String, MontyValue>)? construct})
 final class MontyBigInt extends MontyValue
   MontyBigInt.==: operator(Object other) -> bool
   MontyBigInt.dartValue: getter -> BigInt
