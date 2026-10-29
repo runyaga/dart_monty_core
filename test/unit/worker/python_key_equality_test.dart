@@ -523,4 +523,23 @@ void main() {
       );
     });
   });
+
+  // The unhashable members above are containers; a module is one too, as
+  // upstream's `ExternalModule` is a dict of its own: it cannot be a key
+  // or a member.
+  test('a module is unhashable, as a set member', () {
+    expect(
+      _refusal([
+        pb.MontyNode(
+          module: pb.ModuleNode(
+            name: 'tools',
+            id: uuid(7),
+            attrs: pb.NodePairs(),
+          ),
+        ),
+        set([0]),
+      ]),
+      _unhashable('ExternalModule'),
+    );
+  });
 }
