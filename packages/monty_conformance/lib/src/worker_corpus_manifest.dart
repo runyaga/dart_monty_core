@@ -1,4 +1,4 @@
-// The expected outcomes of the upstream 1.2.0 corpus on the worker engine.
+// The expected outcomes of the pinned upstream corpus on the worker engine.
 //
 // Every corpus file the engine fails is listed here, tied to a divergence ID
 // and a reason, and a run is judged against the list in BOTH directions: a

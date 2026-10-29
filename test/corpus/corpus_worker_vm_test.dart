@@ -1,4 +1,4 @@
-// The upstream 1.1.0 corpus on the native worker, through the public Monty
+// The pinned upstream corpus on the native worker, through the public Monty
 // pool, judged against the manifest in packages/monty_conformance; and crash
 // recovery through one pool, which needs the pool's internals (a channel
 // factory, the live-worker count, a crash's cause). Run by CI job

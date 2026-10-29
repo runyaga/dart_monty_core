@@ -1,4 +1,4 @@
-// The upstream 1.2.0 corpus on the Web Worker, dart2js or dart2wasm, in
+// The pinned upstream corpus on the Web Worker, dart2js or dart2wasm, in
 // whichever browser runs it; and crash recovery through one pool, under JSPI
 // and under the forced fallback dispatch. Run by CI job `corpus-worker`:
 //
