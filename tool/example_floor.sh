@@ -27,7 +27,7 @@ cd "$(git rev-parse --show-toplevel)" || exit 2
 
 # Example programs under example/, top level. Bump in the SAME commit that adds
 # or removes one.
-EXPECTED_PROGRAMS=15
+EXPECTED_PROGRAMS=19
 
 # Declared skips in test/integration/example_smoke_test.dart. Deriving the floor
 # from the skip list alone would let a new skip lower its own bar, so this is a
