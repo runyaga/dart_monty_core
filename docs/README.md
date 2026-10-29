@@ -11,6 +11,7 @@ dart_monty_core 0.130.0, which pins pydantic-monty 1.3.0.
 ## Running code
 
 - [Host functions and async](deep-dives/async-matrix.md): Gives the behaviour of each host-function answer and `await` combination.
+- [Host modules](reference/host-modules.md): States how a host module is built, registered, imported and called, and how it differs from a lookup value.
 - [OS access](reference/os-access.md): Describes OS handlers, in-memory files, host-backed virtual files, and OS policy.
 - [Telemetry](reference/telemetry.md): Defines the telemetry adapter and signal failure behavior.
 
