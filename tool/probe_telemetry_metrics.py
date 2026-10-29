@@ -4,6 +4,7 @@ Requires the optional opentelemetry-api extra. No Dart code is imported.
 Writes a web-safe fixture to stdout; timings and transport sizes are masked.
 """
 import json
+from pathlib import Path
 
 import pydantic_monty as pm
 from opentelemetry.context import Context, attach, detach
@@ -66,7 +67,12 @@ def scenario(name, pool):
                 assert restored.feed_run('x') == 42
 
 
-assert pm.__version__ == '1.1.0', pm.__version__
+PIN = json.loads(
+    (Path(__file__).resolve().parent.parent / 'tool/upstream/upstream-pin.json').read_text(
+        encoding='utf-8'
+    )
+)
+assert pm.__version__ == PIN['version'], pm.__version__
 meter = Meter()
 pm.instrument_telemetry(meter=meter)
 output = {}
