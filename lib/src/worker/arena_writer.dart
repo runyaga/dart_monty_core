@@ -28,7 +28,8 @@
 ///
 /// The modules a session imports cross through [addImport] alone: each is
 /// a module node of its own, holding the module's public attributes, as
-/// upstream's `module_value` sends it.
+/// upstream's `module_value` sends it. A module reached under two paths is
+/// two modules, one for each path, as upstream encodes it.
 ///
 /// It also sends host objects, given as their [ClassInstance] and
 /// [ClassType] wrappers, as upstream's encoder sends them: each wrapper is
@@ -98,8 +99,10 @@ const _moduleNotAValue =
 /// its dotted path (`pkg.sub`); a callable is a function named by that
 /// path, with its docstring; any other value is the value it is.
 ///
-/// A module met again is the node it was first given, as one Dart object is
-/// one node, and the path it was first met by names it.
+/// A module is encoded once per path it is reached by, as upstream's
+/// `module_value` encodes it: a module met as `pkg.sub` and as `pkg.twin`
+/// is two modules, named `pkg.sub` and `pkg.twin`, each with its own
+/// functions named under its own path.
 int addImport(ArenaWriter writer, String path, ExternalModule module) =>
     _run(writer, _ImportModule(path, module), parity: false);
 
@@ -153,11 +156,13 @@ final class ArenaWriter {
   /// The node of each attribute-less class already emitted, by class id.
   final Map<String, int> _classes = {};
 
-  /// The node of each module already emitted, by the module itself.
+  /// The node of each module already emitted, by the path it was imported
+  /// by.
   ///
-  /// The modules are held by identity, as one Dart object is one node; a
-  /// module is not an ordinary value and never enters [_containers].
-  final Map<ExternalModule, int> _modules = Map.identity();
+  /// A module is encoded once per path, as upstream's `module_value`
+  /// encodes it, so the paths are what the nodes are held by; a module is
+  /// not an ordinary value and never enters [_containers].
+  final Map<String, int> _modules = {};
 
   /// Each key judged so far: the type Python cannot hash in it, or null.
   final Map<MontyValue, String?> _hashable = Map.identity();
@@ -478,10 +483,15 @@ final class ArenaWriter {
       case final ClassType<Object> w:
         if (frame.children.isEmpty) _classes.putIfAbsent(w.id, () => id);
         _containers[w] = id;
-      case final ExternalModule module:
-        // A module is not an ordinary value: it is shared as the module
-        // itself, never as a value the writer may hand out.
-        _modules[module] = id;
+      case final _ImportModule token:
+        // A module is not an ordinary value: it is shared as the path it
+        // was imported by, never as a value the writer may hand out.
+        _modules[token.path] = id;
+        // The open key of a module is the module itself, not its token: a
+        // module met inside itself is a cycle, whatever path it is met by.
+        open.remove(token.module);
+
+        return id;
       case final MontyValue v:
         _containers[v] = id;
     }
@@ -585,7 +595,8 @@ String _parityTypeName(Object value) =>
 final class _Frame {
   _Frame(this.source, this.children, this.build);
 
-  /// The container or class value, or a [_ProxyClass].
+  /// The container or class value, a [_ProxyClass] or the [_ImportModule]
+  /// token of a module.
   final Object source;
 
   /// [MontyValue]s, [_ProxyClass]es, [_HostClass]es and host attribute
@@ -702,9 +713,11 @@ int _run(ArenaWriter writer, Object? value, {required bool parity}) {
 /// A module to import: its public attributes, in insertion order, each a
 /// name and its value.
 ///
-/// A module met again is the node it was first given, as one Dart object is
-/// one node; the path it was first met by names it. A module met inside
-/// itself is a cycle, as upstream's encoder finds it.
+/// A module is encoded once per path it is reached by, as upstream's
+/// `module_value` encodes it: a module met as `pkg.sub` and as `pkg.twin`
+/// is two modules, named `pkg.sub` and `pkg.twin`, each with its own
+/// functions named under its own path. A module met inside itself is a
+/// cycle, as upstream's encoder finds it.
 int? _enterImportModule(
   ArenaWriter writer,
   _ImportModule token,
@@ -712,7 +725,8 @@ int? _enterImportModule(
   List<_Frame> stack,
 ) {
   final module = token.module;
-  final shared = writer._modules[module];
+  final path = token.path;
+  final shared = writer._modules[path];
   if (shared != null) return shared;
   if (!open.add(module)) {
     throw PythonRefusal(
@@ -722,10 +736,9 @@ int? _enterImportModule(
       'Circular reference detected',
     );
   }
-  final path = token.path;
   stack.add(
     _Frame(
-      module,
+      token,
       _moduleChildren(path, module),
       (ids) => pb.MontyNode(
         module: pb.ModuleNode(
