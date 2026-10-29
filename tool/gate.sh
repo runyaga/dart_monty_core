@@ -268,7 +268,12 @@ s  dart_format   dart format --line-length=80 --output=none --set-exit-if-change
 # worker is missing or stale.
 unit_tests(){ bash tool/build_worker.sh --check &&
   dart test --exclude-tags=integration,ladder,example,worker --coverage="$OUT/cov"; }
-sf unit_tests 3900 unit_tests
+sf unit_tests 3970 unit_tests
+# The floor above is 3970 against the 3978 unit tests measured on the 1.3.0
+# migration: 8 tests of slack, so a suite that quietly lost 9 of them fails
+# here. It is the same floor ci.yaml's unit step asserts, and the two move
+# together.
+
 # The SAME pure-Dart suite on both web compilers. Not redundant with unit_tests:
 # dart2js has one number type, so `4.0 is int` is true and integral doubles
 # collapse to ints, while dart2wasm has real doubles. A numeric bug can pass on
@@ -276,7 +281,14 @@ sf unit_tests 3900 unit_tests
 # inputs_encoder compiled, analysed clean and passed on the VM while doing
 # nothing at all, because the arm it added was dead on the only backend with the
 # bug. `vm-only` is excluded because those files cannot COMPILE for the web.
-sf unit_web 7300 dart test --exclude-tags=integration,ladder,example,vm-only,worker -p chrome -c dart2js -c dart2wasm
+# The floor below counts BOTH compilers, because this run does them in one
+# invocation and the count the log carries is their sum. Measured on the
+# 1.3.0 migration: 3723 passed on dart2js and 3719 on dart2wasm, 7442
+# together. The floor is 7430, under that measured 7442, and ci.yaml's
+# test-web-unit job asserts 3710 on each compiler -- the combined floor here
+# is the pair of those in one number, so the local gate and CI move together
+# and neither accepts a suite the other fails.
+sf unit_web 7430 dart test --exclude-tags=integration,ladder,example,vm-only,worker -p chrome -c dart2js -c dart2wasm
 # WorkerChannel against the COMMITTED worker .{js,wasm}, in Chrome, on
 # both compilers: two Workers on one Module, trap -> MontyCrashedError plus a
 # working replacement (JSPI and forced fallback), kill, protocol skew. `worker`

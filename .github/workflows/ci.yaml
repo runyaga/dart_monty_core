@@ -685,23 +685,23 @@ jobs:
       # accepted trade.
       - name: Test (JIT, unit only)
         # The exit-79 tolerance is GONE. It said "no tests found is acceptable
-        # until unit tests exist"; 3968 of them exist, so all it could do now
+        # until unit tests exist"; 3978 of them exist, so all it could do now
         # was turn a runner that registered nothing into a green tick -- the
         # skip-but-green shape this repo has already paid for once (8dbdd59,
         # "646 of 1593 registered tests" asserting nothing). A floor on the test
         # count replaces it: raise the floor when the suite grows, never lower
         # it to make a run pass.
         #
-        # The floor is 3900 against the 3968 unit tests measured here: 68
-        # tests of slack, so a suite that quietly lost 69 of them fails this
+        # The floor is 3970 against the 3978 unit tests measured here: 8
+        # tests of slack, so a suite that quietly lost 9 of them fails this
         # step instead of going green. Every floor in this file is set from a
         # measured count.
         run: |
           set -o pipefail
           dart test --exclude-tags=integration,ladder,worker \
             --coverage=coverage 2>&1 | tee /tmp/unit-test.log
-          # Measured on this branch: 3968 unit tests.
-          bash tool/assert_test_count.sh /tmp/unit-test.log 3900 unit
+          # Measured on this branch: 3978 unit tests.
+          bash tool/assert_test_count.sh /tmp/unit-test.log 3970 unit
       - name: Generate LCOV
         run: |
           # `dart test --coverage=coverage` writes coverage/test/**/*.json, NOT
@@ -776,8 +776,12 @@ jobs:
   # `worker-rust`: it was 552 s of that job's 718 s median.
   #
   # The floors are one number for both compilers, so a compiler that loses
-  # tests fails like the other does. Measured on this branch: 3715 on dart2js
-  # and 3711 on dart2wasm, against a floor of 3650 each.
+  # tests fails like the other does. Measured on the 1.3.0 migration: 3723 on
+  # dart2js and 3719 on dart2wasm, 7442 together, against a floor of 3710
+  # each -- 9 tests of slack on the lower of the two. The local gate runs both
+  # compilers in one invocation, so tool/gate.sh's unit_web floor is the
+  # combined 7430: the two floors move together, or one of them accepts a
+  # suite the other fails.
   test-web-unit:
     name: Dart test (web unit, ${{ matrix.compiler }})
     needs: [changes]
@@ -789,9 +793,9 @@ jobs:
       matrix:
         include:
           - compiler: dart2js
-            floor: 3650
+            floor: 3710
           - compiler: dart2wasm
-            floor: 3650
+            floor: 3710
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -1171,6 +1175,10 @@ jobs:
       - run: dart pub get
       # Coverage comes from dart2js alone, and the dart2wasm run is its own job
       # below: tool/test_worker_web.sh says why.
+      #
+      # The per-compiler floor is the script's FLOOR, one number for each
+      # compiler: 640, under the 652 tests measured on dart2js and the 647 on
+      # dart2wasm.
       - name: Worker channel tests (dart2js)
         run: bash tool/test_worker_web.sh --coverage coverage-web --compiler dart2js
       # The only measurement of lib/src/worker/worker_channel.dart, which the
@@ -1208,13 +1216,15 @@ jobs:
           key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
           restore-keys: pub-${{ runner.os }}-
       - run: dart pub get
+      # The per-compiler floor is the script's FLOOR, one number for each
+      # compiler: 640, under the 647 tests measured on dart2wasm.
       - name: Worker channel tests (dart2wasm)
         run: bash tool/test_worker_web.sh --compiler dart2wasm
 
   # ---------------------------------------------------------------------------
-  # The upstream 1.2.0 corpus on the worker, and pool crash recovery
+  # The upstream 1.3.0 corpus on the worker, and pool crash recovery
   # ---------------------------------------------------------------------------
-  # Runs upstream's 695 `test_cases` through the pool session, one session per
+  # Runs upstream's 703 `test_cases` through the pool session, one session per
   # fixture, judged by the strict adjudicator against each file's own
   # directives. Every file the worker fails is listed in the manifest
   # (packages/monty_conformance/lib/src/worker_corpus_manifest.dart) with a
