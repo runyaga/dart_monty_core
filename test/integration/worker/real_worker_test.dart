@@ -354,7 +354,7 @@ void main() {
     expect(_offlineUpstreamPinValidationSucceeds(), isTrue);
   });
 
-  test('worker v1.2.0 dependencies and reviewed mirrors are consistent', () {
+  test('worker dependencies and reviewed mirrors are consistent', () {
     // The manifest is read and checked FIRST: it is the file that still
     // pins monty 1.1.0, so this test fails on that declaration, before any
     // later check runs.
@@ -371,7 +371,7 @@ void main() {
   // The aggregate of the v1.2.0 migration's regressions. It runs after the
   // metadata test above, which must pass before it means anything.
   test(
-    'native v1.2.0 worker and mount service pass migration regressions',
+    'native worker and mount service pass migration regressions',
     _migrationRegressions,
     timeout: const Timeout(Duration(minutes: 30)),
   );
@@ -445,8 +445,7 @@ void main() {
   });
 
   test(
-    'v1.2.0 corpus scorecards and capability records match measured '
-    'results',
+    'corpus scorecards and capability records match measured results',
     _corpusScorecardAcceptance,
     timeout: const Timeout(Duration(minutes: 120)),
   );
@@ -727,7 +726,7 @@ void _expectWorkerManifestPinsV120() {
   for (final requirement in requirements) {
     expect(
       requirement.version,
-      '=1.2.0',
+      '=1.3.0',
       reason:
           'native/worker/Cargo.toml [${requirement.table}] '
           '${requirement.name} must pin "=1.2.0"',
@@ -760,7 +759,7 @@ void _expectWorkerLockResolvesV120(Map<String, List<String>> versionsByName) {
     );
     expect(
       versions.singleOrNull,
-      '1.2.0',
+      '1.3.0',
       reason: '$name must resolve to 1.2.0 in native/worker/Cargo.lock',
     );
   }
@@ -800,14 +799,14 @@ void _expectMontyHashDependencies(
 void _expectPackageVersionsTrackV120() {
   expect(
     _packageVersion('pubspec.yaml'),
-    '0.120.0-dev.1',
+    '0.130.0-dev.1',
     reason:
         'pubspec.yaml must carry the 0.120.x version that tracks '
         'upstream monty 1.2.0',
   );
   expect(
     _packageVersion(_workerManifestPath),
-    '0.120.0-dev.1',
+    '0.130.0-dev.1',
     reason:
         '$_workerManifestPath must carry the 0.120.x version that '
         'tracks upstream monty 1.2.0',
@@ -1078,10 +1077,10 @@ String _packageVersion(String path) {
 // ---------------------------------------------------------------------------
 
 /// The upstream release this acceptance measures: the pin's version.
-const String _upstreamVersion = '1.2.0';
+const String _upstreamVersion = '1.3.0';
 
 /// The upstream release's tag.
-const String _upstreamTag = 'v1.2.0';
+const String _upstreamTag = 'v1.3.0';
 
 /// How many fixtures the pinned corpus holds.
 const int _pinnedCorpusFiles = 695;

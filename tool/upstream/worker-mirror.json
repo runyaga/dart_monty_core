@@ -5,17 +5,17 @@
   "upstream_lock": {
     "upstream": "Cargo.lock",
     "local": "tool/upstream/monty-Cargo.lock",
-    "sha256": "e9843e6b1da648aeedf663dec4aa737dda78bda641b082fe05da93b390afd62a"
+    "sha256": "e619f650e3591103b035e8ff95b7349b91587098b88adb2e35ba86027724ca2e"
   },
   "pinned_crates": {
-    "monty": "c7a88714723c0f3a9f162f363f345c92344eb1d26c695047388de453a0424ebc",
-    "monty-alloc": "f0409ec91836694fc57ff8c1a340678cf7853a94cee5b2ef15d734cee21c2b11",
-    "monty-macros": "82ae4a49b9211b7ca43b124f95becb0c286af6df49421f5f99c65cd6a6f51f9e",
-    "monty-proto": "831fb817f8b462cbfa2abc4ca072fcac7f937a0cc19f83527358198c3b0fb8a0",
-    "monty-type-checking": "b7f5a38f6c62d08a80db6d81b34edcae0897dcfc0eeba333369962747d190df8",
-    "monty-types": "09956030c0cd340d5db97b88fd3744f57ed304083093a592ab2a29a3dcab88cb",
-    "monty-typeshed": "7fc2079654d8d7574deb72c526e2b132c4fa7550ffc62df8b9ea1dad26d44797",
-    "monty-fs": "03daf656e21e09bf2bfcca964c6e68ce8eb95237ff3fd7f763be07877246cccb"
+    "monty": "7d0f5559d7a445c22ed296fe8252aa067c80b7eb2bc70aeae341cf9967e58012",
+    "monty-alloc": "c3f9d819abd1c64c36dbfb05518a8d1ba28c55f38eb802a9c0c58818dee3f6d4",
+    "monty-macros": "dbd7672e36311f10645e3a9e6776b643711543ec3fb415546ffde751e6d53003",
+    "monty-proto": "69d3a77130a14d321832f4ab32e629b9ad790f0590224dca5536ef4dbf69b4b5",
+    "monty-type-checking": "ffdc38ffb186b0158826166fff9e473331b39860a428ecdbb195e21792052e04",
+    "monty-types": "786b179998d4799dc96a5c25e91e3774a1fa8dd6cca441ddeedc9c146fd9a8cd",
+    "monty-typeshed": "8c66fa1f3446c114d9a607f3f4ef033d6c6e7c3b1402ef47510b3ea1e1077887",
+    "monty-fs": "689d6fb1ad3fb85197f2467d18bbaf2c57b1942a23b2927cd6ea8bb4ef094df6"
   },
   "verbatim": [
     {
