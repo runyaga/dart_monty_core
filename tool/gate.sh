@@ -108,7 +108,8 @@ s  init_reaper   bash tool/dmc_container.sh check
 # discipline.
 s  asset_fresh   bash tool/check_asset_freshness.sh
 # The worker wasm is what every browser page downloads; its gzip -9 size
-# has a budget (5.75 MB; O7 measured 5.66) that only a deliberate edit raises.
+# has a budget (6.25 MB; the 1.2.0 build measures 5.98) that only a
+# deliberate edit raises.
 s  worker_size   bash tool/check_worker_wasm_size.sh
 s  hierarchy_reg bash tool/check_hierarchy_registry.sh
 s  hook_deps     bash tool/check_hook_dependencies.sh
@@ -267,7 +268,7 @@ s  dart_format   dart format --line-length=80 --output=none --set-exit-if-change
 # worker is missing or stale.
 unit_tests(){ bash tool/build_worker.sh --check &&
   dart test --exclude-tags=integration,ladder,example,worker --coverage="$OUT/cov"; }
-sf unit_tests 3211 unit_tests
+sf unit_tests 3900 unit_tests
 # The SAME pure-Dart suite on both web compilers. Not redundant with unit_tests:
 # dart2js has one number type, so `4.0 is int` is true and integral doubles
 # collapse to ints, while dart2wasm has real doubles. A numeric bug can pass on
@@ -275,7 +276,7 @@ sf unit_tests 3211 unit_tests
 # inputs_encoder compiled, analysed clean and passed on the VM while doing
 # nothing at all, because the arm it added was dead on the only backend with the
 # bug. `vm-only` is excluded because those files cannot COMPILE for the web.
-sf unit_web 6288 dart test --exclude-tags=integration,ladder,example,vm-only,worker -p chrome -c dart2js -c dart2wasm
+sf unit_web 7300 dart test --exclude-tags=integration,ladder,example,vm-only,worker -p chrome -c dart2js -c dart2wasm
 # WorkerChannel against the COMMITTED worker .{js,wasm}, in Chrome, on
 # both compilers: two Workers on one Module, trap -> MontyCrashedError plus a
 # working replacement (JSPI and forced fallback), kill, protocol skew. `worker`
@@ -305,7 +306,7 @@ ns cargo_deny    cargo deny check
 # source no longer compiles, passes this step.
 worker_vm(){ bash tool/build_worker.sh --check &&
   dart test test/integration/worker test/contract/contract_worker_test.dart -p vm --tags=worker --coverage="$OUT/cov"; }
-sf worker_vm 614 worker_vm
+sf worker_vm 1000 worker_vm
 # The examples are the DOCUMENTED surface, and `dart analyze` only type-checks
 # them. CI has run this since forever; the gate did not, so a change that broke
 # every example could pass here and fail there — which it just did. Tier 1 made

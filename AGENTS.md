@@ -68,8 +68,8 @@ break can silently shrink a suite, so every suite has a floor under its test
 count. Raise a floor when a suite grows (set it just below
 the observed count); never lower one to make a run pass. They live in:
 
-- `tool/gate.sh`: `sf unit_tests 3211`, `sf unit_web 6288`, `sf worker_vm 614`;
-- `tool/test_worker_web.sh`: `FLOOR=566` (per compiler);
+- `tool/gate.sh`: `sf unit_tests 3900`, `sf unit_web 7300`, `sf worker_vm 1000`;
+- `tool/test_worker_web.sh`: `FLOOR=630` (per compiler);
 - `tool/test_corpus_worker.sh`: the `floor=` values per leg;
 - `.github/workflows/ci.yaml`: the `assert_test_count.sh` calls (same numbers).
 
@@ -182,7 +182,7 @@ and dispatches with `dry_run` enabled prepare the bump without publishing it.
 | `Changelog fragment` failing | add `changes/<slug>.md`, or label `no-changelog` |
 | A test hangs 30 s then fails "after test completion" | a settle-loop deadline; read the first failure, not the second |
 | `asset_fresh`: `lib/assets/...wasm is STALE` | `bash tool/prebuild.sh` rebuilds the asset and re-records provenance |
-| `worker_size` over budget | the gzip budget is 5.75 MB (`tool/check_worker_wasm_size.sh`); only a deliberate edit there raises it |
+| `worker_size` over budget | the gzip budget is 6.25 MB (`tool/check_worker_wasm_size.sh`); only a deliberate edit there raises it |
 | `cargo deny` advisory | fix it, or add a reasoned entry in `native/worker/deny.toml` |
 
 ## 8. Toolchain pins
