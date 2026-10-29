@@ -5,7 +5,7 @@
 /// The worker sources (tool/wasm-provenance.json) the dump was made from;
 /// --check fails when they change, so the dump is re-recorded.
 const coreIdleDumpWorkerSources =
-    'f6280afc9ae2df7b39879edcdb8f57647939d731ed5a6b8bea4f4566c1ea02ab';
+    'c0bd003978cd760f514e6216f7b3c59ea007bc717dadb934ce8398cfff424f97';
 
 /// The dump, as hex.
 const coreIdleDumpHex =
