@@ -209,10 +209,15 @@ void main() {
             ),
             check: (crash) {
               expect(crash.cause, CrashCause.vanished);
-              // Chrome's text for a wasm stack overflow, then Firefox's.
+              // Chrome 'RangeError', Firefox 'too much recursion': engine call
+              // stack. Firefox 'index out of bounds': worker's shadow stack.
               expect(
                 crash.detail,
-                anyOf(contains('RangeError'), contains('too much recursion')),
+                anyOf(
+                  contains('RangeError'),
+                  contains('too much recursion'),
+                  contains('index out of bounds'),
+                ),
               );
             },
           ),
