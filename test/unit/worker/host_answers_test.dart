@@ -1009,6 +1009,14 @@ void main() {
   );
 
   test(
+    'a module factory that fails answers the import with the error it '
+    'raised',
+    () async {
+      await _importFactoryRefusal();
+    },
+  );
+
+  test(
     'ImportStubs answers a stub source the wire cannot hold with a '
     'structured error',
     () async {
@@ -1349,6 +1357,18 @@ final class _BadText implements Exception {
 
   @override
   String toString() => throw StateError('no text');
+}
+
+/// An argument error whose own message cannot be read, and whose text is
+/// fixed.
+final class _UnreadableArgumentError extends ArgumentError {
+  _UnreadableArgumentError() : super();
+
+  @override
+  Object? get message => throw StateError('no message');
+
+  @override
+  String toString() => 'unreadable argument';
 }
 
 /// A live external-module map whose lookup fails.
@@ -2315,4 +2335,107 @@ MontyDict _dict(pb.ResumeCall call) {
     final MontyDict dict => dict,
     final other => fail('expected a dict, got $other'),
   };
+}
+
+/// A module factory that fails: the import answers with the error the
+/// failure raised, under the call's own id.
+///
+/// The failure is answered, never thrown: it does not escape the OS call.
+Future<void> _importFactoryRefusal() async {
+  final uncaught = <Object>[];
+  await runZoned(
+    () async {
+      await _importFactoryRefusalInside();
+    },
+    zoneSpecification: ZoneSpecification(
+      handleUncaughtError: (self, parent, zone, error, stack) {
+        uncaught.add(error);
+      },
+    ),
+  );
+  expect(uncaught, isEmpty, reason: 'the failure is answered, not thrown');
+}
+
+/// The failures a module factory can fail with, and the answer each of them
+/// gets.
+Future<void> _importFactoryRefusalInside() async {
+  await _importFactoryStrKey();
+  await _importFactoryIdentifierKey();
+  await _importFactoryUnreadableMessage();
+  await _importFactoryIntegerMessage();
+}
+
+/// The answer the import of the module 'module' gets, when its factory
+/// [factory] fails.
+Future<pb.ResumeCall> _importRefusal(
+  Object? Function() factory,
+  int id,
+) async {
+  final host = HostAnswers(externalModules: {'module': factory});
+  final answer = await host.osCall(
+    pb.OsCall(
+      callId: id,
+      import: pb.OsCall_Import(module: 'module'),
+    ),
+    parentSleeps: true,
+  );
+
+  return answer.resumeCall;
+}
+
+/// A factory that builds a module with a key that is not a string: the
+/// answer is the `TypeError` upstream's constructor raises.
+Future<void> _importFactoryStrKey() async {
+  const id = 100;
+  final resumed = await _importRefusal(() => ExternalModule({1: 'x'}), id);
+  expect(resumed.callId, id, reason: 'the answer keeps the call id');
+  expect(resumed.result.hasError(), isTrue);
+  final error = resumed.result.error;
+  expect(error.excType, 'TypeError');
+  expect(error.message, 'ExternalModule attrs must have str keys, not int');
+}
+
+/// A factory that builds a module with a key that is not an identifier: the
+/// answer is the `ValueError` upstream's constructor raises.
+Future<void> _importFactoryIdentifierKey() async {
+  const id = 101;
+  final resumed = await _importRefusal(
+    () => ExternalModule({'not-valid': 'x'}),
+    id,
+  );
+  expect(resumed.callId, id, reason: 'the answer keeps the call id');
+  expect(resumed.result.hasError(), isTrue);
+  final error = resumed.result.error;
+  expect(error.excType, 'ValueError');
+  expect(
+    error.message,
+    "ExternalModule attrs must have identifier keys, not 'not-valid'",
+  );
+}
+
+/// A factory that throws an argument error whose own message cannot be read:
+/// the answer is the `Exception` its own text names.
+Future<void> _importFactoryUnreadableMessage() async {
+  const id = 102;
+  final resumed = await _importRefusal(
+    () => throw _UnreadableArgumentError(),
+    id,
+  );
+  expect(resumed.callId, id, reason: 'the answer keeps the call id');
+  expect(resumed.result.hasError(), isTrue);
+  final error = resumed.result.error;
+  expect(error.excType, 'Exception');
+  expect(error.message, 'unreadable argument');
+}
+
+/// A factory that throws an argument error whose message is not a string:
+/// the answer is the `Exception` its own text names.
+Future<void> _importFactoryIntegerMessage() async {
+  const id = 103;
+  final resumed = await _importRefusal(() => throw ArgumentError(7), id);
+  expect(resumed.callId, id, reason: 'the answer keeps the call id');
+  expect(resumed.result.hasError(), isTrue);
+  final error = resumed.result.error;
+  expect(error.excType, 'Exception');
+  expect(error.message, 'Invalid argument(s): 7');
 }
