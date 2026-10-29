@@ -3,7 +3,7 @@
 
 usage: PYTHON -I tool/generate_config_oracle.py [--check]
 
-PYTHON is an interpreter with pydantic-monty 1.1.0 installed (the oracle).
+PYTHON is an interpreter with the pydantic-monty that tool/upstream/requirements.lock pins installed (the oracle).
 Each case below is a checkout of upstream's AsyncMonty with one setting, and
 upstream's outcome for it: the text of the error the checkout raises, or the
 value a snippet returns, or the error a feed raises. The Dart side

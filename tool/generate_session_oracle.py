@@ -3,7 +3,7 @@
 
 usage: PYTHON -I tool/generate_session_oracle.py [--check]
 
-PYTHON is an interpreter with pydantic-monty 1.1.0 installed (the oracle).
+PYTHON is an interpreter with the pydantic-monty that tool/upstream/requirements.lock pins installed (the oracle).
 Each case runs steps on one checkout of upstream's AsyncMonty, exercising
 `feed_run` / `feed_start`'s `external_lookup` and `cwd`. The Dart side
 (test/unit/worker/_session_cases.dart) builds the same lookups on core's

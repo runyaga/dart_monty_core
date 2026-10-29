@@ -3,7 +3,7 @@
 
 usage: PYTHON -I tool/generate_pool_oracle.py [--check]
 
-PYTHON is an interpreter with pydantic-monty 1.1.0 installed (the oracle).
+PYTHON is an interpreter with the pydantic-monty that tool/upstream/requirements.lock pins installed (the oracle).
 Each case is an AsyncMonty built with one setting, or a sequence of checkouts
 on one, and upstream's outcome: the error the constructor raises, which of
 three checkouts in turn got a worker of its own, what a checkout already
