@@ -261,7 +261,7 @@ final class ArenaWriter {
     if (!open.add(v)) {
       throw PythonRefusal(
         v,
-        'contains itself; a cycle cannot be sent to the worker',
+        'contains itself; such a cycle cannot be sent to the worker',
         'ValueError',
         'Circular reference detected',
       );
@@ -362,7 +362,7 @@ final class ArenaWriter {
     if (open.contains(w)) {
       throw PythonRefusal(
         w,
-        'contains itself; a cycle cannot be sent to the worker',
+        'contains itself; such a cycle cannot be sent to the worker',
         'ValueError',
         'Circular reference detected',
       );
@@ -487,8 +487,8 @@ final class ArenaWriter {
         // A module is not an ordinary value: it is shared as the path it
         // was imported by, never as a value the writer may hand out.
         _modules[token.path] = id;
-        // The open key of a module is the module itself, not its token: a
-        // module met inside itself is a cycle, whatever path it is met by.
+        // The open key of a module is the module itself, not its token:
+        // the same module is one open key, whatever path it is met by.
         open.remove(token.module);
 
         return id;
@@ -716,8 +716,9 @@ int _run(ArenaWriter writer, Object? value, {required bool parity}) {
 /// A module is encoded once per path it is reached by, as upstream's
 /// `module_value` encodes it: a module met as `pkg.sub` and as `pkg.twin`
 /// is two modules, named `pkg.sub` and `pkg.twin`, each with its own
-/// functions named under its own path. A module met inside itself is a
-/// cycle, as upstream's encoder finds it.
+/// functions named under its own path. A module cannot contain itself: an
+/// [ExternalModule] is immutable, so a nested module always predates its
+/// parent.
 int? _enterImportModule(
   ArenaWriter writer,
   _ImportModule token,
@@ -728,17 +729,12 @@ int? _enterImportModule(
   final path = token.path;
   final shared = writer._modules[path];
   if (shared != null) return shared;
-  if (!open.add(module)) {
-    // coverage:ignore-start
-    // A module cannot contain itself: a nested module always predates it.
-    throw PythonRefusal(
-      module,
-      'contains itself; a cycle cannot be sent to the worker',
-      'ValueError',
-      'Circular reference detected',
-    );
-    // coverage:ignore-end
-  }
+  final entered = open.add(module);
+  assert(
+    entered,
+    'a module cannot contain itself: ExternalModule is immutable, so a '
+    'nested module always predates its parent',
+  );
   stack.add(
     _Frame(
       token,
