@@ -111,7 +111,7 @@ void main() {
   );
 
   group('corpus', () {
-    test('the upstream 1.3.0 corpus', () async {
+    test('the pinned upstream corpus', () async {
       final target = CorpusTarget(
         label: _backend,
         profile: WorkerCorpusProfile.browser,
@@ -128,7 +128,8 @@ void main() {
     }, timeout: const Timeout(Duration(minutes: 15)));
 
     test(
-      'the four selected v1.3.0 sources meet their directives ($_backend)',
+      'the four selected pinned upstream sources meet their directives '
+      '($_backend)',
       () async {
         final pool = await startMonty(
           corpusPoolOptions,
