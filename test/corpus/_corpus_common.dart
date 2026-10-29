@@ -67,7 +67,7 @@ final class CorpusTarget {
 void corpusTests(CorpusTarget target) {
   manifestTests();
   test(
-    'the upstream 1.3.0 corpus meets its directives, or is a listed '
+    'the pinned upstream corpus meets its directives, or is a listed '
     'divergence (${target.label})',
     () => runCorpusChecks(target),
     timeout: const Timeout(Duration(minutes: 15)),
@@ -165,7 +165,7 @@ void manifestTests() {
   });
 
   test(
-    'selected v1.3.0 corpus sources match independent upstream copies',
+    'selected corpus sources match independent pinned upstream copies',
     () {
       // Each production source must be the upstream v1.2.0 text, byte for
       // byte: both sides are strict UTF-8 decodings of the same file, so
@@ -176,7 +176,7 @@ void manifestTests() {
           fixtureCorpusV1,
           containsPair(key, value),
           reason:
-              '$key must equal its independent upstream v1.2.0 copy '
+              '$key must equal its independent pinned upstream copy '
               'byte-for-byte',
         );
       }

@@ -196,7 +196,7 @@ void main() {
   });
 
   test(
-    'generated bindings recognize v1.3.0 module and OS messages',
+    'generated bindings recognize pinned upstream module and OS messages',
     _checkV120ModuleAndOsMessages,
   );
 }

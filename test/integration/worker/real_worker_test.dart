@@ -713,7 +713,7 @@ typedef _LockPackage = ({
 typedef _ManifestEntry = ({String table, String name, String value});
 
 /// The manifest's monty requirements, checked first: the worker declares
-/// six of them, and each must pin exactly "=1.2.0".
+/// six of them, and each must pin exactly "=1.3.0".
 void _expectWorkerManifestPinsV120() {
   final requirements = _workerManifestMontyRequirements();
   expect(
@@ -729,7 +729,7 @@ void _expectWorkerManifestPinsV120() {
       '=1.3.0',
       reason:
           'native/worker/Cargo.toml [${requirement.table}] '
-          '${requirement.name} must pin "=1.2.0"',
+          '${requirement.name} must pin "=1.3.0"',
     );
   }
 }
@@ -795,21 +795,21 @@ void _expectMontyHashDependencies(
 }
 
 /// Both package versions: the Dart package and the worker crate carry the
-/// 0.120.x version that tracks upstream monty 1.2.0.
+/// 0.130.0-dev.1 version that tracks upstream monty 1.3.0.
 void _expectPackageVersionsTrackV120() {
   expect(
     _packageVersion('pubspec.yaml'),
     '0.130.0-dev.1',
     reason:
-        'pubspec.yaml must carry the 0.120.x version that tracks '
-        'upstream monty 1.2.0',
+        'pubspec.yaml must carry the 0.130.0-dev.1 version that tracks '
+        'upstream monty 1.3.0',
   );
   expect(
     _packageVersion(_workerManifestPath),
     '0.130.0-dev.1',
     reason:
-        '$_workerManifestPath must carry the 0.120.x version that '
-        'tracks upstream monty 1.2.0',
+        '$_workerManifestPath must carry the 0.130.0-dev.1 version '
+        'that tracks upstream monty 1.3.0',
   );
 }
 
