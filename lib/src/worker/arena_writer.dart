@@ -729,12 +729,15 @@ int? _enterImportModule(
   final shared = writer._modules[path];
   if (shared != null) return shared;
   if (!open.add(module)) {
+    // coverage:ignore-start
+    // A module cannot contain itself: a nested module always predates it.
     throw PythonRefusal(
       module,
       'contains itself; a cycle cannot be sent to the worker',
       'ValueError',
       'Circular reference detected',
     );
+    // coverage:ignore-end
   }
   stack.add(
     _Frame(
