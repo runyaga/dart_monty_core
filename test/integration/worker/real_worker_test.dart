@@ -343,13 +343,13 @@ void main() {
     expect(_completeInt(await fresh.turn(_feed('1 + 1'))), 2);
   });
 
-  test('release pin and oracle lock target v1.2.0', () {
-    expect(_pinnedUpstreamVersion(), '1.2.0');
-    expect(_pinnedUpstreamTag(), 'v1.2.0');
+  test('release pin and oracle lock target the pinned upstream', () {
+    expect(_pinnedUpstreamVersion(), '1.3.0');
+    expect(_pinnedUpstreamTag(), 'v1.3.0');
     expect(_pinnedUpstreamDistributions(), const {
-      'pydantic-monty': '1.2.0',
-      'pydantic-monty-client': '1.2.0',
-      'pydantic-monty-runtime': '1.2.0',
+      'pydantic-monty': '1.3.0',
+      'pydantic-monty-client': '1.3.0',
+      'pydantic-monty-runtime': '1.3.0',
     });
     expect(_offlineUpstreamPinValidationSucceeds(), isTrue);
   });
@@ -474,7 +474,8 @@ String _bits(MontyValue v) => switch (v) {
 // The release pin readers below read the records they name: the pin
 // tool/upstream/upstream-pin.json and the oracle lock it points at. They
 // report what those records say, so 'release pin and oracle lock target
-// v1.2.0' fails while the tree still pins an older upstream release.
+// the pinned upstream' fails while the tree still pins an older upstream
+// release.
 
 /// The upstream monty release this core pins: `version` in
 /// tool/upstream/upstream-pin.json (upstream pydantic/monty).
