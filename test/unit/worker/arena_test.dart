@@ -799,4 +799,23 @@ void main() {
       );
     },
   );
+
+  test('a module whose attribute key is not an identifier is refused', () {
+    // Stage 1 does not read the attribute names (arena_nodes.dart: the
+    // module's id and attrs are required, its id a 16-byte uuid, and
+    // nothing else is checked), so a key that is not an identifier reaches
+    // the module's own constructor (monty_value_structured.dart:
+    // `_checkedAttrs`), which refuses it. The reader reports every arena
+    // it refuses as a FormatException.
+    expect(
+      () => _decode([
+        pb.MontyNode(str: 'not-valid'),
+        pb.MontyNode(none: pb.Unit()),
+        _moduleNode(_moduleBody('tools', _subUuid, const [(0, 1)])),
+      ]),
+      _refusedAs(
+        "ExternalModule attrs must have identifier keys, not 'not-valid'",
+      ),
+    );
+  });
 }
