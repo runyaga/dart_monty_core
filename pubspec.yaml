@@ -27,8 +27,9 @@ dependencies:
 dev_dependencies:
   # tool/check_export_boundary.dart resolves the public libraries' element
   # model. Already in the graph transitively; declared so the tool does not
-  # depend on a transitive.
-  analyzer: ^14.5.0
+  # depend on a transitive. Capped below 14.7.0: 14.7.0 renders a const
+  # record default as `const (...)`, which changes tool/export-golden.txt.
+  analyzer: '>=14.5.0 <14.7.0'
   # Declared, not inherited. `format_coverage` and `collect_coverage` already
   # resolved here as a transitive dependency of package:test, so tool/
   # coverage_report.sh worked by accident; a `test` upgrade that dropped the
