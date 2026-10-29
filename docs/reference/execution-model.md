@@ -66,6 +66,10 @@ cleanup, and the nested-checkout hazard. The
 [`Monty.start`](../../lib/src/worker/monty.dart) defines sizing, waiting,
 startup, request, and recycling limits.
 
+A session also carries the host modules it was given: the map an `import`
+is answered from, and the place a factory builds a module. See
+[host modules](host-modules.md).
+
 ## Feeds and protocol turns have different boundaries
 
 A **feed** is one execution of code. A **protocol turn** is one request and its

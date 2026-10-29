@@ -11,6 +11,11 @@ and on the web.
 answers automatically. [`MontySession.feedStart`](../../lib/src/worker/monty_session.dart)
 returns snapshots for the caller to answer.
 
+A call the sandbox makes to a host module is answered by the same machinery:
+the function of a module is dispatched like any other host function, and a
+factory that builds a module may return a future. See
+[host modules](../reference/host-modules.md).
+
 ## The futures loop
 
 <!-- This block includes embedded Python imports and requires caller-provided session state. -->

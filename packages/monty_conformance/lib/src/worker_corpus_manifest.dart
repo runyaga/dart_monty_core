@@ -10,6 +10,7 @@
 // and a page has no filesystem.
 
 /// Where a divergence applies.
+// ignore: prefer-match-file-name, the file holds the manifest, not one type
 enum WorkerCorpusProfile {
   /// The native worker executable, on the VM.
   native,
@@ -82,7 +83,7 @@ final class ExpectedFailure {
 }
 
 /// The recorded divergences, by ID.
-const workerCorpusDivergences = <String, CorpusDivergence>{
+const Map<String, CorpusDivergence> workerCorpusDivergences = {
   'worker-no-test-hooks': CorpusDivergence(
     'worker-no-test-hooks',
     'Upstream runs its datatest with the engine built with `test-hooks`, '
@@ -144,7 +145,7 @@ const workerCorpusDivergences = <String, CorpusDivergence>{
 };
 
 /// Every corpus file expected to fail on the shipped worker.
-const workerCorpusExpected = <ExpectedFailure>[
+const List<ExpectedFailure> workerCorpusExpected = [
   // worker-no-test-hooks
   ExpectedFailure(
     'functools__gc.py',
@@ -335,7 +336,7 @@ enum RecursionOutcome {
 /// file must meet its own directives, as on native (no entry above lists
 /// them). With it failing, each file's outcome must equal upstream's browser
 /// build's, recorded here.
-const workerRecursionSetNoJspi = <String, RecursionOutcome>{
+const Map<String, RecursionOutcome> workerRecursionSetNoJspi = {
   'collections__deque.py': RecursionOutcome.crashes,
   'dataclass__repr_eq.py': RecursionOutcome.crashes,
   'dict__eq_self_referential.py': RecursionOutcome.crashes,
@@ -349,7 +350,7 @@ const workerRecursionSetNoJspi = <String, RecursionOutcome>{
 /// measured with this corpus run on dart2js: every file runs to its end,
 /// including the three that crash Chrome's and Firefox's worker.
 /// Upstream's browser build has no Safari baseline to compare with.
-const workerRecursionSetNoJspiSafari = <String, RecursionOutcome>{
+const Map<String, RecursionOutcome> workerRecursionSetNoJspiSafari = {
   'collections__deque.py': RecursionOutcome.passes,
   'dataclass__repr_eq.py': RecursionOutcome.passes,
   'dict__eq_self_referential.py': RecursionOutcome.passes,
@@ -400,9 +401,24 @@ List<String> checkAgainstManifest(
 
 /// What is wrong with the manifest itself; empty when it is well formed.
 List<String> manifestProblems(Iterable<String> corpus) {
-  final problems = <String>[];
   final files = corpus.toSet();
   final seen = <String>{};
+
+  return [
+    ..._expectedFailureProblems(files, seen),
+    ..._divergenceProblems(),
+    ..._recursionSetProblems(files, seen),
+  ];
+}
+
+/// What is wrong with the expected-failure entries: an entry whose divergence
+/// is not recorded, a file the corpus does not hold, a file listed twice and
+/// an entry with no reason.
+///
+/// [seen] collects the files the entries name, so a file listed twice is
+/// caught, and the recursion set reads it afterwards.
+List<String> _expectedFailureProblems(Set<String> files, Set<String> seen) {
+  final problems = <String>[];
   for (final e in workerCorpusExpected) {
     if (!workerCorpusDivergences.containsKey(e.divergence)) {
       problems.add('${e.file}: unknown divergence ${e.divergence}');
@@ -411,11 +427,27 @@ List<String> manifestProblems(Iterable<String> corpus) {
     if (!seen.add(e.file)) problems.add('${e.file}: listed twice');
     if (e.reason.isEmpty) problems.add('${e.file}: no reason text');
   }
+
+  return problems;
+}
+
+/// What is wrong with the divergence records: one that names no file.
+List<String> _divergenceProblems() {
+  final problems = <String>[];
   for (final id in workerCorpusDivergences.keys) {
     if (!workerCorpusExpected.any((e) => e.divergence == id)) {
       problems.add('divergence $id names no file');
     }
   }
+
+  return problems;
+}
+
+/// What is wrong with the two recursion sets: one that names different files
+/// from the other, a file the corpus does not hold and a file that is also an
+/// expected failure.
+List<String> _recursionSetProblems(Set<String> files, Set<String> seen) {
+  final problems = <String>[];
   final safariFiles = workerRecursionSetNoJspiSafari.keys.toSet();
   if (safariFiles.length != workerRecursionSetNoJspi.length ||
       !safariFiles.containsAll(workerRecursionSetNoJspi.keys)) {
