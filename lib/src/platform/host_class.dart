@@ -562,7 +562,10 @@ final class ClassInstance<T extends Object> extends MontyValue {
   }
 
   /// Calls method [name] on [value]. `__call__` is always refused on an
-  /// instance. Under `'all'` only the class's methods qualify; a name
+  /// instance, and upstream refuses it with CPython's `TypeError`, not
+  /// with an `AttributeError`
+  /// (`up/crates/monty-python/python/pydantic_monty/class_instance.py:109`).
+  /// Under `'all'` only the class's methods qualify; a name
   /// granted explicitly calls whatever the attribute holds, as upstream
   /// calls what `getattr` returns.
   FutureOr<Object> _callMethod(
@@ -571,7 +574,16 @@ final class ClassInstance<T extends Object> extends MontyValue {
     Map<String, MontyValue> kwargs,
   ) {
     final policy = policies.allowedMethods;
-    if (name == '__call__' || !_allows(policy, name)) throw _error(name);
+    // The refusal comes before the policy is consulted: upstream raises
+    // `TypeError` for `__call__` even when the policy allows every
+    // method, since whether the object is callable is the host's answer.
+    if (name == '__call__') {
+      throw ExternalException(
+        'TypeError',
+        "'${classType.value.name}' object is not callable",
+      );
+    }
+    if (!_allows(policy, name)) throw _error(name);
     // Under 'all' only a method the class defines qualifies; what is
     // called is still what the attribute resolves to.
     if (policy == 'all' && _method(name) == null) throw _error(name);

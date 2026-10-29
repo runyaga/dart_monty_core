@@ -1199,6 +1199,186 @@ final class _MemoEquals {
 }
 
 // ---------------------------------------------------------------------------
+// ExternalModule: structural equality
+// ---------------------------------------------------------------------------
+
+/// Compares two [ExternalModule]s the way Python compares two dictionaries.
+///
+/// Upstream's `ExternalModule.__eq__` (monty-proto
+/// `src/python/external_module.rs:74`) compares the id, the stubs and the
+/// attrs dicts, and Python compares two dicts entry by entry: the keys must
+/// be the same and the values equal, whatever order the entries come in.
+///
+/// The Dart values a host puts in a module are compared the same way: a
+/// list element by element, in order; a map entry by entry, with the keys
+/// equal and the values equal; anything else by its own `==`, as Python
+/// compares two objects of the host's own type. A map key is compared by
+/// its own `==` too, as Python compares two hashable keys.
+///
+/// The comparison follows the values, so a value that holds itself would
+/// never end. The pairs of containers being compared are therefore tracked,
+/// by identity, and a pair met again is a cycle: a [StateError] says so, as
+/// Python's `RecursionError` does. The tracked pairs live in one
+/// comparator, made for one comparison, so two comparisons never share
+/// them.
+final class _ModuleEquality {
+  /// The containers being compared, by identity: the left one names the
+  /// right ones it is compared with.
+  final Map<Object, Set<Object>> _active = Map.identity();
+
+  /// Whether the two modules are equal.
+  bool equals(ExternalModule a, ExternalModule b) {
+    if (identical(a, b)) return true;
+    if (a.id != b.id) return false;
+    if (a.stubs != b.stubs) return false;
+
+    return _guarded(a, b, () => _attributes(a.attrs, b.attrs));
+  }
+
+  /// The attributes of the two modules: the same names, protected ones
+  /// included, and then the values, in the order the names come.
+  bool _attributes(Map<String, Object?> mine, Map<String, Object?> others) {
+    if (mine.length != others.length) return false;
+    for (final name in mine.keys) {
+      if (!others.containsKey(name)) return false;
+    }
+    for (final MapEntry(:key, :value) in mine.entries) {
+      if (!_values(value, others[key])) return false;
+    }
+
+    return true;
+  }
+
+  /// Two values, as Python compares them.
+  bool _values(Object? a, Object? b) {
+    if (a is ExternalModule && b is ExternalModule) return equals(a, b);
+    if (a is List<Object?> && b is List<Object?>) {
+      return identical(a, b) || _list(a, b);
+    }
+    if (a is Map<Object?, Object?> && b is Map<Object?, Object?>) {
+      return identical(a, b) || _map(a, b);
+    }
+
+    return _leaf(a, b);
+  }
+
+  /// A value that is not a container: its own `==`, as Python compares two
+  /// objects of the host's own type. Two containers of different kinds are
+  /// never equal.
+  bool _leaf(Object? a, Object? b) {
+    if (a is ExternalModule || b is ExternalModule) return false;
+    if (a is List<Object?> || b is List<Object?>) return false;
+    if (a is Map<Object?, Object?> || b is Map<Object?, Object?>) return false;
+
+    return a == b;
+  }
+
+  /// Two lists, element by element, in order.
+  bool _list(List<Object?> a, List<Object?> b) {
+    if (a.length != b.length) return false;
+
+    return _guarded(a, b, () {
+      final other = b.iterator;
+      for (final value in a) {
+        other.moveNext();
+        if (!_values(value, other.current)) return false;
+      }
+
+      return true;
+    });
+  }
+
+  /// Two maps, entry by entry: the keys must be the same, in any order, and
+  /// the values equal.
+  bool _map(Map<Object?, Object?> a, Map<Object?, Object?> b) {
+    if (a.length != b.length) return false;
+
+    return _guarded(a, b, () {
+      final pairs = _pairs(a, b);
+      if (pairs == null) return false;
+      for (final (mine, theirs) in pairs) {
+        if (!_values(mine, theirs)) return false;
+      }
+
+      return true;
+    });
+  }
+
+  /// The values of the entries of [a] paired with the values of the entries
+  /// of [b] whose keys are equal, each entry of [b] taken once; null when
+  /// an entry of [a] has no entry of [b] with an equal key.
+  List<(Object?, Object?)>? _pairs(
+    Map<Object?, Object?> a,
+    Map<Object?, Object?> b,
+  ) {
+    final others = b.entries.toList();
+    final taken = <int>{};
+    final pairs = <(Object?, Object?)>[];
+    for (final MapEntry(:key, :value) in a.entries) {
+      final index = _indexOfKey(others, taken, key);
+      final entry = index < 0 ? null : others.elementAtOrNull(index);
+      if (entry == null) return null;
+      taken.add(index);
+      pairs.add((value, entry.value));
+    }
+
+    return pairs;
+  }
+
+  /// The index of the first entry of [others] that is not taken and whose
+  /// key is equal to [key]; -1 when there is none.
+  int _indexOfKey(
+    List<MapEntry<Object?, Object?>> others,
+    Set<int> taken,
+    Object? key,
+  ) {
+    for (final (index, entry) in others.indexed) {
+      if (taken.contains(index)) continue;
+      if (entry.key == key) return index;
+    }
+
+    return -1;
+  }
+
+  /// Runs [body] with the pair [a], [b] marked as compared, so that a
+  /// cycle is caught; the mark is removed when the comparison ends, be it
+  /// by an answer or by an error.
+  bool _guarded(Object a, Object b, bool Function() body) {
+    if (!_enter(a, b)) {
+      throw StateError('recursive ExternalModule equality');
+    }
+    try {
+      return body();
+    } finally {
+      _leave(a, b);
+    }
+  }
+
+  /// Marks the pair [a], [b] as compared; false when it was already
+  /// marked, which means the comparison came back to it: a cycle.
+  bool _enter(Object a, Object b) {
+    final rights = _active[a];
+    if (rights == null) {
+      _active[a] = Set.identity()..add(b);
+
+      return true;
+    }
+    if (rights.contains(b)) return false;
+    rights.add(b);
+
+    return true;
+  }
+
+  /// Undoes [_enter] for the pair [a], [b].
+  void _leave(Object a, Object b) {
+    final rights = _active[a];
+    if (rights == null) return;
+    rights.remove(b);
+    if (rights.isEmpty) _active.remove(a);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Projections: toJson and dartValue
 // ---------------------------------------------------------------------------
 

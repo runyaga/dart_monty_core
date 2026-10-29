@@ -61,11 +61,16 @@ import 'package:fixnum/fixnum.dart';
 ///
 /// The working directory persists across feeds, including changes from
 /// `os.chdir`. Before establishment, it uses the first mount's virtual path or
-/// `/`. The session leaves it unestablished when type checking rejects a feed.
-/// A syntax error, runtime error, or successful restore establishes it. A
-/// relative path or NUL raises a
-/// recoverable `ValueError` before code or mounts run. An unpaired surrogate
-/// throws [ArgumentError].
+/// `/`. The first feed that reaches the worker establishes it, as upstream
+/// 1.2.0 does: from then on the session names no directory, and the worker
+/// keeps the one it has. A feed the type check rejects keeps the directory it
+/// was given, because the worker adopts the directory before it type-checks
+/// the snippet. A feed the source-nesting check refuses leaves the directory
+/// as it was, because the worker answers that refusal before it adopts the
+/// directory. A syntax error, runtime error, or successful restore
+/// establishes it too. A relative path or NUL raises a recoverable
+/// `ValueError` before code or mounts run. An unpaired surrogate throws
+/// [ArgumentError].
 abstract interface class MontySession {
   /// Runs one Python snippet to completion and returns its last expression.
   ///
@@ -124,8 +129,9 @@ abstract interface class MontySession {
 
   /// Restores a between-feed dump into a fresh session.
   ///
-  /// The dump replaces globals, script name, type-check settings, working
-  /// directory, and feed and turn durations.
+  /// The dump replaces globals, script name, type-check settings, and working
+  /// directory; the feed and turn durations are bounded by the destination's
+  /// ceilings, which a dump may only tighten.
   /// A used session or mid-feed dump throws [StateError]. A wrong-kind dump
   /// finishes the session. Corrupt bytes throw [MontyRuntimeError] and leave a
   /// fresh session usable. Dump bytes are trusted and must come unchanged from
@@ -666,6 +672,7 @@ HostAnswers _hostFor(
   List<MountDir>? mount,
 ) => HostAnswers(
   externalLookup: externalLookup ?? const {},
+  modules: session.modules,
   os: os,
   mount: mount,
   systemSleepMax: config.systemSleepMax,
@@ -1128,8 +1135,10 @@ SourceRange _position(pb.SourceRange range) => range == pb.SourceRange()
 /// tighten a limit.
 ///
 /// It also holds the feed and turn duration budgets the parent backstops.
-/// A reply sets either only where there is none: ordinary replies echo the
-/// session's, a `Load` reply reports the dump's.
+/// A reply can only tighten either: ordinary replies echo the session's, a
+/// `Load` reply reports the dump's, and the tighter of the two is kept
+/// (upstream's `tighter`). A reply that reports no duration leaves the
+/// budget in force as it is.
 ///
 /// The reported feed execution belongs to this budget too: it is monotonic
 /// within one feed, resets when the next feed starts, and a load saves or
@@ -1137,11 +1146,12 @@ SourceRange _position(pb.SourceRange range) => range == pb.SourceRange()
 ///
 /// Loading a dump follows upstream (`checkout.rs` `begin_load`, `forget`,
 /// `end_load`): [beginLoad] keeps the two limits as ceilings and restarts
-/// both counts, and forgets both duration budgets, so a dump keeps its own
-/// (O9); the `Load` reply, when it is `Ok` or a suspension, adopts the dump
-/// on those terms, and a re-announced suspension is counted and charged
-/// again as it arrives. Any other reply, or none ([endLoad]), puts the
-/// budget back as it was before the load.
+/// both counts, and keeps the two duration budgets as the ceilings the
+/// dump's may tighten (upstream's `forget`); the `Load` reply, when it is
+/// `Ok` or a suspension, tightens those ceilings with the dump's own, and a
+/// re-announced suspension is counted and charged again as it arrives. Any
+/// other reply, or none ([endLoad]), puts the budget back as it was before
+/// the load, and a reply that tightens it does so on the restored budget.
 final class SessionBudget {
   /// A fresh budget for [config]: its limits, nothing used.
   SessionBudget(SessionConfig config)
@@ -1155,13 +1165,14 @@ final class SessionBudget {
       _systemSleepCap = config.systemSleepCapNanos;
 
   /// The feed's duration budget, which the parent backstops: the session's
-  /// `maxFeedDuration`, or a loaded dump's; null while there is none.
+  /// `maxFeedDuration`, tightened by a reply that reported a smaller one; null
+  /// while there is none.
   Duration? get feedBudget => _feedBudget;
   Duration? _feedBudget;
 
   /// Each execution turn's duration budget, which the parent backstops:
-  /// the session's `maxTurnDuration`, or a loaded dump's; null while there
-  /// is none.
+  /// the session's `maxTurnDuration`, tightened by a reply that reported a
+  /// smaller one; null while there is none.
   Duration? get turnBudget => _turnBudget;
   Duration? _turnBudget;
 
@@ -1203,9 +1214,9 @@ final class SessionBudget {
   }
 
   /// Starts loading a dump: the budget is saved, then both counts restart
-  /// while both limits stay, as ceilings on the dump's, and both duration
-  /// budgets and the feed clock are forgotten, to be the dump's (upstream's
-  /// `begin_load` and `forget`).
+  /// while both limits stay, as ceilings on the dump's, and the feed clock
+  /// is forgotten; the two duration budgets stay as they are, as the ceilings
+  /// the dump's may tighten (upstream's `begin_load` and `forget`).
   void beginLoad() {
     _beforeLoad = (
       feed: _feedBudget,
@@ -1216,8 +1227,6 @@ final class SessionBudget {
       suspensions: _suspensions,
       slept: _slept,
     );
-    _feedBudget = null;
-    _turnBudget = null;
     _reportedFeedExecution = Duration.zero;
     _suspensions = 0;
     _slept = BigInt.zero;
@@ -1273,17 +1282,18 @@ final class SessionBudget {
     _slept = saved.slept;
   }
 
-  /// Sets either duration budget [event] reports where there is none, and
-  /// tightens either limit to the one it reports, if smaller (upstream's
-  /// `update_from`). The limits arrive as u64s and are compared exactly,
+  /// Tightens either duration budget to the one [event] reports, if smaller,
+  /// and keeps the budget in force where [event] reports none (upstream's
+  /// `update_from` and its `tighter`). A report of zero tightens the budget
+  /// to nothing. The limits arrive as u64s and are compared exactly,
   /// unsigned: a dart2js `int` may hold a limit of 2^63 or more, which
   /// `Int64` would read as negative.
   void _adoptLimits(pb.ChildEvent event) {
-    if (_feedBudget == null && event.hasMaxFeedDurationMicros()) {
-      _feedBudget = _durationOfMicros(event.maxFeedDurationMicros);
+    if (event.hasMaxFeedDurationMicros()) {
+      _feedBudget = _tighter(_feedBudget, event.maxFeedDurationMicros);
     }
-    if (_turnBudget == null && event.hasMaxTurnDurationMicros()) {
-      _turnBudget = _durationOfMicros(event.maxTurnDurationMicros);
+    if (event.hasMaxTurnDurationMicros()) {
+      _turnBudget = _tighter(_turnBudget, event.maxTurnDurationMicros);
     }
     if (event.hasMaxTotalSleepMicros()) {
       final reported =
@@ -1353,6 +1363,17 @@ Duration _durationOfMicros(Int64 micros) {
         ? _maxBudgetMicros
         : value.toInt(),
   );
+}
+
+/// The tighter of the duration budget in force, [current], and the one
+/// [reportedMicros] reports, which is present: the report is converted as
+/// [_durationOfMicros] converts it, and the smaller of the two wins. A
+/// [current] of null adopts the report (upstream's `tighter`).
+Duration _tighter(Duration? current, Int64 reportedMicros) {
+  final reported = _durationOfMicros(reportedMicros);
+  if (current == null) return reported;
+
+  return reported < current ? reported : current;
 }
 
 /// The delay of [event]'s system sleep, `time.sleep` or `asyncio.sleep`

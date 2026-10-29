@@ -62,6 +62,11 @@ define routing and suspension behavior.
 how restored feeds receive new mount capabilities and preserve session state.
 The same declaration defines working-directory establishment and validation.
 
+The mount is not the first thing an import reaches: the session's module map
+answers the `import` of a host module, and the stub request the worker sends
+before it type checks a feed, before the mount sees them. See
+[host modules](host-modules.md).
+
 ## Platforms and discovery
 
 The class and session signatures compile on every backend.

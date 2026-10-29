@@ -3,8 +3,10 @@ AsyncMonty
 Exception
 False
 MemoryError
+ModuleNotFoundError
 MontyError.display
 NameError
+None
 OSError
 Opaque
 PermissionError
@@ -12,7 +14,14 @@ RecursionError
 RuntimeError
 TimeoutError
 TypeError
+UnicodeEncodeError
 ValueError
+
+# Upstream protocol names.
+OsCall
+OsCall.import
+OsCall.import_stubs
+ResumeCall
 
 # Dart SDK names.
 ArgumentError

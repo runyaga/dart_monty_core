@@ -299,7 +299,7 @@ void main() {
     });
   });
 
-  group('duration budgets: the dump keeps its own (O9)', () {
+  group('duration budgets: the dump may only tighten them', () {
     /// An event reporting the feed and turn budgets given, in micros.
     pb.ChildEvent reporting(pb.ChildEvent event, {int? feed, int? turn}) {
       if (feed != null) event.maxFeedDurationMicros = Int64(feed);
@@ -326,40 +326,54 @@ void main() {
       expect(budgets(SessionBudget(const SessionConfig())), (null, null));
     });
 
-    test('a reply sets a budget only where there is none', () {
-      // update_from: `if self.feed_budget.is_none()`; a budget in force is
-      // never changed, larger or smaller.
+    test('a reply tightens the budgets', () {
+      // update_from: `tighter` keeps the smaller of the budget in force and
+      // the one the reply reports; a budget in force is never loosened, and
+      // a report of zero tightens it to nothing.
+      const five = Duration(microseconds: 5);
       const seven = Duration(microseconds: 7);
+      const one = Duration(microseconds: 1);
       final budget = timed(feed: second);
       final states = <(Duration?, Duration?)>[];
       for (final (feed, turn) in [(5, 7), (10000000, 1)]) {
         budget.admit(reporting(_ok(), feed: feed, turn: turn));
         states.add(budgets(budget));
       }
-      expect(states, [(second, seven), (second, seven)]);
+      expect(states, [(five, seven), (five, one)]);
     });
 
-    test("a load forgets the session's; the Load reply's are adopted", () {
-      final budget = timed(feed: second, turn: second)
-        ..beginLoad()
-        ..admit(reporting(_ok(), feed: 2000000))
-        ..endLoad();
-      expect(budgets(budget), (const Duration(seconds: 2), null));
-    });
+    test(
+      "a load retains the session's ceilings under a looser feed report",
+      () {
+        // upstream's `forget` keeps the duration budgets as the ceilings on
+        // the dump's: a load reporting a longer feed duration, and no turn
+        // duration at all, leaves them alone.
+        final budget = timed(feed: second, turn: second)
+          ..beginLoad()
+          ..admit(reporting(_ok(), feed: 2000000))
+          ..endLoad();
+        expect(budgets(budget), (second, second));
+      },
+    );
 
-    test('a re-announced suspension adopts them too', () {
+    test('a re-announced suspension keeps the feed and adopts the turn', () {
       final budget = timed(feed: second)
         ..beginLoad()
         ..admit(reporting(_call(), turn: 3000))
         ..endLoad();
-      expect(budgets(budget), (null, const Duration(milliseconds: 3)));
+      expect(budgets(budget), (second, const Duration(milliseconds: 3)));
     });
 
-    test("a refused load puts the session's back", () {
+    test("a refused load puts the session's back, then tightens it", () {
+      // The rollback restores the budget as it was before the load, and the
+      // error's own reports then tighten the restored ceilings.
       final budget = timed(feed: second, turn: ms)
         ..beginLoad()
         ..admit(reporting(_error(), feed: 5, turn: 5));
-      expect(budgets(budget), (second, ms));
+      expect(
+        budgets(budget),
+        (const Duration(microseconds: 5), const Duration(microseconds: 5)),
+      );
     });
 
     test('a rejected load restores its feed clock', () {
@@ -415,6 +429,110 @@ void main() {
       expect(feed?.isNegative, isFalse);
       expect(turn, feed);
       expect(feed, greaterThan(const Duration(days: 365 * 280)));
+    });
+  });
+
+  group('restore: the parent keeps its duration ceilings', () {
+    // A load restores a dump into a session that has ceilings of its own
+    // (monty-pool 1.2.0 checkout.rs: `forget` keeps the duration budgets
+    // as ceilings and `update_from` takes the tighter of the two). A dump
+    // may only lower them: a larger or omitted duration leaves the
+    // parent's alone, a smaller or zero one tightens it.
+    const parentFeed = Duration(seconds: 5);
+    const parentTurn = Duration(seconds: 4);
+
+    /// A budget with the parent's ceilings, as its session configured it.
+    SessionBudget parent() => SessionBudget(
+      const SessionConfig(
+        limits: ResourceLimits(
+          maxFeedDuration: parentFeed,
+          maxTurnDuration: parentTurn,
+        ),
+      ),
+    );
+
+    /// An `Ok` reporting the durations given, in microseconds.
+    pb.ChildEvent stamped({int? feed, int? turn}) {
+      final event = _ok();
+      if (feed != null) event.maxFeedDurationMicros = Int64(feed);
+      if (turn != null) event.maxTurnDurationMicros = Int64(turn);
+
+      return event;
+    }
+
+    /// The two duration ceilings [budget] holds.
+    (Duration?, Duration?) ceilings(SessionBudget budget) =>
+        (budget.feedBudget, budget.turnBudget);
+
+    test('restore retains and tightens parent duration ceilings', () {
+      // One event per shape: the budget only reads them.
+      final ok = _ok();
+      final bigger = stamped(feed: 90000000, turn: 90000000);
+      final smaller = stamped(feed: 1000000, turn: 2000000);
+      final zero = stamped(feed: 0, turn: 0);
+      final spent = _ok(feedMicros: 1000000);
+      final call = _call();
+
+      // A load that reports no duration keeps the parent's ceilings.
+      final omitted = parent()
+        ..beginLoad()
+        ..admit(ok)
+        ..endLoad();
+      expect(ceilings(omitted), (parentFeed, parentTurn));
+
+      // A load that reports larger durations keeps them too.
+      final larger = parent()
+        ..beginLoad()
+        ..admit(bigger)
+        ..endLoad();
+      expect(ceilings(larger), (parentFeed, parentTurn));
+
+      // A smaller duration tightens the parent's ceiling.
+      final tighter = parent()
+        ..beginLoad()
+        ..admit(smaller)
+        ..endLoad();
+      expect(
+        ceilings(tighter),
+        (const Duration(seconds: 1), const Duration(seconds: 2)),
+      );
+
+      // Zero tightens it to nothing: the dump allows no time at all.
+      final none = parent()
+        ..beginLoad()
+        ..admit(zero)
+        ..endLoad();
+      expect(ceilings(none), (Duration.zero, Duration.zero));
+
+      // The restored dump's own feed time is what the parent counts against
+      // the feed budget from then on.
+      final restored = parent()
+        ..beginLoad()
+        ..admit(_ok(feedMicros: 2000000))
+        ..endLoad();
+      expect(restored.reportedFeedExecution, const Duration(seconds: 2));
+
+      // A load the worker refused puts the parent's limits, counters and
+      // clock back.
+      final rejected = parent()
+        ..admit(spent)
+        ..admit(call)
+        ..beginLoad()
+        ..admit(_error())
+        ..endLoad();
+      expect(ceilings(rejected), (parentFeed, parentTurn));
+      expect(rejected.reportedFeedExecution, const Duration(seconds: 1));
+      expect(rejected.suspensions, 1);
+
+      // A load that was never answered puts them back too.
+      final unanswered = parent()
+        ..admit(spent)
+        ..admit(call)
+        ..beginLoad()
+        ..endLoad();
+      expect(ceilings(unanswered), (parentFeed, parentTurn));
+      expect(unanswered.reportedFeedExecution, const Duration(seconds: 1));
+      expect(unanswered.suspensions, 1);
     });
   });
 }

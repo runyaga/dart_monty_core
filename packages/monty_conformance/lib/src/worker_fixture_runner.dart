@@ -96,6 +96,10 @@ Future<String?> _runOne(Monty pool, String name, String source) async {
   final mount = fixtureMountsFs(source);
   final iter = fixtureIsCallExternal(source);
   final timezone = fixtureTimezone(source);
+  // One registry per fixture, as upstream resets its fixtures per test, and
+  // the host module that answers `import tools`.
+  final registry = WorkerFixtureRegistry();
+  final tools = WorkerFixtureTools(registry);
 
   final MontySession session;
   try {
@@ -107,6 +111,7 @@ Future<String?> _runOne(Monty pool, String name, String source) async {
         gcInterval: fixtureGcInterval(source),
       ),
       osPolicy: timezone == null ? null : OsPolicy(timezone: timezone),
+      externalModules: {'tools': tools.module},
     );
   } on TimeoutException catch (e) {
     return 'no worker for the fixture: $e';
@@ -117,7 +122,7 @@ Future<String?> _runOne(Monty pool, String name, String source) async {
     try {
       final value = await switch ((mount, iter)) {
         (true, _) => runMountFixture(session, source),
-        (false, true) => _drive(session, source),
+        (false, true) => _drive(session, source, registry, tools),
         (false, false) => session.feedRun(source, printCallback: _discard),
       };
       outcome = FixtureOutcome(value: value, valueRepr: pyValueRepr(value));
@@ -179,17 +184,17 @@ String _repr(MontyValue v, List<Object> open) {
       if (value.isNaN) return 'nan';
       if (value.isInfinite) return value.isNegative ? '-inf' : 'inf';
       // dart2js has one number type, so a whole float prints without its
-      // `.0`: spell it as Python does.
+      // `.0`; outside [1e-4, 1e16) a value has no Python repr.
       if (value == 0) return value.isNegative ? '-0.0' : '0.0';
-      if (value.abs() < 1e15 && value == value.truncateToDouble()) {
-        return '${value.toInt()}.0';
-      }
-      final text = '$value';
-      if (text.contains('e')) {
+      final magnitude = value.abs();
+      if (magnitude < 1e-4 || magnitude >= 1e16) {
         throw const FormatException('value has no supported Python repr');
       }
+      if (value == value.truncateToDouble()) {
+        return '${value.toInt()}.0';
+      }
 
-      return text;
+      return '$value';
     case MontyString(:final value):
       return pyStringRepr(value);
     case MontyList(:final items):
@@ -228,8 +233,9 @@ String _repr(MontyValue v, List<Object> open) {
 Future<MontyValue> _drive(
   MontySession session,
   String source,
+  WorkerFixtureRegistry registry,
+  WorkerFixtureTools tools,
 ) async {
-  final registry = WorkerFixtureRegistry();
   final os = WorkerFixtureOs.virtual();
   final pending = <int, HostOutcome>{};
 
@@ -267,12 +273,19 @@ Future<MontyValue> _drive(
         );
 
       case FunctionSnapshot() && final call:
-        switch (registry.call(call.functionName, call.args, call.kwargs)) {
+        final outcome = _outcome(
+          registry,
+          tools,
+          call.functionName,
+          call.args,
+          call.kwargs,
+        );
+        switch (outcome) {
           case HostPending(:final settled):
             pending[call.callId] = settled;
             snapshot = await call.resume(const ExternalFuture());
-          case final outcome:
-            snapshot = await call.resume(_answer(outcome));
+          case final result:
+            snapshot = await call.resume(_answer(result));
         }
 
       case FutureSnapshot(:final pendingCallIds) && final wait:
@@ -308,3 +321,27 @@ ExternalResult _answer(HostOutcome outcome) => switch (outcome) {
   ),
   HostPending() => throw StateError('a pending answer is not settled'),
 };
+
+/// The outcome of the call [name] makes: the tool the host module holds for
+/// a qualified name, the registry's own for a bare one.
+///
+/// A qualified name is the module's own path and the function's name, as
+/// the sandbox calls it (`tools.add_ints`, `tools.nested.return_value`). A
+/// dotted name the module does not hold names nothing: the lookup is never
+/// consulted for a dotted name, so the call is not found — a `NameError`,
+/// as upstream's not-found answer raises.
+HostOutcome _outcome(
+  WorkerFixtureRegistry registry,
+  WorkerFixtureTools tools,
+  String name,
+  List<MontyValue> args,
+  Map<String, MontyValue> kwargs,
+) {
+  final tool = tools.toolNamed(name);
+  if (tool != null) return registry.call(tool, args, kwargs);
+  if (name.contains('.')) {
+    return HostRaise('NameError', "name '$name' is not defined");
+  }
+
+  return registry.call(name, args, kwargs);
+}

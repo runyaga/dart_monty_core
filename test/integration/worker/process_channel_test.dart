@@ -5,6 +5,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:dart_monty_core/src/worker/frame.dart';
@@ -33,14 +34,72 @@ pb.ParentRequest _feed(String code) =>
 
 final _configure = pb.ParentRequest(configure: pb.Configure());
 
-/// Waits until [condition] holds, polling; fails the test after 10 s.
-Future<void> _until(bool Function() condition) async {
-  final deadline = DateTime.now().add(const Duration(seconds: 10));
+/// Waits until [condition] holds, polling; fails the test after [timeout].
+Future<void> _until(
+  bool Function() condition, {
+  Duration timeout = const Duration(seconds: 10),
+  String reason = 'condition never held',
+}) async {
+  final deadline = DateTime.now().add(timeout);
   while (!condition()) {
-    if (DateTime.now().isAfter(deadline)) fail('condition never held');
+    if (DateTime.now().isAfter(deadline)) fail(reason);
     await Future<void>.delayed(const Duration(milliseconds: 10));
   }
 }
+
+/// The worker the probe drives, as source.
+///
+/// It waits for the release the test sends, then leaves a descendant
+/// holding stderr open and exits at once.
+///
+/// The wait is what makes the bound measurable: the test decides when the
+/// worker exits, and the descendant's hold on the pipe begins only after
+/// that. The probe passes the directory it works in as the worker's
+/// scenario, so the worker finds the release and the ready marker there.
+const _workerSource = r'''
+import 'dart:io';
+
+Future<void> main(List<String> args) async {
+  final dir = Directory(args.first);
+  File('${dir.path}/ready').writeAsStringSync('ready');
+  while (!File('${dir.path}/release').existsSync()) {
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+  }
+  await Process.start('/bin/sh', [
+    '-c',
+    'exec >/dev/null; sleep 20',
+  ], mode: ProcessStartMode.inheritStdio);
+  exit(0);
+}
+''';
+
+/// Calls [onExit] when [process] has exited.
+Future<void> _onExit(Process process, void Function() onExit) async {
+  await process.exitCode;
+  onExit();
+}
+
+/// The directory the probe and the worker it drives live in.
+///
+/// The probe is the one the repository ships, copied next to the worker it
+/// spawns: the probe resolves the worker next to itself. The worker is the
+/// one above, which waits for the test's release.
+Future<Directory> _probeDirectory() async {
+  final dir = await Directory.systemTemp.createTemp('monty-probe');
+  final probe = File(
+    'test/integration/worker/exit_probe.dart',
+  ).absolute;
+  await probe.copy('${dir.path}/exit_probe.dart');
+  await File('${dir.path}/fake_worker.dart').writeAsString(_workerSource);
+
+  return dir;
+}
+
+/// The package configuration the copied probe resolves its imports with.
+///
+/// The probe runs outside the package, so it needs the configuration the
+/// repository's own probes use.
+String _packageConfig() => File('.dart_tool/package_config.json').absolute.path;
 
 /// The [MontyCrashedError] that [future] fails with.
 ///
@@ -64,6 +123,30 @@ Future<ProcessChannel> _spawn(String scenario) async {
   addTearDown(channel.close);
 
   return channel;
+}
+
+/// The clock a crash-timing bound is measured against: it starts when the
+/// worker's exit was seen.
+///
+/// The worker's own start-up is a cold Dart VM, which on a loaded runner
+/// takes seconds (measured 9 s to 14 s with eight test runs at once), and
+/// it is not what a bound on the crash report is about. The drain of the
+/// pipes the worker left behind starts at its exit, and that is what the
+/// bound is about.
+final class _ExitClock {
+  Stopwatch? _sinceExit;
+
+  /// Starts the clock when [channel]'s worker has exited.
+  Future<void> markOnExit(ProcessChannel channel) async {
+    await channel.exitCode;
+    _sinceExit ??= Stopwatch()..start();
+  }
+
+  /// Whether the worker's exit has been seen.
+  bool get marked => _sinceExit != null;
+
+  /// How long it has been since the worker's exit was seen.
+  Duration get sinceExit => _sinceExit?.elapsed ?? Duration.zero;
 }
 
 void main() {
@@ -301,32 +384,89 @@ void main() {
     test(
       'a pipe held open by a descendant does not keep this process alive',
       () async {
-        final watch = Stopwatch()..start();
-        final probe = await Process.run(Platform.resolvedExecutable, [
-          File('test/integration/worker/exit_probe.dart').absolute.path,
-          'hold-stderr',
+        final dir = await _probeDirectory();
+        addTearDown(() => dir.deleteSync(recursive: true));
+        // The probe runs outside the package, so it is told where the
+        // package configuration is.
+        final probe = await Process.start(Platform.resolvedExecutable, [
+          '--packages=${_packageConfig()}',
+          '${dir.path}/exit_probe.dart',
+          dir.path,
         ]);
-        expect(probe.stdout, contains('crashed'));
-        expect(probe.exitCode, 0);
+        final out = StringBuffer();
+        final err = StringBuffer();
+        // The probe's own streams: they close when the probe exits, and the
+        // assertions below wait for them, so no output of the probe is
+        // still in flight when they run.
+        final streams = Future.wait([
+          probe.stdout
+              .transform(utf8.decoder)
+              .listen(out.write)
+              .asFuture<void>(),
+          probe.stderr
+              .transform(utf8.decoder)
+              .listen(err.write)
+              .asFuture<void>(),
+        ]);
+        // The worker is up and waiting for the release. Its start-up, and
+        // the probe's, are cold Dart VMs: a loaded runner stretches them
+        // over seconds, and they say nothing about how long the channel
+        // waits for the pipe the descendant holds open.
+        var ended = false;
+        unawaited(_onExit(probe, () => ended = true));
+        await _until(
+          () => File('${dir.path}/ready').existsSync() || ended,
+          timeout: const Duration(minutes: 2),
+          reason: 'the probe never started its worker\n$err',
+        );
+        expect(
+          File('${dir.path}/ready').existsSync(),
+          isTrue,
+          reason: 'the probe exited before its worker was ready\n$err',
+        );
+        // The bound starts here, at the release the test sends: a moment
+        // the test controls, before the worker exits, so the drain that
+        // follows the exit is inside the bound. The descendant's hold
+        // begins only after the release, so a drain that waits for it
+        // fails the bound whatever the scheduling did before.
+        final watch = Stopwatch()..start();
+        File('${dir.path}/release').writeAsStringSync('go');
+        await streams;
+        final code = await probe.exitCode;
+        expect(out.toString(), contains('crashed'));
+        expect(err.toString(), isEmpty);
+        expect(code, 0);
         // The descendant holds stderr for 20 s; the drain gives up after
-        // 1 s. The bound leaves room for two JIT start-ups on a loaded
-        // runner (measured 5.05 s against a 5 s bound in CI) and still fails
-        // well before the descendant lets go.
-        expect(watch.elapsed, lessThan(const Duration(seconds: 15)));
+        // 1 s. The bound leaves room for the drain and for the probe's own
+        // exit on a loaded runner, and still fails well before the
+        // descendant lets go.
+        expect(watch.elapsed, lessThan(const Duration(seconds: 10)));
       },
+      // The probe and the worker are cold Dart VMs: on a loaded runner
+      // their start-up alone takes tens of seconds.
+      timeout: const Timeout(Duration(minutes: 3)),
       testOn: '!windows',
     );
 
     test(
       'a worker that exits while a descendant holds stdout still crashes',
       () async {
-        final watch = Stopwatch()..start();
         final channel = await _spawn('hold-stdout');
-        final crash = await _crashOf(channel.turn(_configure));
+        final turn = channel.turn(_configure);
+        // The bound is measured from the worker's exit, not from the start
+        // of the test: the worker's own start-up is a cold Dart VM, which a
+        // loaded runner stretches over seconds (measured 9 s to 14 s with
+        // eight runs at once), and it says nothing about how long the
+        // channel waits for the pipe the descendant holds open. That wait
+        // starts at the exit.
+        final exit = _ExitClock();
+        unawaited(exit.markOnExit(channel));
+        final crash = await _crashOf(turn);
         expect(crash.cause, CrashCause.vanished);
         expect(crash.exitCode, 0);
         // The descendant holds stdout for 6 s; the drain gives up after 1 s.
-        expect(watch.elapsed, lessThan(const Duration(seconds: 5)));
+        expect(exit.marked, isTrue, reason: 'the worker never exited');
+        expect(exit.sinceExit, lessThan(const Duration(seconds: 5)));
       },
       testOn: '!windows',
     );
@@ -499,26 +639,43 @@ void main() {
   group('bounded read-ahead', () {
     const limit = ProcessChannel.readAheadLimit;
 
-    /// Waits until [channel]'s read-ahead has not changed for 300 ms, so a
-    /// reader that keeps reading has had the time to show it.
-    Future<int> settled(ProcessChannel channel) async {
-      final deadline = DateTime.now().add(const Duration(seconds: 30));
-      var last = -1;
-      var stableSince = DateTime.now();
-      while (DateTime.now().isBefore(deadline)) {
-        final now = channel.readAhead.now;
-        if (now != last) {
-          last = now;
-          stableSince = DateTime.now();
-        } else if (now > 0 &&
-            DateTime.now().difference(stableSince) >
-                const Duration(milliseconds: 300)) {
-          return now;
+    /// Waits until the channel has stopped reading at the limit.
+    ///
+    /// The pause is what "the read-ahead settled" means here: the channel
+    /// holds what it read, and what it did not read still waits in the
+    /// pipe. A quiet period is NOT that state. The read-ahead counts whole
+    /// frames only, so while a frame larger than the limit is still
+    /// arriving it does not move at all, and a quiet period in the middle
+    /// of such a frame reads as a settled read-ahead that never held the
+    /// frame. On a loaded runner the frame takes longer than any quiet
+    /// period, and the test then measured the frames before it.
+    Future<void> pausedAtLimit(ProcessChannel channel) async {
+      final deadline = DateTime.now().add(const Duration(seconds: 60));
+      while (!channel.readAhead.paused) {
+        if (DateTime.now().isAfter(deadline)) {
+          fail('the channel never stopped reading at the limit');
         }
         await Future<void>.delayed(const Duration(milliseconds: 20));
       }
+    }
 
-      return fail('the read-ahead never settled (last: $last bytes)');
+    /// Waits until the channel's read-ahead holds [bytes] or more.
+    ///
+    /// The read-ahead only grows while the channel reads, so this ends
+    /// when the channel has read that much, and fails when it never does:
+    /// a condition, where a quiet period is only a guess.
+    Future<int> heldOver(ProcessChannel channel, int bytes) async {
+      final deadline = DateTime.now().add(const Duration(seconds: 60));
+      while (DateTime.now().isBefore(deadline)) {
+        final now = channel.readAhead.now;
+        if (now >= bytes) return now;
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+
+      return fail(
+        'the read-ahead never reached $bytes '
+        '(now: ${channel.readAhead.now} bytes)',
+      );
     }
 
     /// The `#<n>:` numbers of [texts], in order.
@@ -533,8 +690,10 @@ void main() {
         (await channel.turn(_configure)).whichKind(),
         pb.ChildEvent_Kind.ok,
       );
-      // 32 MiB arrive with no turn reading them.
-      final held = await settled(channel);
+      // 32 MiB arrive with no turn reading them: the channel stops at the
+      // limit, holding what it read.
+      await pausedAtLimit(channel);
+      final held = channel.readAhead.now;
       expect(held, greaterThanOrEqualTo(limit));
       final bounded = lessThan(limit + (1 << 20));
       expect(channel.readAhead.peak, bounded);
@@ -566,7 +725,8 @@ void main() {
         );
         // Paused at the limit: the worker is blocked writing, so it reads no
         // stdin until the parent reads stdout again.
-        expect(await settled(channel), greaterThanOrEqualTo(limit));
+        await pausedAtLimit(channel);
+        expect(channel.readAhead.now, greaterThanOrEqualTo(limit));
         final printed = <pb.Print>[];
         final end = await channel
             .turn(_feed('#' * (2 << 20)), onPrint: printed.add)
@@ -586,8 +746,12 @@ void main() {
       expect(await channel.exitCode, 0);
       // Those Prints were in the pipe or the queue at the exit, so the
       // drain read them; it reads what the pipe held, no more.
+      final held = await heldOver(
+        channel,
+        descendantReadyPrints * floodPrintLength,
+      );
       expect(
-        await settled(channel),
+        held,
         greaterThanOrEqualTo(descendantReadyPrints * floodPrintLength),
       );
       // The drain ends at most a grace after the exit; the peak is read
@@ -610,7 +774,10 @@ void main() {
       // 3 MiB, then an 8 MiB frame in 64 KiB pieces: it must finish, not
       // stall half-read; the 2 MiB after it wait.
       const before = bigFramePrefixPrints * (floodPrintLength + 8);
-      final held = await settled(channel);
+      // The channel stops reading once the frame that crossed the limit is
+      // whole: the big frame is held, and the frames after it still wait.
+      await pausedAtLimit(channel);
+      final held = channel.readAhead.now;
       expect(held, greaterThan(before + bigPrintLength));
       expect(
         channel.readAhead.peak,

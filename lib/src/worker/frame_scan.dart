@@ -70,7 +70,7 @@ abstract final class FrameScan {
     final scan = _Scan(body, math.min(budget, Frame.maxDecodeBytes))..run();
     final pb.ChildEvent event;
     try {
-      event = _parse(pb.ChildEvent(), _withoutUnknowns(body, scan));
+      event = parseRustMessage(pb.ChildEvent(), _withoutUnknowns(body, scan));
     } on InvalidProtocolBufferException catch (error) {
       throw FrameDecodeException(error.message);
     }
@@ -114,7 +114,11 @@ String cutSourceFilename(String name) {
 
 /// [message] merged from [bytes] as `fromBuffer` merges it, but with every
 /// string decoded as Rust decodes it.
-T _parse<T extends GeneratedMessage>(T message, Uint8List bytes) {
+///
+/// This is the reader [FrameScan] reads a frame with, so a message the
+/// native side sent keeps a leading U+FEFF in its strings, as
+/// `String::from_utf8` keeps it and `fromBuffer` would not.
+T parseRustMessage<T extends GeneratedMessage>(T message, List<int> bytes) {
   final reader = _StrictReader(bytes);
   message.mergeFromCodedBufferReader(reader);
   reader.checkLastTagWas(0);
@@ -125,8 +129,9 @@ T _parse<T extends GeneratedMessage>(T message, Uint8List bytes) {
 /// package:protobuf's reader, with strings that keep a leading U+FEFF.
 ///
 /// `Utf8Decoder` drops a byte-order mark at the start of what it converts;
-/// prost's `String::from_utf8` keeps it. The scan has already checked every
-/// string is UTF-8.
+/// prost's `String::from_utf8` keeps it. Every string read here is UTF-8:
+/// the scan has checked the frames it reads, and the native side sends Rust
+/// strings.
 final class _StrictReader extends CodedBufferReader {
   _StrictReader(super.buffer);
 
@@ -163,8 +168,20 @@ const List<String> _wireNames = [
 
 // Upstream's allocation sizes, in bytes, on a 64-bit host: `size_of` of the
 // element each growing buffer holds, measured against monty-proto 1.1.0.
+//
+// The host-module arms monty 1.2.0 adds (`MontyNode.module`,
+// `OsCall.import`, `OsCall.import_stubs` and `OsCall.scan`) cost nothing
+// beyond these sizes: a module is an arena node like any other, its name a
+// string like any other, its id a uuid like any other and its attributes
+// pairs like any other. A whole buffer is charged when it grows, and a
+// string's payload is charged as its UTF-8 bytes, as everywhere else.
 
 /// `monty_types::unstable::MontyNode`, an arena slot.
+///
+/// Verified at monty 1.2.0: `size_of::<MontyNode>()` is 72, the widest
+/// inline variant being `NamedTuple` (three 24-byte fields), so a larger
+/// payload must be boxed rather than inlined (`monty-types/tests/graph.rs`,
+/// `node_is_72_bytes`).
 const int _nodeSize = 72;
 
 /// `ClassTypeNode`, boxed for each class `type` node.
@@ -177,6 +194,10 @@ const int _segmentSize = 32;
 const int _stackFrameSize = 104;
 
 /// `String`, a `field_names` slot.
+///
+/// A `String` is 24 bytes on the 64-bit host the sizes are measured on: the
+/// size upstream's own budget tests compute as `size_of::<String>()`
+/// (`monty-proto/tests/decode_budget.rs`).
 const int _stringSize = 24;
 
 /// `u32`, a `pending_call_ids` slot.
@@ -184,9 +205,15 @@ const int _u32Size = 4;
 
 /// A node reference: a 4-byte `NodeId` plus upstream's host-container
 /// allowance, `REFERENCE_COST` (`2 * size_of::<usize>()`), in all.
+///
+/// Verified at monty 1.2.0: `REFERENCE_COST` is `2 * size_of::<usize>()`
+/// (`monty-proto/src/wire.rs`), 16 bytes on the 64-bit host.
 const int _referenceCost = 16;
 
 /// A key and value reference.
+///
+/// Verified at monty 1.2.0: a `(NodeId, NodeId)` costs `2 * REFERENCE_COST`
+/// (`monty-proto/src/wire.rs`), 32 bytes in all.
 const int _pairCost = _referenceCost * 2;
 
 /// The fewest bytes a node occupies; caps an arena's `node_count` hint.
@@ -660,7 +687,7 @@ final class _Scan {
   void completeNode(_Frame frame, _Vec nodes) {
     final kind = frame.state.nodeKind;
     if (checksKind(kind) || kind == pb.MontyNode_Kind.bigint) {
-      final node = _parse(pb.MontyNode(), _body(frame));
+      final node = parseRustMessage(pb.MontyNode(), _body(frame));
       try {
         checkNode(node);
       } on FormatException catch (error) {
@@ -674,7 +701,7 @@ final class _Scan {
 
   /// `WireFunctionCall`'s `object_id`: exactly 16 bytes.
   void completeObjectId(_Frame frame) {
-    final length = _parse(pb.Uuid(), _body(frame)).data.length;
+    final length = parseRustMessage(pb.Uuid(), _body(frame)).data.length;
     if (length != 16) {
       _fail(
         'invalid value for FunctionCall.object_id: uuid must be 16 bytes, '
@@ -1045,6 +1072,12 @@ final class _ObjectIdSpec extends _Spec {
 
 // The schema: monty.proto at the pinned commit, as upstream's generated and
 // hand-written decoders read the messages a `ChildEvent` can hold.
+//
+// The host-module arms monty 1.2.0 adds are here too: `MontyNode.module`
+// (field 32) and `OsCall.import`, `OsCall.import_stubs` and `OsCall.scan`
+// (fields 31 to 33). A module node is checked as any other node is, once
+// its merge has completed, by the rules `arena_nodes.dart` holds; the scan
+// itself neither converts a module nor validates its name.
 
 const _Spec _int = _VarintSpec();
 const _Spec _bool = _BoolSpec();
@@ -1173,6 +1206,15 @@ const _Message _classInstance = _Message(
   'ClassInstanceNode',
   {1: 'class_type', 2: 'instance_id', 3: 'attrs'},
 );
+const _Message _moduleNode = _Message(
+  {
+    1: _str,
+    2: _MessageSpec(_uuid),
+    3: _MessageSpec(_nodePairs),
+  },
+  'ModuleNode',
+  {1: 'name', 2: 'id', 3: 'attrs'},
+);
 const _Message _function = _Message(
   {1: _str, 2: _str},
   'Function',
@@ -1212,6 +1254,7 @@ const _Message _montyNode = _Message(
     29: _BytesSpec(utf8: true, oneof: 1),
     30: _BytesSpec(utf8: true, oneof: 1),
     31: _MessageSpec(_complex, oneof: 1),
+    32: _MessageSpec(_moduleNode, oneof: 1),
   },
   'MontyNode',
   {
@@ -1246,6 +1289,7 @@ const _Message _montyNode = _Message(
     29: 'kind',
     30: 'kind',
     31: 'kind',
+    32: 'kind',
   },
 );
 
@@ -1405,6 +1449,32 @@ const _Message _urandom = _Message({1: _int}, 'Urandom', {1: 'size'});
 const _Message _sleep = _Message({1: _double}, 'Sleep', {1: 'seconds'});
 const _Message _asyncSleep = _Message({1: _double}, 'AsyncSleep', {1: 'delay'});
 
+const _Message _import = _Message({1: _str}, 'Import', {1: 'module'});
+const _Message _importStubs = _Message(
+  {1: _StringsSpec()},
+  'ImportStubs',
+  {1: 'modules'},
+);
+const _Message _scan = _Message(
+  {
+    1: _str,
+    2: _int,
+    3: _bool,
+    4: _StringsSpec(),
+    5: _bool,
+    6: _bool,
+  },
+  'Scan',
+  {
+    1: 'path',
+    2: 'max_depth',
+    3: 'follow_symlinks',
+    4: 'pattern',
+    5: 'case_sensitive',
+    6: 'recurse_symlinks',
+  },
+);
+
 const _Message _osCall = _Message(
   {
     1: _int,
@@ -1437,6 +1507,9 @@ const _Message _osCall = _Message(
     28: _MessageSpec(_asyncSleep, oneof: 1),
     29: _MessageSpec(_sleep, oneof: 1),
     30: _MessageSpec(_asyncSleep, oneof: 1),
+    31: _MessageSpec(_import, oneof: 1),
+    32: _MessageSpec(_importStubs, oneof: 1),
+    33: _MessageSpec(_scan, oneof: 1),
     50: _MessageSpec(_arena),
     51: _bool,
     52: _MessageSpec(_sourceRange),
@@ -1476,6 +1549,9 @@ const _Message _osCall = _Message(
     28: 'call',
     29: 'call',
     30: 'call',
+    31: 'call',
+    32: 'call',
+    33: 'call',
   },
 );
 

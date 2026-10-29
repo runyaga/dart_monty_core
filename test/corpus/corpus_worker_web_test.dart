@@ -1,4 +1,4 @@
-// The upstream 1.1.0 corpus on the Web Worker, dart2js or dart2wasm, in
+// The upstream 1.2.0 corpus on the Web Worker, dart2js or dart2wasm, in
 // whichever browser runs it; and crash recovery through one pool, under JSPI
 // and under the forced fallback dispatch. Run by CI job `corpus-worker`:
 //
@@ -31,6 +31,14 @@ import '_corpus_common.dart';
 import '_crash_recovery.dart';
 
 const _backend = identical(1, 1.0) ? 'dart2js' : 'dart2wasm';
+
+/// The corpus runner's log: the outcomes are asserted, and the lines are
+/// printed as the standalone runner prints them.
+void _logLine(String line) {
+  // The corpus runner's own log lines are its output, not the test's.
+  // ignore: avoid_print
+  print(line);
+}
 
 @JS('navigator.userAgent')
 external String get _userAgent;
@@ -92,8 +100,18 @@ void main() {
   manifestTests();
   adjudicatorSelfTests();
 
+  // The four upstream fixtures that import a module the host supplies, on
+  // the Web Worker: the same four the native entry point runs.
+  hostModuleTests(
+    _backend,
+    () async => startMonty(
+      corpusPoolOptions,
+      open: open(forceNoJspi: false),
+    ),
+  );
+
   group('corpus', () {
-    test('the upstream 1.1.0 corpus', () async {
+    test('the upstream 1.2.0 corpus', () async {
       final target = CorpusTarget(
         label: _backend,
         profile: WorkerCorpusProfile.browser,
@@ -108,6 +126,44 @@ void main() {
       );
       await runCorpusChecks(target);
     }, timeout: const Timeout(Duration(minutes: 15)));
+
+    test(
+      'the four selected v1.2.0 sources meet their directives ($_backend)',
+      () async {
+        final pool = await startMonty(
+          corpusPoolOptions,
+          open: open(forceNoJspi: false),
+        );
+        try {
+          final run = await runWorkerFixtureCorpus(
+            pool: pool,
+            log: _logLine,
+            corpus: selectedUpstreamV120ExecutionSources,
+            only: selectedUpstreamV120ExecutionSources.keys.toSet(),
+          );
+          expect(
+            run.executed.toSet(),
+            selectedUpstreamV120ExecutionSources.keys.toSet(),
+            reason: 'the four selected sources must each run ($_backend)',
+          );
+          expect(
+            run.executed,
+            hasLength(selectedUpstreamV120ExecutionSources.length),
+            reason: 'each selected source must run exactly once ($_backend)',
+          );
+          expect(
+            run.failures,
+            isEmpty,
+            reason:
+                'every selected source must meet the outcome upstream '
+                'states ($_backend):\n${run.failures}',
+          );
+        } finally {
+          await pool.close();
+        }
+      },
+      timeout: const Timeout(Duration(minutes: 5)),
+    );
 
     test(
       'the recursion set under the forced fallback ends in a pass or a '
@@ -153,10 +209,15 @@ void main() {
             ),
             check: (crash) {
               expect(crash.cause, CrashCause.vanished);
-              // Chrome's text for a wasm stack overflow, then Firefox's.
+              // Chrome 'RangeError', Firefox 'too much recursion': engine call
+              // stack. Firefox 'index out of bounds': worker's shadow stack.
               expect(
                 crash.detail,
-                anyOf(contains('RangeError'), contains('too much recursion')),
+                anyOf(
+                  contains('RangeError'),
+                  contains('too much recursion'),
+                  contains('index out of bounds'),
+                ),
               );
             },
           ),

@@ -13,6 +13,8 @@ import 'package:dart_monty_core/src/worker/monty.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/monty_snapshot.dart';
 import 'package:dart_monty_core/src/worker/proto_session.dart';
+import 'package:dart_monty_core/src/worker/resource_limits.dart'
+    show ResourceLimitsInternal;
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:test/test.dart';
 
@@ -58,7 +60,21 @@ SessionConfig _sessionConfig(Map<String, Object> settings) {
   final feed = seconds('max_feed_duration_secs');
   final turn = seconds('max_turn_duration_secs');
   final sleep = seconds('max_total_sleep_secs');
-  final limited = [suspensions, feed, turn, sleep].any((v) => v != null);
+  // The memory limit, the GC interval and the recursion depth are limits
+  // too: a zero is a limit, not the absence of one, so only a missing
+  // setting leaves one unset.
+  final memory = settings['max_memory'] as int?;
+  final gcInterval = settings['gc_interval'] as int?;
+  final recursionDepth = settings['max_recursion_depth'] as int?;
+  final limited = [
+    suspensions,
+    feed,
+    turn,
+    sleep,
+    memory,
+    gcInterval,
+    recursionDepth,
+  ].any((v) => v != null);
 
   return SessionConfig(
     scriptName: settings['script_name'] as String? ?? 'main.py',
@@ -69,9 +85,177 @@ SessionConfig _sessionConfig(Map<String, Object> settings) {
             maxFeedDuration: feed,
             maxTurnDuration: turn,
             maxTotalSleep: sleep,
+            maxMemory: memory,
+            gcInterval: gcInterval,
+            maxRecursionDepth: recursionDepth,
           )
         : null,
   );
+}
+
+/// The limits one session config carries, as the restore runner sees them:
+/// upstream's `ResourceLimits` names a memory limit, a GC interval and a
+/// recursion depth beside the suspensions and the three durations.
+Map<String, Object?> _limitsOf(SessionConfig config) {
+  final limits = config.limits;
+
+  return {
+    'memory': limits?.maxMemory,
+    'gcInterval': limits?.gcInterval,
+    'recursionDepth': limits?.maxRecursionDepth,
+    'suspensions': limits?.maxSuspensions,
+    'durations': [
+      limits?.maxFeedDuration,
+      limits?.maxTurnDuration,
+      limits?.maxTotalSleep,
+    ],
+  };
+}
+
+/// Registers the test for the session config the restore oracle's `open`
+/// step builds: upstream's `ResourceLimits` names a memory limit, a GC
+/// interval and a recursion depth, and the runner forwards them beside the
+/// four limits it already forwarded.
+void registerSessionConfigMemoryGcRecursionTests() {
+  test('restore sessionConfig forwards memory GC and recursion settings', () {
+    // The limits a config carries, as the runner's map of them.
+    Map<String, Object?> limits({
+      int? memory,
+      int? gcInterval,
+      int? recursionDepth,
+      int? suspensions,
+      List<Duration?>? durations,
+    }) => {
+      'memory': memory,
+      'gcInterval': gcInterval,
+      'recursionDepth': recursionDepth,
+      'suspensions': suspensions,
+      'durations':
+          durations ??
+          [
+            null,
+            null,
+            null,
+          ],
+    };
+
+    expect(
+      _limitsOf(_sessionConfig({})),
+      limits(),
+      reason: 'nothing named',
+    );
+    expect(
+      _limitsOf(_sessionConfig({'max_memory': 1024})),
+      limits(memory: 1024),
+      reason: 'max_memory alone',
+    );
+    expect(
+      _limitsOf(_sessionConfig({'gc_interval': 50})),
+      limits(gcInterval: 50),
+      reason: 'gc_interval alone',
+    );
+    expect(
+      _limitsOf(_sessionConfig({'max_recursion_depth': 500})),
+      limits(recursionDepth: 500),
+      reason: 'max_recursion_depth alone',
+    );
+    expect(
+      _limitsOf(
+        _sessionConfig({
+          'max_memory': 1024,
+          'gc_interval': 50,
+          'max_recursion_depth': 500,
+        }),
+      ),
+      limits(memory: 1024, gcInterval: 50, recursionDepth: 500),
+      reason: 'all three together',
+    );
+    // A zero is a limit, not the absence of one.
+    expect(
+      _limitsOf(_sessionConfig({'max_memory': 0})),
+      limits(memory: 0),
+      reason: 'max_memory zero',
+    );
+    expect(
+      _limitsOf(_sessionConfig({'gc_interval': 0})),
+      limits(gcInterval: 0),
+      reason: 'gc_interval zero',
+    );
+    expect(
+      _limitsOf(_sessionConfig({'max_recursion_depth': 0})),
+      limits(recursionDepth: 0),
+      reason: 'max_recursion_depth zero',
+    );
+    expect(
+      _limitsOf(
+        _sessionConfig({
+          'max_memory': 0,
+          'gc_interval': 0,
+          'max_recursion_depth': 0,
+        }),
+      ),
+      limits(memory: 0, gcInterval: 0, recursionDepth: 0),
+      reason: 'all three zero',
+    );
+    // The four limits the runner forwarded already, on their own and with
+    // the three beside them.
+    expect(
+      _limitsOf(
+        _sessionConfig({
+          'max_suspensions': 5,
+          'max_feed_duration_secs': 1.5,
+          'max_turn_duration_secs': 2.0,
+          'max_total_sleep_secs': 3.0,
+        }),
+      ),
+      limits(
+        suspensions: 5,
+        durations: [
+          const Duration(milliseconds: 1500),
+          const Duration(seconds: 2),
+          const Duration(seconds: 3),
+        ],
+      ),
+      reason: 'the four limits alone',
+    );
+    expect(
+      _limitsOf(
+        _sessionConfig({
+          'max_suspensions': 5,
+          'max_feed_duration_secs': 1.5,
+          'max_turn_duration_secs': 2.0,
+          'max_total_sleep_secs': 3.0,
+          'max_memory': 1024,
+          'gc_interval': 50,
+          'max_recursion_depth': 500,
+        }),
+      ),
+      limits(
+        memory: 1024,
+        gcInterval: 50,
+        recursionDepth: 500,
+        suspensions: 5,
+        durations: [
+          const Duration(milliseconds: 1500),
+          const Duration(seconds: 2),
+          const Duration(seconds: 3),
+        ],
+      ),
+      reason: 'the four limits with the three',
+    );
+
+    // The limits reach the worker in the `Configure` the checkout sends.
+    final proto = _sessionConfig({
+      'max_memory': 1024,
+      'gc_interval': 50,
+      'max_recursion_depth': 500,
+    }).limits?.toProto();
+    expect(proto?.hasMaxMemoryBytes(), isTrue);
+    expect(proto?.maxMemoryBytes.toInt(), 1024);
+    expect(proto?.hasGcInterval(), isTrue);
+    expect(proto?.gcInterval.toInt(), 50);
+    expect(proto?.maxRecursionDepth.toInt(), 500);
+  });
 }
 
 /// [snapshot] in the oracle's form.

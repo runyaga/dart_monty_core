@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# The upstream 1.1.0 corpus and pool crash recovery on the worker.
+# The upstream 1.2.0 corpus and pool crash recovery on the worker.
 # =============================================================================
 # One leg per invocation, so each CI job and each local run names what it ran:
 #
@@ -24,13 +24,13 @@ cd "$(git rev-parse --show-toplevel)"
 leg="${1:-}"
 compiler="${2:-}"
 case "$leg" in
-  native) args=(-p vm); floor=10; scorecard='CORPUS native: total=643' ;;
+  native) args=(-p vm); floor=14; scorecard='CORPUS native: total=695' ;;
   chrome|firefox)
     case "$compiler" in
       dart2js|dart2wasm) ;;
       *) echo "usage: $0 native | {chrome|firefox} {dart2js|dart2wasm}" >&2; exit 2 ;;
     esac
-    args=(-p "$leg" -c "$compiler"); floor=18; scorecard="CORPUS $compiler: total=643"
+    args=(-p "$leg" -c "$compiler"); floor=23; scorecard="CORPUS $compiler: total=695"
     ;;
   *) echo "usage: $0 native | {chrome|firefox} {dart2js|dart2wasm}" >&2; exit 2 ;;
 esac

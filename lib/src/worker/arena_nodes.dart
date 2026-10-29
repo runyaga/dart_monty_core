@@ -63,6 +63,7 @@ final Map<pb.MontyNode_Kind, void Function(pb.MontyNode)> _checks = {
   pb.MontyNode_Kind.complex: (n) => _checkComplex(n.complex),
   pb.MontyNode_Kind.type: (n) => _checkType(n.type),
   pb.MontyNode_Kind.classInstance: (n) => _checkInstance(n.classInstance),
+  pb.MontyNode_Kind.module: (n) => _checkModule(n.module),
   pb.MontyNode_Kind.date: (n) =>
       checkDate(n.date.year, n.date.month, n.date.day, 'Date'),
   pb.MontyNode_Kind.datetime: (n) => _checkDateTime(n.datetime),
@@ -86,6 +87,14 @@ void _checkInstance(pb.ClassInstanceNode instance) {
   if (!instance.hasInstanceId()) _missing('ClassInstanceNode.instance_id');
   if (!instance.hasAttrs()) _missing('ClassInstanceNode.attrs');
   _checkUuid(instance.instanceId, 'ClassInstanceNode.instance_id');
+}
+
+/// Upstream's `Kind::Module`: the id and the attrs are required, and the
+/// id a 16-byte uuid. The name is not checked: upstream reads it as it is.
+void _checkModule(pb.ModuleNode module) {
+  if (!module.hasId()) _missing('ModuleNode.id');
+  if (!module.hasAttrs()) _missing('ModuleNode.attrs');
+  _checkUuid(module.id, 'ModuleNode.id');
 }
 
 void _checkDateTime(pb.DateTime d) {
@@ -338,6 +347,20 @@ final Set<String> builtinTypeNames = {
 /// Every name `ExcType::from_str` accepts.
 final Set<String> exceptionTypeNames = _excNames.split(' ').toSet();
 
+/// The exception types whose real class needs a payload a value node does
+/// not carry, and the parent type such a value is built as instead.
+///
+/// Upstream rebuilds these classes from the exception's payload
+/// (`monty-proto/src/python/exceptions.rs`); a value node carries none, so
+/// the value is the plain parent, a `ValueError`. `_csv.Error` is a direct
+/// `Exception` subclass upstream and keeps its own name.
+const Map<String, String> exceptionParentsWithoutPayload = {
+  'UnicodeDecodeError': 'ValueError',
+  'UnicodeEncodeError': 'ValueError',
+  'json.JSONDecodeError': 'ValueError',
+  'tomllib.TOMLDecodeError': 'ValueError',
+};
+
 /// Every name `BuiltinsFunctions::from_str` accepts.
 final Set<String> builtinFunctionNames = _functionNames.split(' ').toSet();
 
@@ -366,12 +389,13 @@ const String _excNames =
     'OverflowError ZeroDivisionError LookupError IndexError KeyError '
     'RuntimeError NotImplementedError RecursionError AttributeError '
     'FrozenInstanceError NameError UnboundLocalError ValueError '
-    'UnicodeDecodeError UnicodeEncodeError json.JSONDecodeError ImportError '
+    'UnicodeDecodeError UnicodeEncodeError json.JSONDecodeError '
+    'tomllib.TOMLDecodeError ImportError '
     'ModuleNotFoundError OSError FileNotFoundError FileExistsError '
     'IsADirectoryError NotADirectoryError PermissionError '
     'io.UnsupportedOperation TimeoutError AssertionError MemoryError '
     'StopIteration SyntaxError TypeError re.PatternError binascii.Error '
-    'binascii.Incomplete';
+    'binascii.Incomplete _csv.Error';
 
 const String _functionNames =
     'abs all any bin chr divmod enumerate filter getattr hasattr hash hex id '

@@ -1,5 +1,5 @@
 // Upstream's outcome for each dump and load case, recorded from
-// pydantic-monty 1.1.0 (the oracle) by tool/generate_restore_oracle.py, which
+// pydantic-monty 1.2.0 (the oracle) by tool/generate_restore_oracle.py, which
 // also defines the step language. The Dart runner is in _restore_cases.dart.
 //
 // Each case is the pool's settings and a list of steps, each with
@@ -726,8 +726,8 @@ restoreOracle = {
   ),
   'feed_duration_forgotten': (
     pool: <String, Object>{
-      'feed_duration_limit_grace': 0.0,
-      'turn_duration_limit_grace': 0.0,
+      'feed_duration_limit_grace': 1.0,
+      'turn_duration_limit_grace': 1.0,
     },
     steps: [
       (step: ['open', 'a', <String, Object>{}], outcome: 'ok'),
@@ -747,14 +747,15 @@ restoreOracle = {
           'b',
           'n = 0\nfor i in range(30000000):\n    n += i\nrepr(n > 0)',
         ],
-        outcome: 'value: True',
+        outcome:
+            'MontyRuntimeError: TimeoutError: feed time limit exceeded: \u{2026} > 10ms',
       ),
     ],
   ),
   'turn_duration_forgotten': (
     pool: <String, Object>{
-      'feed_duration_limit_grace': 0.0,
-      'turn_duration_limit_grace': 0.0,
+      'feed_duration_limit_grace': 1.0,
+      'turn_duration_limit_grace': 1.0,
     },
     steps: [
       (step: ['open', 'a', <String, Object>{}], outcome: 'ok'),
@@ -774,7 +775,8 @@ restoreOracle = {
           'b',
           'n = 0\nfor i in range(30000000):\n    n += i\nrepr(n > 0)',
         ],
-        outcome: 'value: True',
+        outcome:
+            'MontyRuntimeError: TimeoutError: turn time limit exceeded: \u{2026} > 10ms',
       ),
     ],
   ),

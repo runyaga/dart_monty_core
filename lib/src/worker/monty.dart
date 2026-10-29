@@ -21,6 +21,39 @@ import 'package:dart_monty_core/src/worker/worker_pool.dart';
 /// busy native worker can survive an unclosed parent until its duration limit,
 /// while an idle worker exits at standard-input EOF. A null checkout timeout
 /// can deadlock nested checkouts when every worker is already held.
+///
+/// HOST MODULES. The `externalModules` parameter of [Monty.checkout] and
+/// [Monty.withSession] holds the modules an `import` asks for, by name. The
+/// very map is kept and read live, so an entry added, replaced or removed
+/// after the session opened is seen by the next import or module call. An
+/// entry is an `ExternalModule` or a factory, a zero-argument function
+/// returning one; the factory may return a future, which the driver awaits
+/// before the import or the call that needs the module is answered.
+///
+/// A factory runs once per session: a factory that succeeds is installed and
+/// cached, and it serves every later import, call and resume, whatever the
+/// map holds by then. A factory that fails, or answers anything but a
+/// module, is not installed: the failure is answered where it happened, and
+/// the next request runs the factory again. A direct entry is never cached:
+/// the map is read live, so a replaced entry is seen by the next request and
+/// a removed one is not found. A session reset, or a session restored from a
+/// dump, starts the factories over: the map is kept, and the next request
+/// runs the factory again.
+///
+/// The module a factory built is installed before its attributes are
+/// converted, so a value the sandbox cannot hold is refused late and the
+/// refusal does not undo the installation.
+///
+/// Nothing is checked when the map is given: the name and the entry are
+/// checked when a request reaches them. A name that is not an identifier, or
+/// one the sandbox provides itself, is refused with `ValueError`; an entry
+/// that is neither a module nor a factory is refused with `TypeError`; and a
+/// name the map does not hold is not found, which raises
+/// `ModuleNotFoundError` in the sandbox.
+///
+/// The module itself is `ExternalModule`; the rules the sandbox follows for
+/// an import, a module call and a factory are in
+/// `docs/reference/upstream-divergences.md`.
 final class Monty {
   const Monty._(this._pool);
 
@@ -101,6 +134,12 @@ final class Monty {
   /// be negative. [typeCheckFormat] defaults to `full` and accepts `full`,
   /// `concise`, `azure`, `json`, `jsonlines`, `json-lines`, `rdjson`, `pylint`,
   /// `gitlab`, or `github`, ignoring ASCII case.
+  ///
+  /// [externalModules] holds the modules an `import` asks for, by name: the
+  /// very map is kept and read live. An entry is an `ExternalModule` or a
+  /// factory, a zero-argument function returning one, which may return a
+  /// future. A factory that succeeds is cached for the session, whatever
+  /// the map holds by then; one that fails is not cached, so it runs again.
   Future<MontySession> checkout({
     String scriptName = 'main.py',
     ResourceLimits? limits,
@@ -111,6 +150,7 @@ final class Monty {
     int? assertMessageAnnotations,
     Duration? printFlushInterval,
     OsPolicy? osPolicy,
+    Map<String, Object?>? externalModules,
   }) => checkoutWith(
     SessionConfig(
       scriptName: scriptName,
@@ -122,10 +162,17 @@ final class Monty {
       assertMessageAnnotations: assertMessageAnnotations,
       printFlushInterval: printFlushInterval,
       osPolicy: osPolicy,
+      externalModules: externalModules,
     ),
   );
 
   /// Runs a body with a checked-out session and closes the session afterward.
+  ///
+  /// [externalModules] holds the modules an `import` asks for, by name: the
+  /// very map is kept and read live. An entry is an `ExternalModule` or a
+  /// factory, a zero-argument function returning one, which may return a
+  /// future. A factory that succeeds is cached for the session, whatever
+  /// the map holds by then; one that fails is not cached, so it runs again.
   Future<T> withSession<T>(
     Future<T> Function(MontySession session) body, {
     String scriptName = 'main.py',
@@ -137,6 +184,7 @@ final class Monty {
     int? assertMessageAnnotations,
     Duration? printFlushInterval,
     OsPolicy? osPolicy,
+    Map<String, Object?>? externalModules,
   }) => withSessionWith(
     body,
     SessionConfig(
@@ -149,6 +197,7 @@ final class Monty {
       assertMessageAnnotations: assertMessageAnnotations,
       printFlushInterval: printFlushInterval,
       osPolicy: osPolicy,
+      externalModules: externalModules,
     ),
   );
 

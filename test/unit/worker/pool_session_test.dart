@@ -3595,32 +3595,34 @@ void main() {
       );
     });
 
-    test("a load adopts the dump's turn budget, and none when the dump has "
-        'none', () async {
-      final ch = ScriptedChannel([
-        _configureOk,
-        expecting(pb.ParentRequest_Kind.load, [ok()]),
-        hangAfter([]),
-      ]);
-      final pool = await _pool(
-        Workers([ch]),
-        requestTimeout: _ms(200),
-        turnGrace: Duration.zero,
-      );
-      addTearDown(pool.close);
-      final session = await pool.checkoutWith(
-        SessionConfig(
-          limits: ResourceLimits(maxTurnDuration: _ms(20)),
-        ),
-      );
-      await session.loadSession(state);
-      // The session's 20 ms backstop went with the load; requestTimeout
-      // is all that is left.
-      await expectLater(
-        session.feedRun('while True: pass', printCallback: _ignore),
-        throwsA(_timedOut('200ms')),
-      );
-    });
+    test(
+      "a load retains the session's turn budget when the dump has none",
+      () async {
+        final ch = ScriptedChannel([
+          _configureOk,
+          expecting(pb.ParentRequest_Kind.load, [ok()]),
+          hangAfter([]),
+        ]);
+        final pool = await _pool(
+          Workers([ch]),
+          requestTimeout: _ms(200),
+          turnGrace: Duration.zero,
+        );
+        addTearDown(pool.close);
+        final session = await pool.checkoutWith(
+          SessionConfig(
+            limits: ResourceLimits(maxTurnDuration: _ms(20)),
+          ),
+        );
+        await session.loadSession(state);
+        // The session's 20 ms backstop is the ceiling the dump's turn budget
+        // is bounded by, so the load keeps it; requestTimeout is longer.
+        await expectLater(
+          session.feedRun('while True: pass', printCallback: _ignore),
+          throwsA(_timedOut('20ms')),
+        );
+      },
+    );
 
     test('loadSnapshot keeps its host functions for resumeAuto, and the '
         "dump's script name", () async {

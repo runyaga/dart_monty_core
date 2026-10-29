@@ -35,11 +35,11 @@ export 'package:dart_monty_core/src/worker/host_answers.dart'
 
 /// The monty-proto schema version this driver speaks: upstream's
 /// `PROTOCOL_VERSION` at the pinned tag.
-const int protocolVersion = 5;
+const int protocolVersion = 6;
 
 /// What the driver reports as its version in `Configure`. Informational
 /// only; the worker never checks it.
-const String _driverVersion = '1.1.0';
+const String _driverVersion = '1.2.0';
 
 /// One Python session on one worker.
 ///
@@ -53,7 +53,8 @@ const String _driverVersion = '1.1.0';
 ///
 /// [close] must be called: it is what ends the worker.
 final class ProtoSession {
-  ProtoSession._(this._channel, this._config) {
+  ProtoSession._(this._channel, this._config, this.modules)
+    : externalModules = modules.externalModules {
     final bridge = telemetryBridge;
     final channel = _channel;
     if (bridge != null && channel is TelemetryChannel) {
@@ -69,14 +70,31 @@ final class ProtoSession {
   /// inputs, answers and results resolve through. A load empties it.
   final HostObjects objects = HostObjects();
 
+  /// The session's host modules: the mapping the host gave and the factory
+  /// results cached for it.
+  ///
+  /// One per session, so a factory's result is cached for the session and
+  /// every feed and resume of it sees the same one.
+  final HostModules modules;
+
+  /// The session's host modules, by name: the modules an `import` asks for.
+  ///
+  /// The map given in the session's configuration is kept as it is, and read
+  /// live: an entry added, replaced or removed after the session opened is
+  /// seen by the next import. A session without one owns an empty map of
+  /// its own, which the host may fill.
+  final Map<String, Object?> externalModules;
+
   final MontyChannel _channel;
   final SessionConfig _config;
   bool _busy = false;
 
   /// Whether the worker's working directory has been established: a feed
-  /// reached it and was not refused by the type check. Until then, an omitted
-  /// cwd chooses the first mount or [defaultCwd]. Afterwards it sends none,
-  /// keeping the worker's directory, `os.chdir` included (Checkout.cwd_set).
+  /// reached it, whatever its outcome. Until then, an omitted cwd chooses the
+  /// first mount or [defaultCwd]. Afterwards it sends none, keeping the
+  /// worker's directory, `os.chdir` included. A feed the source-nesting check
+  /// refuses leaves the worker's directory as it was: the worker answers
+  /// that refusal before it adopts the directory.
   bool _cwdSet = false;
 
   /// Configures a session on a worker channel.
@@ -89,7 +107,10 @@ final class ProtoSession {
     SessionConfig config = const SessionConfig(),
   ]) async {
     config.validate();
-    final session = ProtoSession._(channel, config);
+    final modules = HostModules(
+      externalModules: config.externalModules ?? {},
+    );
+    final session = ProtoSession._(channel, config, modules);
     await session._guard(session._configure);
 
     return session;
@@ -128,6 +149,7 @@ final class ProtoSession {
       prepareFeed(code, inputs, skipTypeCheck: options.skipTypeCheck),
       HostAnswers(
         externalLookup: externalLookup,
+        modules: modules,
         os: onOsCall,
         systemSleepMax: options.systemSleepMax,
         objects: objects,
@@ -214,6 +236,7 @@ final class ProtoSession {
     // A new session, as upstream's next checkout of the worker is.
     _cwdSet = false;
     objects.clear();
+    modules.clearFactoryResults();
     await _configure();
   });
 
@@ -245,10 +268,16 @@ final class ProtoSession {
       sink.rethrowFailure();
       rethrow;
     }
-    // The worker adopts the directory after its type check and before it
-    // runs the code, so every reply but a typing rejection means it took
-    // effect. A request never sent (oversized) threw above.
-    if (feed && event.whichKind() != pb.ChildEvent_Kind.typingError) {
+    // The driver counts the directory as established once the request
+    // reached the worker (upstream 1.2.0's pool: `if self.request_sent {
+    // self.cwd_set = true; }`), whatever the reply: the worker adopts the
+    // directory before it type-checks the snippet, so a feed the type check
+    // refuses keeps the directory it was given. A feed the source-nesting
+    // check refuses leaves the worker's directory as it was: the worker
+    // answers that refusal before it adopts the directory, and the driver
+    // names no directory afterwards. A request never sent (oversized)
+    // threw above.
+    if (feed) {
       _cwdSet = true;
     }
     if (sink.failed && isSuspension(event)) {
@@ -337,8 +366,9 @@ final class ProtoSession {
 extension ProtoSessionFeed on ProtoSession {
   /// Encodes inputs, then validates explicit [cwd], before the caller builds
   /// a mount table. An omitted cwd chooses [firstMount] or `/` only while
-  /// cwd is unestablished. The sent feed's non-typing reply commits the
-  /// choice; a successful load adopts its saved cwd independently of mounts.
+  /// cwd is unestablished. The sent feed commits the choice, whatever its
+  /// outcome; a successful load adopts its saved cwd independently of
+  /// mounts.
   pb.ParentRequest prepareFeed(
     String code,
     Map<String, MontyValue> inputs, {
@@ -389,8 +419,11 @@ extension ProtoSessionTransfer on ProtoSession {
   /// Returns the restored suspension event and dump script name.
   Future<(pb.ChildEvent?, String?)> load(List<int> state) => _guard(() async {
     // Host objects are never part of a dump: a loaded session starts with
-    // none (upstream's instance store starts empty).
+    // none (upstream's instance store starts empty). The factory results
+    // are not part of a dump either: a loaded session resolves its own
+    // modules again.
     objects.clear();
+    modules.clearFactoryResults();
     final event = await _channel.turn(
       pb.ParentRequest(load: pb.Load(state: state)),
     );
@@ -400,7 +433,8 @@ extension ProtoSessionTransfer on ProtoSession {
       _desync('Load', event);
     }
     // The adopted dump carries the working directory (checkout.rs
-    // `restore`, only once the load succeeded).
+    // `restore`, only once the load succeeded). The driver does not know
+    // which directory that is, so it names none and the worker keeps it.
     _cwdSet = true;
 
     return (
@@ -574,6 +608,7 @@ final class SessionConfig {
     this.assertMessageAnnotations,
     this.printFlushInterval,
     this.osPolicy,
+    this.externalModules,
   });
 
   /// The file name tracebacks report for fed code.
@@ -610,6 +645,17 @@ final class SessionConfig {
   /// The clock, zone, sleep and randomness the session gets; null is
   /// upstream's default policy.
   final OsPolicy? osPolicy;
+
+  /// The host modules the session offers, by name: the modules an `import`
+  /// asks for.
+  ///
+  /// The map is kept as it is and read live, as upstream reads
+  /// `external_modules`: an entry added, replaced or removed after the
+  /// session opened is seen by the next import. An entry is a module
+  /// itself, or a factory: a zero-argument function returning one, either
+  /// synchronously or through a future. A name is checked when it is
+  /// looked up, not here.
+  final Map<String, Object?>? externalModules;
 
   /// The longest one `time.sleep` the parent waits for this session: the
   /// policy's system-sleep maximum, else upstream's 10 s.

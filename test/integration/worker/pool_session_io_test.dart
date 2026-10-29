@@ -109,6 +109,7 @@ void main() {
   );
   restoreOracleTests('vm', startMonty);
   boundarySessionTests('vm', startMonty);
+  restoreLimitSessionTests('vm', startMonty);
   hostOracleTests('vm', startMonty);
   printOracleTests('vm', startMonty);
   osHandlerOracleTests('vm', startMonty);

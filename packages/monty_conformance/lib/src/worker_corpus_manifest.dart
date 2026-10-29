@@ -1,4 +1,4 @@
-// The expected outcomes of the upstream 1.1.0 corpus on the worker engine.
+// The expected outcomes of the upstream 1.2.0 corpus on the worker engine.
 //
 // Every corpus file the engine fails is listed here, tied to a divergence ID
 // and a reason, and a run is judged against the list in BOTH directions: a
@@ -10,6 +10,7 @@
 // and a page has no filesystem.
 
 /// Where a divergence applies.
+// ignore: prefer-match-file-name, the file holds the manifest, not one type
 enum WorkerCorpusProfile {
   /// The native worker executable, on the VM.
   native,
@@ -82,7 +83,7 @@ final class ExpectedFailure {
 }
 
 /// The recorded divergences, by ID.
-const workerCorpusDivergences = <String, CorpusDivergence>{
+const Map<String, CorpusDivergence> workerCorpusDivergences = {
   'worker-no-test-hooks': CorpusDivergence(
     'worker-no-test-hooks',
     'Upstream runs its datatest with the engine built with `test-hooks`, '
@@ -122,10 +123,29 @@ const workerCorpusDivergences = <String, CorpusDivergence>{
         '1.1.0 `/wasm` (the wasm32 build) fails the same four '
         'files with the same exceptions (measured on Chrome 155)',
   ),
+  'worker-fixture-memory-limit': CorpusDivergence(
+    'worker-fixture-memory-limit',
+    "Upstream's datatest runs every fixture with no memory limit, and the "
+        '1.2.0 percent-format precision cases pass for it: the largest one '
+        'formats with a precision of 2147482623 '
+        '(`bytes__percent_format.py:184`, `str__percent_format.py:370`), '
+        'whose buffer allocates about 2.1 GB. This '
+        'repository bounds every worker it starts, and the corpus harness '
+        'bounds a fixture at `workerFixtureMaxMemory` = 256 MB, so the '
+        "allocation is refused with the allocator's `MemoryError`, whose "
+        "text ends 'bytes > 268435456 bytes'. A wasm32 browser worker "
+        'could not allocate the 2 GB either. The bound is not raised for '
+        'these two files.',
+    'the fixture bound is worker_fixture_runner.dart:35 '
+        "(workerFixtureMaxMemory = 256 MB); the datatest's default_test_limits "
+        '(crates/monty-datatest/src/main.rs:76) sets '
+        'only the recursion depth; kept by owner decision at the 1.2.0 '
+        'corpus re-measure',
+  ),
 };
 
 /// Every corpus file expected to fail on the shipped worker.
-const workerCorpusExpected = <ExpectedFailure>[
+const List<ExpectedFailure> workerCorpusExpected = [
   // worker-no-test-hooks
   ExpectedFailure(
     'functools__gc.py',
@@ -287,6 +307,18 @@ const workerCorpusExpected = <ExpectedFailure>[
         'AssertionError: assert 4294967295 == 9223372036854775807',
     profiles: {WorkerCorpusProfile.browser},
   ),
+
+  // worker-fixture-memory-limit
+  ExpectedFailure.tail(
+    'bytes__percent_format.py',
+    'worker-fixture-memory-limit',
+    'bytes > 268435456 bytes',
+  ),
+  ExpectedFailure.tail(
+    'str__percent_format.py',
+    'worker-fixture-memory-limit',
+    'bytes > 268435456 bytes',
+  ),
 ];
 
 /// How a recursion-set file ends on a browser whose JSPI probe failed: what
@@ -304,7 +336,7 @@ enum RecursionOutcome {
 /// file must meet its own directives, as on native (no entry above lists
 /// them). With it failing, each file's outcome must equal upstream's browser
 /// build's, recorded here.
-const workerRecursionSetNoJspi = <String, RecursionOutcome>{
+const Map<String, RecursionOutcome> workerRecursionSetNoJspi = {
   'collections__deque.py': RecursionOutcome.crashes,
   'dataclass__repr_eq.py': RecursionOutcome.crashes,
   'dict__eq_self_referential.py': RecursionOutcome.crashes,
@@ -318,7 +350,7 @@ const workerRecursionSetNoJspi = <String, RecursionOutcome>{
 /// measured with this corpus run on dart2js: every file runs to its end,
 /// including the three that crash Chrome's and Firefox's worker.
 /// Upstream's browser build has no Safari baseline to compare with.
-const workerRecursionSetNoJspiSafari = <String, RecursionOutcome>{
+const Map<String, RecursionOutcome> workerRecursionSetNoJspiSafari = {
   'collections__deque.py': RecursionOutcome.passes,
   'dataclass__repr_eq.py': RecursionOutcome.passes,
   'dict__eq_self_referential.py': RecursionOutcome.passes,
@@ -369,9 +401,24 @@ List<String> checkAgainstManifest(
 
 /// What is wrong with the manifest itself; empty when it is well formed.
 List<String> manifestProblems(Iterable<String> corpus) {
-  final problems = <String>[];
   final files = corpus.toSet();
   final seen = <String>{};
+
+  return [
+    ..._expectedFailureProblems(files, seen),
+    ..._divergenceProblems(),
+    ..._recursionSetProblems(files, seen),
+  ];
+}
+
+/// What is wrong with the expected-failure entries: an entry whose divergence
+/// is not recorded, a file the corpus does not hold, a file listed twice and
+/// an entry with no reason.
+///
+/// [seen] collects the files the entries name, so a file listed twice is
+/// caught, and the recursion set reads it afterwards.
+List<String> _expectedFailureProblems(Set<String> files, Set<String> seen) {
+  final problems = <String>[];
   for (final e in workerCorpusExpected) {
     if (!workerCorpusDivergences.containsKey(e.divergence)) {
       problems.add('${e.file}: unknown divergence ${e.divergence}');
@@ -380,11 +427,27 @@ List<String> manifestProblems(Iterable<String> corpus) {
     if (!seen.add(e.file)) problems.add('${e.file}: listed twice');
     if (e.reason.isEmpty) problems.add('${e.file}: no reason text');
   }
+
+  return problems;
+}
+
+/// What is wrong with the divergence records: one that names no file.
+List<String> _divergenceProblems() {
+  final problems = <String>[];
   for (final id in workerCorpusDivergences.keys) {
     if (!workerCorpusExpected.any((e) => e.divergence == id)) {
       problems.add('divergence $id names no file');
     }
   }
+
+  return problems;
+}
+
+/// What is wrong with the two recursion sets: one that names different files
+/// from the other, a file the corpus does not hold and a file that is also an
+/// expected failure.
+List<String> _recursionSetProblems(Set<String> files, Set<String> seen) {
+  final problems = <String>[];
   final safariFiles = workerRecursionSetNoJspiSafari.keys.toSet();
   if (safariFiles.length != workerRecursionSetNoJspi.length ||
       !safariFiles.containsAll(workerRecursionSetNoJspi.keys)) {

@@ -8,7 +8,10 @@ import 'package:collection/collection.dart';
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart'
     show HostClass, montyStdTypeProxy;
+import 'package:dart_monty_core/src/worker/arena_nodes.dart' show originBuiltin;
 import 'package:dart_monty_core/src/worker/arena_reader.dart';
+import 'package:dart_monty_core/src/worker/arena_writer.dart';
+import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/python_keys.dart';
 import 'package:dart_monty_core/src/worker/wire_scalars.dart';
@@ -30,6 +33,20 @@ ArenaReader _reader(List<pb.MontyNode> nodes, {HostObjectLookup? hosts}) =>
 
 MontyValue _decode(List<pb.MontyNode> nodes, [int? root]) =>
     _reader(nodes)[root ?? nodes.length - 1];
+
+/// The single node [value] is written as.
+pb.MontyNode _written(MontyValue value) {
+  final writer = ArenaWriter()..add(value);
+
+  return onlyItem(writer.arena.nodes);
+}
+
+/// The value [read] returns; a refusal fails the assertion, not the test.
+T _accepted<T>(T Function() read, String reason) {
+  expect(read, returnsNormally, reason: reason);
+
+  return read();
+}
 
 Matcher _formatError(String message) => throwsA(
   isA<FormatException>().having((e) => e.message, 'message', message),
@@ -174,11 +191,12 @@ void main() {
         _decode([exception('ValueError')]),
         MontyExceptionValue('ValueError', ''),
       );
-      // A value node carries no payload, and these three need one.
+      // A value node carries no payload, and these four need one.
       for (final type in [
         'UnicodeDecodeError',
         'UnicodeEncodeError',
         'json.JSONDecodeError',
+        'tomllib.TOMLDecodeError',
       ]) {
         expect(
           _decode([exception(type, 'm')]),
@@ -861,6 +879,100 @@ void main() {
       expect(watch.elapsed, lessThan(const Duration(seconds: 10)));
     });
   });
+
+  test(
+    'CSV and TOML names are accepted in exception and builtin type nodes',
+    () {
+      // Upstream's `ExcType` at v1.2.0 knows two names this port does not:
+      // `_csv.Error` and `tomllib.TOMLDecodeError`. The reader, the writer
+      // and the raised-error path are checked here, in one test, so the
+      // whole crossing is covered in one place.
+      const names = ['_csv.Error', 'tomllib.TOMLDecodeError'];
+      for (final name in names) {
+        // An exception node is accepted, and keeps the message it carries.
+        expect(
+          _accepted(
+            () => _decode([exception(name, 'boom')]),
+            'exception node $name',
+          ),
+          isA<MontyExceptionValue>().having(
+            (e) => e.message,
+            'message',
+            'boom',
+          ),
+          reason: name,
+        );
+        // A builtin type node names it too, with neither an id nor attrs.
+        expect(
+          _accepted(
+            () => _decode([builtinType(name)]),
+            'builtin type node $name',
+          ),
+          montyStdTypeProxy('type', name),
+          reason: name,
+        );
+        // The writer sends the name as it is.
+        final exceptionNode = _accepted(
+          () => _written(MontyExceptionValue(name, 'boom')),
+          'encoded exception $name',
+        );
+        expect(exceptionNode.exception.excType, name, reason: name);
+        expect(exceptionNode.exception.arg, 'boom', reason: name);
+        final typeNode = _accepted(
+          () => _written(montyStdTypeProxy('type', name)),
+          'encoded builtin type $name',
+        );
+        expect(typeNode.type.name, name, reason: name);
+        expect(typeNode.type.origin, originBuiltin, reason: name);
+        expect(typeNode.type.hasId(), isFalse, reason: name);
+        expect(typeNode.type.hasAttrs(), isFalse, reason: name);
+        // A raised exception of that name is a runtime error, not a
+        // protocol violation, and it keeps its name and message.
+        final error = raisedError(
+          pb.RaisedException(excType: name, message: 'boom'),
+        );
+        expect(error, isA<MontyRuntimeError>(), reason: name);
+        expect(error.toString(), '$name: boom', reason: name);
+      }
+      // The CSV name and its message survive the crossing, on both paths.
+      const csv = '_csv.Error';
+      expect(
+        _accepted(() => _decode([exception(csv, 'boom')]), 'CSV node'),
+        MontyExceptionValue(csv, 'boom'),
+      );
+      final csvError = raisedError(
+        pb.RaisedException(excType: csv, message: 'boom'),
+      );
+      expect(csvError, isA<MontyRuntimeError>());
+      expect(csvError.exception, MontyExceptionValue(csv, 'boom'));
+      expect(csvError.toString(), '$csv: boom');
+      // A payload-less TOML error has no payload to rebuild the real
+      // class from, so it decodes as the plain `ValueError` its parent
+      // is; the CSV error, a plain `Exception` subclass, keeps its name.
+      expect(
+        _accepted(
+          () => _decode([exception('tomllib.TOMLDecodeError', 'boom')]),
+          'TOML node',
+        ),
+        isA<MontyExceptionValue>()
+            .having((e) => e.excType, 'excType', 'ValueError')
+            .having((e) => e.message, 'message', 'boom'),
+      );
+      // An unknown name is still refused, on every path.
+      expect(
+        () => _decode([exception('NotAnExc', 'x')]),
+        _formatError('unknown exception type "NotAnExc"'),
+      );
+      expect(
+        () => _decode([builtinType('NotAnExc')]),
+        _formatError('unknown type name "NotAnExc"'),
+      );
+      expect(
+        raisedError(pb.RaisedException(excType: 'NotAnExc')),
+        isA<MontyCrashedError>(),
+      );
+    },
+  );
 }
 
 /// A host object equal to any other with the same [n].

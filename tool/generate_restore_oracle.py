@@ -3,12 +3,18 @@
 
 usage: PYTHON -I tool/generate_restore_oracle.py [--check]
 
-PYTHON is an interpreter with pydantic-monty 1.1.0 installed (the oracle).
+PYTHON is an interpreter with pydantic-monty 1.2.0 installed (the oracle),
+the release the pin in tool/upstream/requirements.lock names.
 Each case is a script of steps on upstream's AsyncMonty: sessions checked
 out, fed, started, dumped, loaded and resumed, and the outcome of each step.
 The Dart side (test/unit/worker/_restore_cases.dart) runs the same steps on
 core's pool and must reach the same outcomes on the VM, dart2js and
 dart2wasm.
+
+Since 1.2.0 a restore keeps the destination's ceilings: the dump's limits
+and the loader's are tightened into the stricter of the two (upstream's
+`ResourceTracker::tighten_limits`), so a session loaded under a duration
+ceiling is still bounded by it.
 
 The step language (each a list):
 - ['open', s, settings]: checks out session s with the settings (a map of
@@ -50,12 +56,18 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / 'test/unit/worker/_restore_oracle.g.dart'
 
 SUSPEND = 'import time\ntime.sleep(0)\n'
-# Finite, and some 50 times longer than a 10 ms parent backstop: about 0.6 s
-# on a native worker. (Were it ever faster, the forgotten-budget cases would
-# pass vacuously; the scripted pool_session_test cases still pin the rule.)
+# Finite, and some 50 times longer than the 10 ms ceiling the destination
+# keeps: about 0.6 s on a native worker. (Were it ever faster, the
+# retained-ceiling cases would pass vacuously; the scripted
+# pool_session_test cases still pin the rule.)
 WORK = 'n = 0\nfor i in range(30000000):\n    n += i\nrepr(n > 0)'
 SPIN = 'while True:\n    pass'
-NO_GRACE = {'feed_duration_limit_grace': 0.0, 'turn_duration_limit_grace': 0.0}
+# Upstream's default grace (a second), spelled out: the parent's backstop
+# sits a second behind the worker's own duration limit, so the worker's
+# TimeoutError is what reaches the oracle. With no grace the parent's
+# backstop and the worker's limit expire together, and the race between them
+# would decide the recorded outcome (the parent kills the worker instead).
+GRACE = {'feed_duration_limit_grace': 1.0, 'turn_duration_limit_grace': 1.0}
 
 # (id, pool kwargs, steps).
 CASES: list[tuple[str, dict[str, Any], list[list[Any]]]] = [
@@ -200,14 +212,18 @@ CASES: list[tuple[str, dict[str, Any], list[list[Any]]]] = [
         ['feed', 'b', 'import time\ntime.sleep(0.03)\nrepr(1)'],
         ['feed', 'b', 'import time\ntime.sleep(0.03)\nrepr(2)'],
     ]),
-    # The duration budgets are the dump's: the loader's are forgotten, so
-    # its parent backstop (no grace) does not end the feed.
-    ('feed_duration_forgotten', NO_GRACE, [
+    # The duration ceilings are the stricter of the dump's and the
+    # destination's: the destination's 10 ms keeps bounding the restored
+    # session, so the worker's own limit ends the feed. The grace keeps the
+    # parent's backstop behind that limit, so the worker's TimeoutError is
+    # what the oracle records. The ids are the 1.1.0 oracle's, where the
+    # destination's ceilings were forgotten; upstream 1.2.0 keeps them.
+    ('feed_duration_forgotten', GRACE, [
         ['open', 'a', {}], ['dump', 'a'],
         ['open', 'b', {'max_feed_duration_secs': 0.01}], ['load_session', 'b', 'a'],
         ['feed', 'b', WORK],
     ]),
-    ('turn_duration_forgotten', NO_GRACE, [
+    ('turn_duration_forgotten', GRACE, [
         ['open', 'a', {}], ['dump', 'a'],
         ['open', 'b', {'max_turn_duration_secs': 0.01}], ['load_session', 'b', 'a'],
         ['feed', 'b', WORK],
@@ -256,7 +272,11 @@ def error_text(e: BaseException) -> str:
     if isinstance(e, pm.MontyTypingError):
         return f'MontyTypingError: {e.display()}'
     if isinstance(e, pm.MontyError):
-        text = f'{type(e).__name__}: {e.display("type-msg")}'
+        # A MontyError without a `display` (a crashed worker, say) still has
+        # a message: the oracle records the outcome, it does not crash on it.
+        display = getattr(e, 'display', None)
+        rendered = display('type-msg') if display is not None else str(e)
+        text = f'{type(e).__name__}: {rendered}'
         return re.sub(r'time limit exceeded: \S+ >', 'time limit exceeded: … >', text)
     if isinstance(e, RuntimeError) and str(e) == 'this checkout has already been finished':
         return 'finished'
@@ -374,7 +394,7 @@ def dart_value(v: Any) -> str:
 
 HEADER = """\
 // Upstream's outcome for each dump and load case, recorded from
-// pydantic-monty 1.1.0 (the oracle) by tool/generate_restore_oracle.py, which
+// pydantic-monty 1.2.0 (the oracle) by tool/generate_restore_oracle.py, which
 // also defines the step language. The Dart runner is in _restore_cases.dart.
 //
 // Each case is the pool's settings and a list of steps, each with

@@ -1402,6 +1402,8 @@ void _lockRaceTests() {
   _lostLockOwnershipTest();
   _deadLockContenderTest();
   _liveLockContenderTest();
+  _vanishedLockClaimTest();
+  _replacementLockClaimTest();
 }
 
 void _lostLockOwnershipTest() {
@@ -1532,6 +1534,74 @@ void _liveLockContenderTest() {
     expect(lock.existsSync(), isTrue);
     expect(File('${lock.path}/owner').readAsStringSync(), '$pid live-token');
   });
+}
+
+void _vanishedLockClaimTest() {
+  test('retries when the lock vanishes before its owner is written', () async {
+    final mirror = await WorkerMirror.create();
+    final cache = await Directory.systemTemp.createTemp('worker_cache_');
+    final lock = Directory('${cache.path}/.lock-${mirror.artifact.sha256}');
+    addTearDown(() async {
+      await mirror.directory.delete(recursive: true);
+      await cache.delete(recursive: true);
+    });
+    var vanished = false;
+
+    final result = await installWorker(
+      WorkerInstallRequest(
+        artifact: mirror.artifact,
+        cacheRoot: cache.path,
+        archiveUrl: mirror.fileUrl,
+        onStage: (stage) async {
+          if (stage != 'beforeLockOwner' || vanished) return;
+          vanished = true;
+          if (lock.existsSync()) await lock.delete(recursive: true);
+        },
+      ),
+    );
+
+    expect(vanished, isTrue);
+    expect(result.downloaded, isTrue);
+    expect(lock.existsSync(), isFalse);
+  });
+}
+
+void _replacementLockClaimTest() {
+  test(
+    'retains a live lock that replaces a stale lock during the move',
+    () async {
+      final mirror = await WorkerMirror.create();
+      final cache = await Directory.systemTemp.createTemp('worker_cache_');
+      final lock = Directory('${cache.path}/.lock-${mirror.artifact.sha256}')
+        ..createSync();
+      File('${lock.path}/owner').writeAsStringSync('999999999 dead-token');
+      await _backdate(lock);
+      addTearDown(() async {
+        await mirror.directory.delete(recursive: true);
+        await cache.delete(recursive: true);
+      });
+
+      await expectLater(
+        installWorker(
+          WorkerInstallRequest(
+            artifact: mirror.artifact,
+            cacheRoot: cache.path,
+            archiveUrl: mirror.fileUrl,
+            lockWait: const Duration(milliseconds: 100),
+            onStage: (stage) async {
+              if (stage != 'beforeMoveStaleLock') return;
+              await lock.delete(recursive: true);
+              await lock.create();
+              File('${lock.path}/owner').writeAsStringSync('$pid live-token');
+            },
+          ),
+        ),
+        throwsA(isA<WorkerInstallError>()),
+      );
+      expect(lock.existsSync(), isTrue);
+      expect(File('${lock.path}/owner').readAsStringSync(), '$pid live-token');
+    },
+  );
 }
 
 void _initializerFailureTests() {

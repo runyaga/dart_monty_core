@@ -1,11 +1,11 @@
 {
   "_comment": "Provenance for the committed WASM/JS assets in lib/assets/. Lives in tool/ (.pubignore'd) rather than lib/assets/ because it is DEVELOPMENT knowledge: consumers used to download it with the package and it told them nothing actionable. See docs/contributor/testing-runbook.md for why a git diff on the blob is uninformative.",
-  "_worker_source_sha256_comment": "sha256 over every file under native/worker/ (target/ excluded), native/rust-toolchain.toml, tool/build_worker_wasm.sh and tool/rust_remap.sh -- the INPUTS to lib/assets/dart_monty_core_worker.wasm. Updated by tool/prebuild.sh.",
+  "_worker_source_sha256_comment": "sha256 over every file under native/worker/ (target/ and deny.toml excluded), native/rust-toolchain.toml, tool/build_worker_wasm.sh and tool/rust_remap.sh -- the INPUTS to lib/assets/dart_monty_core_worker.wasm. Updated by tool/prebuild.sh.",
   "assets": {
     "dart_monty_core_worker.wasm": {
-      "bytes": 16374307,
-      "sha256": "caa460d72dc4c8418c95e32fc0a796344117a79f8c8afe8dd98f7216712ad8a2"
+      "bytes": 17320254,
+      "sha256": "d39a4ab954b822d4ac74f9faa0d7655322fa4ab91c2ab7817893651542df519d"
     }
   },
-  "worker_source_sha256": "6ec59acb936856a74538d0e09b3ba48e2e1d70c498c54ce5270c36e0608acb9f"
+  "worker_source_sha256": "c0bd003978cd760f514e6216f7b3c59ea007bc717dadb934ce8398cfff424f97"
 }

@@ -277,8 +277,9 @@ void attributeSessionTests(String label, WithSession withSession) {
         );
         expect(mistyped.exception.excType, 'ValueError');
         // A 70 KiB document is dropped; the location is kept.
+        const bigMessage = 'Expecting value: line 1 column 5 (char 4)';
         final big = await answer(
-          ExternalException('json.JSONDecodeError', 'm', {
+          ExternalException('json.JSONDecodeError', bigMessage, {
             ..._jsonError.attributes,
             'doc': MontyString('x' * (70 * 1024)),
           }),
@@ -298,6 +299,8 @@ void attributeSessionTests(String label, WithSession withSession) {
     // 'ab\ncd', 4) with the attribute replaced, uncaught in the sandbox.
     test('JSON positions are extracted as upstream extracts a usize', () async {
       await withSession((s) async {
+        // The outer message is long enough to carry the short `msg`.
+        const message = 'bad: line 2 column 2 (char 4)';
         Future<MontyError> answer(Map<String, MontyValue> over) async {
           final snap =
               await s.feedStart('f()', printCallback: _ignore)
@@ -305,7 +308,7 @@ void attributeSessionTests(String label, WithSession withSession) {
 
           return _failure(
             snap.resume(
-              ExternalException('json.JSONDecodeError', 'm', {
+              ExternalException('json.JSONDecodeError', message, {
                 'msg': const MontyString('bad'),
                 'doc': const MontyString('ab\ncd'),
                 'pos': const MontyInt(4),

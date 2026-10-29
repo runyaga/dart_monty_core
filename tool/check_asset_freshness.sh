@@ -8,8 +8,8 @@
 # the asset matches the crate.
 #
 # Hashing the OUTPUT is therefore useless. Hashing the INPUT is not:
-# native/worker/, the shared toolchain file and the build recipes are ordinary
-# files and hash deterministically.
+# native/worker/ (minus target/ and deny.toml), the shared toolchain file and
+# the build recipes are ordinary files and hash deterministically.
 #
 # It also fails if any committed lib/assets/*.wasm embeds a build-machine
 # absolute path (see leaked_paths below). The recipes remap those away
@@ -39,9 +39,13 @@ hash_files() {
 # file under native/worker/ (sources, the verbatim upstream copy, manifest,
 # lock, build.rs), the toolchain file it shares, and the build recipe (cargo
 # profile, wasm-opt flags, path remapping). target/ is build output.
+# native/worker/deny.toml is excluded too: it configures cargo deny, not the
+# build, so it cannot change the wasm.
 worker_source_hash() {
   {
-    find native/worker -path native/worker/target -prune -o -type f -print0 \
+    find native/worker -path native/worker/target -prune \
+      -o -path native/worker/deny.toml -prune \
+      -o -type f -print0 \
       2>/dev/null
     printf '%s\0' native/rust-toolchain.toml tool/build_worker_wasm.sh \
       tool/rust_remap.sh
@@ -160,8 +164,9 @@ d.setdefault('assets', {})[name] = {
     'bytes': len(blob), 'sha256': hashlib.sha256(blob).hexdigest()}
 d['worker_source_sha256'] = have_worker
 d['_worker_source_sha256_comment'] = (
-    'sha256 over every file under native/worker/ (target/ excluded), '
-    'native/rust-toolchain.toml, tool/build_worker_wasm.sh and tool/rust_remap.sh -- the INPUTS to '
+    'sha256 over every file under native/worker/ (target/ and deny.toml '
+    'excluded), native/rust-toolchain.toml, tool/build_worker_wasm.sh and '
+    'tool/rust_remap.sh -- the INPUTS to '
     'lib/assets/dart_monty_core_worker.wasm. Updated by '
     'tool/prebuild.sh.')
 print(f"  recorded worker_source_sha256 = {have_worker[:16]}…")

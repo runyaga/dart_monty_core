@@ -7,20 +7,25 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:typed_data';
 
+import 'package:collection/collection.dart';
 import 'package:dart_monty_core/src/mount/mount_dir.dart';
 import 'package:dart_monty_core/src/mount/native_mount_service.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/platform/os_call_not_handled_exception.dart';
 import 'package:dart_monty_core/src/worker/arena_nodes.dart'
-    show exceptionTypeNames, uuidString;
+    show exceptionTypeNames, rustDebug, uuidString;
 import 'package:dart_monty_core/src/worker/arena_reader.dart';
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
+import 'package:dart_monty_core/src/worker/frame_scan.dart'
+    show parseRustMessage;
 import 'package:dart_monty_core/src/worker/host_objects.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart'
     show MontyCrashedError, MontyRuntimeError, encodingInput, protocolError;
 import 'package:dart_monty_core/src/worker/monty_snapshot.dart'
     show ExternalException, unknownExcType;
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
+import 'package:dart_monty_core/src/worker/python_rules.dart'
+    show moduleNameError;
 import 'package:dart_monty_core/src/worker/telemetry_recorder.dart';
 
 /// A host function Python can call by name.
@@ -57,6 +62,13 @@ typedef OsHandler =
       List<MontyValue> args,
       Map<String, MontyValue> kwargs,
     );
+
+/// Where an OS call goes before the OS handler: the mount table's own call,
+/// or a route the host injected.
+///
+/// The route answers with the encoded reply, or null when it declines the
+/// call, as the mount table's own call does.
+typedef MountRoute = List<int>? Function(List<int>);
 
 /// Marks a host function as a Python coroutine.
 ///
@@ -128,16 +140,23 @@ OsCallParts osCallParts(pb.OsCall call, {HostObjectLookup? hosts}) {
 }
 
 /// Checks [call] as upstream's `os_call_from_proto` does before any host
-/// code sees it: an arm is set, and a `getenv`'s arena is present, passes
-/// the reader's first two stages and holds its default's root. Returns the
-/// `getenv` default's reader, or null for any other arm.
+/// code sees it: an arm is set, an `import_stubs`'s modules are each asked
+/// about once, and a `getenv`'s arena is present, passes the reader's first
+/// two stages and holds its default's root. Returns the `getenv` default's
+/// reader, or null for any other arm.
 ///
-/// Throws [FormatException] with upstream's message (monty-proto 1.1.0
-/// `convert/os_call.rs:43-52`) for the first failure.
+/// Throws [FormatException] with upstream's message (monty-proto 1.2.0
+/// `convert/os_call.rs:43-52` and `convert/os_call.rs:194-204`) for the
+/// first failure.
 ArenaReader? checkOsCall(pb.OsCall call, {HostObjectLookup? hosts}) {
   final kind = call.whichCall();
   if (kind == pb.OsCall_Call.notSet) {
     throw const FormatException('missing required field OsCall.call');
+  }
+  if (kind == pb.OsCall_Call.importStubs) {
+    _checkStubModules(call.importStubs.modules);
+
+    return null;
   }
   if (kind != pb.OsCall_Call.getenv) return null;
   if (!call.hasValues()) {
@@ -170,6 +189,23 @@ ArenaReader checkCallArgs(pb.FunctionCall call, HostObjectLookup? hosts) {
 }
 
 const Map<String, MontyValue> _noKwargs = {};
+
+/// The modules an `import_stubs` arm asks about, each of them once.
+///
+/// Upstream refuses a module named twice (monty-proto 1.2.0
+/// `convert/os_call.rs:194-204`): a host runs one factory per name, and a
+/// compromised child must not multiply that work.
+void _checkStubModules(List<String> modules) {
+  final seen = <String>{};
+  for (final module in modules) {
+    if (!seen.add(module)) {
+      throw FormatException(
+        'invalid value for ImportStubs.modules: module ${rustDebug(module)} '
+        'is asked about twice',
+      );
+    }
+  }
+}
 
 OsCallParts _onPath(String name, String path) => (
   name,
@@ -267,6 +303,39 @@ final Map<pb.OsCall_Call, OsCallParts Function(pb.OsCall)> _osCalls = {
   pb.OsCall_Call.asyncSleep: (c) => _sleep('asyncio.sleep', c.asyncSleep.delay),
   pb.OsCall_Call.asyncSystemSleep: (c) =>
       _sleep('system.async_sleep', c.asyncSystemSleep.delay),
+  pb.OsCall_Call.import: (c) => (
+    'import',
+    [MontyString(c.import.module)],
+    _noKwargs,
+  ),
+  pb.OsCall_Call.importStubs: (c) => (
+    'import_stubs',
+    [
+      MontyList([
+        for (final module in c.importStubs.modules) MontyString(module),
+      ]),
+    ],
+    _noKwargs,
+  ),
+  pb.OsCall_Call.scan: (c) => (
+    'Path.scan',
+    [_path(c.scan.path)],
+    {
+      'max_depth': c.scan.hasMaxDepth()
+          ? MontyInt(c.scan.maxDepth)
+          : const MontyNone(),
+      'follow_symlinks': MontyBool(c.scan.followSymlinks),
+      'pattern': c.scan.pattern.isEmpty
+          ? const MontyNone()
+          : MontyList([
+              for (final part in c.scan.pattern) MontyString(part),
+            ]),
+      'case_sensitive': c.scan.hasCaseSensitive()
+          ? MontyBool(c.scan.caseSensitive)
+          : const MontyNone(),
+      'recurse_symlinks': MontyBool(c.scan.recurseSymlinks),
+    },
+  ),
 };
 
 MontyBytes _bytes(List<int> data) =>
@@ -320,6 +389,28 @@ Duration cappedSleep(double seconds, Duration max) {
       : Duration(microseconds: micros.round());
 }
 
+/// A feed's mount table and the route its OS calls take.
+///
+/// The route is the table's own call, or the one the host injected: a
+/// supplied route replaces the table's call, it does not follow it.
+final class _Mounts {
+  const _Mounts(this.table, this.route);
+
+  /// The feed's overlay and budgets, absent without mounts.
+  final NativeMountTable? table;
+
+  /// Where an OS call goes before the OS handler.
+  final MountRoute? route;
+}
+
+/// The mount table for [mount], and the route its calls take: the injected
+/// [route] when there is one, else the table's own call.
+_Mounts _mountsFor(List<MountDir>? mount, MountRoute? route) {
+  final table = beginMountFeed(mount);
+
+  return _Mounts(table, route ?? table?.call);
+}
+
 /// The host's side of one feed: its external lookup, OS handler and the
 /// coroutines it has started, answering the worker's suspensions as
 /// upstream's async binding does.
@@ -336,15 +427,33 @@ Duration cappedSleep(double seconds, Duration max) {
 final class HostAnswers {
   /// The answers for one feed, its host objects in [objects] (a fresh
   /// registry without one).
+  ///
+  /// The session's host [modules] are the ones the feeds of a session
+  /// share, so a factory's result is cached across them. The mapping
+  /// [externalModules] is read only when no [modules] are given: the two
+  /// name one thing, and the mapping the modules hold is the one that is
+  /// read.
   HostAnswers({
     this.externalLookup = const {},
     this.os,
     this.systemSleepMax,
     this.recorder,
+    Map<String, Object?>? externalModules,
+    HostModules? modules,
     HostObjects? objects,
     List<MountDir>? mount,
-  }) : objects = objects ?? HostObjects(),
-       _mountTable = beginMountFeed(mount);
+    MountRoute? mountRoute,
+  }) : modules =
+           modules ??
+           HostModules(
+             externalModules: externalModules ?? HostModules._noModules,
+           ),
+       externalModules =
+           modules?.externalModules ??
+           externalModules ??
+           HostModules._noModules,
+       objects = objects ?? HostObjects(),
+       _mounts = _mountsFor(mount, mountRoute);
 
   /// Callback context for this checkout, absent without instrumentation.
   final TelemetryRecorder? recorder;
@@ -360,11 +469,25 @@ final class HostAnswers {
   /// The OS handler; without one every OS call is declined.
   final OsHandler? os;
 
+  /// The session's host modules: the mapping the host gave and the factory
+  /// results cached for it.
+  ///
+  /// One per session, so a factory's result is cached across the session's
+  /// feeds, its resets and its resumes.
+  final HostModules modules;
+
+  /// The session's host modules, by name: the modules an `import` asks for.
+  ///
+  /// The very map the session holds, not a copy of it: an entry added,
+  /// replaced or removed through it is seen by the next import, as
+  /// upstream reads `external_modules`.
+  final Map<String, Object?> externalModules;
+
   /// The longest system sleep the parent waits; null declines system sleeps.
   final Duration? systemSleepMax;
 
-  /// This feed's overlay and budgets, retained across snapshot resumes.
-  final NativeMountTable? _mountTable;
+  /// This feed's overlay and budgets, and where its OS calls go.
+  final _Mounts _mounts;
 
   /// Coroutines started and not yet delivered, by call id.
   final Set<int> _running = {};
@@ -404,6 +527,9 @@ final class HostAnswers {
   /// Answers the host function call [call]; one with an object id is a
   /// method call on that host object.
   ///
+  /// A name carrying a dot is a module call: it is resolved through the
+  /// session's host modules, never through the lookup.
+  ///
   /// Throws [MontyCrashedError] ([protocolError]) for an arguments arena
   /// upstream rejects when the frame arrives, before anything else: the
   /// caller discards the worker.
@@ -411,6 +537,7 @@ final class HostAnswers {
     final reader = checkCallArgs(call, objects.lookup);
     if (call.hasObjectId()) return _methodCall(this, call, reader);
     final name = call.functionName;
+    if (name.contains('.')) return _moduleCall(this, call, reader, name);
     final MontyValue? entry;
     try {
       entry = externalLookup[name];
@@ -483,6 +610,9 @@ final class HostAnswers {
   /// waited here, as `feedRun` waits it; without, it goes to the handler
   /// like any other call, as a resumed snapshot's does upstream.
   ///
+  /// An `import` is answered from the session's host modules, before the
+  /// mounts and the OS handler see it (upstream's `module_call`).
+  ///
   /// Throws [MontyCrashedError] ([protocolError], upstream's `invalid OS
   /// call payload`) for a payload [checkOsCall] rejects, before anything
   /// else: the caller discards the worker.
@@ -498,9 +628,17 @@ final class HostAnswers {
     final max = systemSleepMax;
     final slept = parentSleeps && max != null ? _systemSleep(call, max) : null;
     if (slept != null) return slept;
-    final mounted = _mountTable?.call(call.writeToBuffer());
+    final kind = call.whichCall();
+    final module = _moduleAnswer(this, call, kind);
+    if (module != null) return module;
+    final mounted = _mounts.route?.call(call.writeToBuffer());
     if (mounted != null) {
-      return pb.ParentRequest(resumeCall: pb.ResumeCall.fromBuffer(mounted));
+      // The mount's reply holds Rust strings, so a leading U+FEFF is part
+      // of the text the mount read: `fromBuffer` would drop it, and the
+      // reader the frames use keeps it.
+      return pb.ParentRequest(
+        resumeCall: parseRustMessage(pb.ResumeCall(), mounted),
+      );
     }
     final handler = os;
     if (handler == null) return _notHandled(call.callId);
@@ -540,7 +678,7 @@ final class HostAnswers {
   /// the drive). A sleep the drive still awaits returns at once; one behind
   /// a pending future settles, unread.
   void dispose() {
-    _mountTable?.close();
+    _mounts.table?.close();
     for (final (timer, done) in [..._sleeps]) {
       timer.cancel();
       if (!done.isCompleted) done.complete();
@@ -660,6 +798,261 @@ final class HostAnswers {
   }
 }
 
+/// The session's host modules: the mapping the host gave and the factory
+/// results cached for it.
+///
+/// The mapping is the host's own and is read live, as upstream reads
+/// `external_modules`: an entry added, replaced or removed after the
+/// session opened is seen by the next import or call. An entry is a module
+/// itself, or a factory: a zero-argument function returning one, either
+/// synchronously or through a future.
+///
+/// A factory runs once per session: its result is cached and serves every
+/// later import, call and resume. A factory that fails is not cached, so
+/// the next use runs it again. A direct entry is never cached: the mapping
+/// is read live, and a replaced entry is seen by the next request.
+final class HostModules {
+  /// Creates the modules of [externalModules]: the very map, not a copy.
+  HostModules({this.externalModules = _noModules});
+
+  /// The mapping, as the host gave it.
+  final Map<String, Object?> externalModules;
+
+  /// The mapping a set of modules without one of its own holds: empty, and
+  /// the same one everywhere, so a feed's own mapping is that one too.
+  static const Map<String, Object?> _noModules = {};
+
+  /// What each factory returned, by module name: only a validated result
+  /// is cached, never a direct entry, a failure, an invalid result or a
+  /// pending future.
+  final Map<String, ExternalModule> _factoryResults = {};
+
+  /// Forgets every factory result: the mapping stays as it is, and the
+  /// factories run again when they are next needed.
+  void clearFactoryResults() => _factoryResults.clear();
+
+  /// The module [name] names, staged: the module itself, the factory's
+  /// pending future, the name's absence, or the error that stopped it.
+  ///
+  /// The cache comes first: a factory's validated result serves every
+  /// later request, whatever the mapping holds by then. A direct entry is
+  /// returned as it is and never cached, so a replaced entry is seen by the
+  /// next request.
+  ///
+  /// The name is checked when it is reached, as upstream's `check_entry`
+  /// checks it: a name that is not an identifier, or one the sandbox
+  /// provides itself, cannot name a host module. An entry that is neither
+  /// a module nor a factory is refused when it is reached, too.
+  ModuleResolution resolve(String name) {
+    final cached = _factoryResults[name];
+    if (cached != null) return ResolvedModule(cached);
+    final Object? entry;
+    try {
+      entry = externalModules[name];
+      // A name the mapping does not hold is absent; a name it holds with no
+      // value is an entry the host must fix, not a missing module.
+      if (entry == null && !externalModules.containsKey(name)) {
+        return const MissingModule();
+      }
+    } on Object catch (error) {
+      return RefusedModule(raisedFrom(error));
+    }
+    final nameError = moduleNameError(name);
+    if (nameError != null) {
+      return RefusedModule(
+        raisedException('ValueError', nameError, const {}),
+      );
+    }
+    if (entry == null) return RefusedModule(_invalidEntry(name, entry));
+    if (entry is ExternalModule) return ResolvedModule(entry);
+    if (entry is! Object? Function()) {
+      return RefusedModule(_invalidEntry(name, entry));
+    }
+
+    return _stage(name, entry);
+  }
+
+  /// The module [name] names, awaiting a factory's future: the module
+  /// itself, the name's absence, or the error that stopped it.
+  ///
+  /// A factory's future is awaited here and its result installed, so the
+  /// next request finds it in the cache. A failure is not cached: the next
+  /// request runs the factory again.
+  Future<SettledModule> resolveAsync(String name) async {
+    final resolution = resolve(name);
+
+    return switch (resolution) {
+      PendingModule(:final future) => await _awaited(name, future),
+      ResolvedModule(:final module) => ResolvedModule(module),
+      MissingModule() => const MissingModule(),
+      RefusedModule(:final error) => RefusedModule(error),
+    };
+  }
+
+  /// The module [name] holds once [result] is installed: the result
+  /// itself, cached for the rest of the session.
+  ///
+  /// A result that is not an [ExternalModule] is refused, with a
+  /// `TypeError` naming the factory and the type it returned, as upstream's
+  /// `install_module` raises. Nothing is cached then, and the next request
+  /// runs the factory again. The module's attributes are not read here: a
+  /// module the sandbox cannot hold is installed all the same.
+  ExternalModule install(String name, Object? result) {
+    if (result is! ExternalModule) {
+      throw ExternalException(
+        'TypeError',
+        "external_modules['$name']() returned ${_resultTypeName(result)}, "
+            'not an ExternalModule',
+      );
+    }
+    _factoryResults[name] = result;
+
+    return result;
+  }
+
+  /// The module [name] holds once the factory's [future] is awaited, or
+  /// the error that stopped it.
+  Future<SettledModule> _awaited(String name, Future<Object?> future) async {
+    final Object? result;
+    try {
+      result = await future;
+    } on Object catch (error) {
+      return RefusedModule(_factoryError(error));
+    }
+
+    return _install(name, result);
+  }
+
+  /// The factory [factory]'s result for [name]: the module it built, or
+  /// the error that stopped it.
+  ///
+  /// A factory that returns a future stages it: the future is awaited by
+  /// [resolveAsync], which installs its result. A factory that fails
+  /// leaves nothing behind, so the next request runs the factory again.
+  ModuleResolution _stage(String name, Object? Function() factory) {
+    final Object? result;
+    try {
+      result = factory();
+    } on Object catch (error) {
+      return RefusedModule(_factoryError(error));
+    }
+    if (result is Future<Object?>) return PendingModule(result);
+
+    return _install(name, result);
+  }
+
+  /// The module [name] holds once [result] is installed, or the error the
+  /// refusal answers with.
+  SettledModule _install(String name, Object? result) {
+    try {
+      return ResolvedModule(install(name, result));
+    } on Object catch (error) {
+      return RefusedModule(_factoryError(error));
+    }
+  }
+}
+
+/// How a module name resolved: the module it holds, the factory's pending
+/// future, the name's absence, or the error that stopped it.
+sealed class ModuleResolution {
+  const ModuleResolution();
+}
+
+/// A resolution that is settled: the module, the name's absence, or the
+/// error that stopped it.
+sealed class SettledModule extends ModuleResolution {
+  const SettledModule();
+}
+
+/// The module [module] the name holds.
+final class ResolvedModule extends SettledModule {
+  /// Creates the resolution of the module [module].
+  const ResolvedModule(this.module);
+
+  /// The module the name holds.
+  final ExternalModule module;
+}
+
+/// The factory's [future]: the module it will bring is not known yet.
+final class PendingModule extends ModuleResolution {
+  /// Creates the resolution of the factory's pending [future].
+  const PendingModule(this.future);
+
+  /// The future the factory returned.
+  final Future<Object?> future;
+}
+
+/// The name holds no entry: the request that needs it is not found.
+final class MissingModule extends SettledModule {
+  /// Creates the resolution of a name the mapping does not hold.
+  const MissingModule();
+}
+
+/// The name cannot be resolved: [error] is the exception the request
+/// answers with.
+final class RefusedModule extends SettledModule {
+  /// Creates the resolution refused with [error].
+  const RefusedModule(this.error);
+
+  /// The exception the request answers with.
+  final pb.RaisedException error;
+}
+
+/// The error an entry that is neither a module nor a factory answers with:
+/// a `TypeError`, as upstream's `check_entry` raises.
+pb.RaisedException _invalidEntry(String name, Object? entry) => raisedException(
+  'TypeError',
+  "external_modules['$name'] must be an ExternalModule or a callable "
+      'returning one, not ${_entryTypeName(entry)}',
+  const {},
+);
+
+/// How the entry [entry] is named in the refusal upstream's `check_entry`
+/// makes: a class is named as one, a function that takes arguments as
+/// one, and any other value by its Dart type.
+String _entryTypeName(Object? entry) => switch (entry) {
+  null => 'Null',
+  final Type type => 'the class $type',
+  final Function _ => 'a function taking arguments',
+  _ => '${entry.runtimeType}',
+};
+
+/// The Dart type of the result [result] a factory returned, as the refusal
+/// upstream's `install_module` makes names it.
+String _resultTypeName(Object? result) =>
+    result == null ? 'Null' : '${result.runtimeType}';
+
+/// The Python exception a module factory's failure answers with.
+///
+/// A factory that builds a module upstream refuses fails with the error
+/// upstream's constructor raises: a `ValueError` for an attribute key it
+/// refuses, a `TypeError` for a key that is not a string. Any other
+/// failure keeps its own type, as [raisedFrom] converts it.
+pb.RaisedException _factoryError(Object error) {
+  try {
+    if (error is ArgumentError) {
+      final message = _argumentMessage(error);
+      if (message != null && message.startsWith('ExternalModule attrs')) {
+        final strKeys = message.startsWith(
+          'ExternalModule attrs must have str keys',
+        );
+
+        return raisedException(
+          strKeys ? 'TypeError' : 'ValueError',
+          message,
+          const {},
+        );
+      }
+    }
+  } on Object {
+    // An arbitrary ArgumentError may throw while exposing its message.
+    // Preserve the original error's normal protocol conversion.
+    return raisedFrom(error);
+  }
+
+  return raisedFrom(error);
+}
+
 /// Answers [call] with the resolved host function [entry]: run in place when
 /// synchronous, or as a coroutine when marked by [coroutine] or
 /// [parityCoroutine].
@@ -694,6 +1087,428 @@ Future<pb.ParentRequest> _functionCall(
     _started(callback),
     parity: parity,
   );
+}
+
+/// Answers the `import` OS call [call] from the session's host modules, as
+/// upstream's `import_module` does (monty-python 1.2.0 `src/external.rs`).
+///
+/// The name the call carries is looked up in the session's map, read live,
+/// and only a direct entry is resolved: a nested module is part of the
+/// module value the import binds, as upstream's `resolve_module` resolves
+/// the top-level name alone. An entry that is a factory is run, and its
+/// result is cached for the rest of the session.
+///
+/// A name the map does not hold is not found, which raises
+/// `ModuleNotFoundError` in the sandbox. A name that cannot name a host
+/// module raises `ValueError`, and an attribute the sandbox cannot hold
+/// raises `TypeError`; both are answered as errors, and no failure of the
+/// mapping escapes the answer.
+Future<pb.ParentRequest> _import(HostAnswers host, pb.OsCall call) async {
+  final callId = call.callId;
+  final name = call.import.module;
+  final resolution = await host.modules.resolveAsync(name);
+
+  return switch (resolution) {
+    ResolvedModule(:final module) => _importValue(host, callId, name, module),
+    MissingModule() => _resume(
+      callId,
+      pb.ExtFunctionResult(notFound: 'import'),
+    ),
+    RefusedModule(:final error) => _resume(
+      callId,
+      pb.ExtFunctionResult(error: error),
+    ),
+  };
+}
+
+/// Answers the `import_stubs` OS call [call] from the session's host
+/// modules, as upstream's `import_stubs` does (monty-python 1.2.0
+/// `src/external.rs`).
+///
+/// The names the call carries are resolved in the order they were asked
+/// for, and a factory that returns a future is staged: every factory of
+/// the ask runs before any of them is awaited.
+///
+/// A failure ends the ask: the factories after it do not run, and the
+/// results of the futures staged before it are never installed.
+///
+/// No failure escapes the ask as a thrown exception: a failure of the
+/// resolver itself is answered with the structured error of the failure,
+/// under the call's own id.
+///
+/// The answer is the stubs of every asked module the mapping has, its
+/// public submodules included.
+Future<pb.ParentRequest> _importStubs(HostAnswers host, pb.OsCall call) async {
+  final callId = call.callId;
+  final modules = host.modules;
+  final names = call.importStubs.modules;
+  final List<(String, Future<Object?>)> staged;
+  final pb.RaisedException? refusal;
+  try {
+    (staged, refusal) = _stagedFutures(modules, names);
+  } on Object catch (error) {
+    // The resolver failed while it staged the ask: the ask ends with the
+    // structured error of the failure. The futures staged before it are
+    // observed, so their failure is not an unhandled error, and their
+    // results are never installed.
+    return _failed(callId, error);
+  }
+  if (refusal != null) return _raises(callId, refusal);
+  final List<(String, Object?)> results;
+  try {
+    results = await _awaitedBatch(staged);
+  } on Object catch (error) {
+    return _raises(callId, _factoryError(error));
+  }
+  final failure = _installResults(modules, results);
+  if (failure != null) return _raises(callId, failure);
+
+  return _stubsAnswer(host, callId, names);
+}
+
+/// The futures of the factories that returned one, by the name they were
+/// asked for, in the order they were asked for; the error a factory that
+/// fails at once answers with, and null when every factory was staged.
+///
+/// A factory that fails at once ends the ask: the factories after it do
+/// not run, and the futures staged before it are abandoned.
+///
+/// The resolver may itself fail while it refuses an entry: the failure is
+/// thrown, and the caller answers the ask with it.
+(List<(String, Future<Object?>)> staged, pb.RaisedException? refusal)
+_stagedFutures(HostModules modules, List<String> names) {
+  final staged = <(String, Future<Object?>)>[];
+  for (final name in names) {
+    switch (modules.resolve(name)) {
+      case ResolvedModule():
+      case MissingModule():
+        break;
+      case PendingModule(:final future):
+        // The future is observed, so the failure of one that is abandoned
+        // is not an unhandled error; the future itself is kept, for the
+        // batch to await.
+        future.ignore();
+        staged.add((name, future));
+      case RefusedModule(:final error):
+        return (staged, error);
+    }
+  }
+
+  return (staged, null);
+}
+
+/// Installs the results of the staged futures, in the order the names were
+/// asked for; the error the first result that is not a module answers with,
+/// and null when every result was installed.
+///
+/// The results before an invalid one stay installed; the ones after it are
+/// not installed at all.
+pb.RaisedException? _installResults(
+  HostModules modules,
+  List<(String, Object?)> results,
+) {
+  for (final (name, result) in results) {
+    try {
+      modules.install(name, result);
+    } on Object catch (error) {
+      return _factoryError(error);
+    }
+  }
+
+  return null;
+}
+
+/// The results of the staged futures, awaited together: the first failure
+/// ends the wait, without waiting for the futures that are still pending.
+///
+/// Every result is paired with the name it was asked for, so the results
+/// are installed in the order the names were asked for.
+Future<List<(String, Object?)>> _awaitedBatch(
+  List<(String, Future<Object?>)> staged,
+) async {
+  if (staged.isEmpty) return const [];
+  final values = await Future.wait<Object?>(
+    [for (final (_, future) in staged) future],
+    eagerError: true,
+  );
+  final results = values.iterator;
+  final pairs = <(String, Object?)>[];
+  for (final (name, _) in staged) {
+    results.moveNext();
+    pairs.add((name, results.current));
+  }
+
+  return pairs;
+}
+
+/// The answer to a stubs ask: the stubs of the modules the names [names]
+/// resolve to, in the order they were asked for.
+///
+/// The names are resolved through the session's host modules once more, so
+/// a module a factory built for this ask is the one the answer carries.
+///
+/// A failure while the answer is built or encoded — a source the wire
+/// cannot hold, an attribute that cannot be read — answers the call with
+/// the structured error of the failure: no failure escapes the OS call as
+/// a thrown exception.
+pb.ParentRequest _stubsAnswer(
+  HostAnswers host,
+  int callId,
+  List<String> names,
+) {
+  final modules = host.modules;
+  final pairs = <(MontyValue, MontyValue)>[];
+  try {
+    for (final name in names) {
+      switch (modules.resolve(name)) {
+        case ResolvedModule(:final module):
+          _collectModuleStubs(name, module, pairs);
+        case MissingModule():
+          break;
+        case RefusedModule(:final error):
+          return _raises(callId, error);
+        case PendingModule(:final future):
+          // The mapping changed under the ask: the name names a factory
+          // that is pending again, and was never installed. The future is
+          // observed, so the failure of one that is abandoned is not an
+          // unhandled error; its result is never installed.
+          future.ignore();
+
+          return _raises(callId, _pendingFactory(name));
+      }
+    }
+
+    return resumeValue(callId, MontyDict(pairs), objects: host.objects);
+  } on Object catch (error) {
+    return _failed(callId, error);
+  }
+}
+
+/// The error a factory that is pending again answers with.
+pb.RaisedException _pendingFactory(String name) => raisedException(
+  'RuntimeError',
+  'module factory for $name is still pending after the ask that staged it',
+  const {},
+);
+
+/// The stubs of the module [module] and of its public submodules, in the
+/// order they are reached: the module itself, then its public attributes,
+/// in insertion order, each a submodule of its own.
+///
+/// The path of a module is its own path and the name of the attribute it
+/// is held under, joined with a dot, as upstream's `collect_stubs` builds
+/// it.
+///
+/// An ordinary attribute is left alone: it is not converted, and it is not
+/// called. Only a submodule is walked into.
+void _collectModuleStubs(
+  String path,
+  ExternalModule module,
+  List<(MontyValue, MontyValue)> pairs,
+) {
+  final source = module.stubs;
+  pairs.add((
+    MontyString(path),
+    source == null ? const MontyNone() : MontyString(source),
+  ));
+  for (final entry in module.publicAttrs.entries) {
+    final value = entry.value;
+    if (value is ExternalModule) {
+      _collectModuleStubs('$path.${entry.key}', value, pairs);
+    }
+  }
+}
+
+/// The answer to the module OS call [call], when [kind] names one; null
+/// when the call is not a module call.
+///
+/// An `import` and an `import_stubs` are answered from the session's host
+/// modules, before the mounts and the OS handler see them.
+Future<pb.ParentRequest>? _moduleAnswer(
+  HostAnswers host,
+  pb.OsCall call,
+  pb.OsCall_Call kind,
+) => switch (kind) {
+  pb.OsCall_Call.import => _import(host, call),
+  pb.OsCall_Call.importStubs => _importStubs(host, call),
+  _ => null,
+};
+
+/// The module value the import binds: the module [module], imported as
+/// [name], written into an arena of its own.
+pb.ParentRequest _importValue(
+  HostAnswers host,
+  int callId,
+  String name,
+  ExternalModule module,
+) {
+  try {
+    final writer = ArenaWriter(objects: host.objects);
+    final index = addImport(writer, name, module);
+
+    return _resume(
+      callId,
+      pb.ExtFunctionResult(returnValue: index),
+      writer.arena,
+    );
+  } on Object catch (error) {
+    return _importFailure(callId, error);
+  }
+}
+
+/// The answer to an import that failed: the error it raised, as the Python
+/// exception the worker raises in the sandbox.
+///
+/// This is the conversion of the module's attributes: a failure of the
+/// resolution itself is answered by the resolution, as a dotted call
+/// answers it.
+///
+/// No failure escapes: the error is converted defensively, so an error
+/// whose own text cannot be read is answered without a message, as
+/// upstream's `exception_arg` gives none when `str()` fails.
+pb.ParentRequest _importFailure(int callId, Object error) => _resume(
+  callId,
+  pb.ExtFunctionResult(error: _importError(error)),
+);
+
+/// The Python exception the conversion of a module's attributes answers
+/// with.
+///
+/// A value the sandbox cannot hold is a `TypeError`, as upstream's
+/// `value_conversion_err` makes it; any other failure is `Exception` with
+/// its own text ([raisedFrom]).
+///
+/// The conversion cannot fail: an error whose own text cannot be read is
+/// answered without one, and an error the conversion cannot handle at all
+/// is answered as a plain `Exception`, so the worker is never left waiting
+/// for an answer that does not come.
+pb.RaisedException _importError(Object error) {
+  try {
+    if (error is PythonRefusal) return raisedFrom(error);
+    if (error is ArgumentError) {
+      final message = _argumentMessage(error);
+      if (message != null && message.startsWith('Cannot convert')) {
+        return raisedException('TypeError', message, const {});
+      }
+    }
+
+    return raisedFrom(error);
+  } on Object {
+    return raisedException('Exception', null, const {});
+  }
+}
+
+/// [error]'s own message, or null when it has none or its text cannot be
+/// read: a message that is not a string is read through its own
+/// `toString()`, which may throw.
+String? _argumentMessage(ArgumentError error) {
+  final message = error.message;
+  if (message == null) return null;
+  if (message is String) return message;
+  try {
+    return '$message';
+  } on Object {
+    return null;
+  }
+}
+
+/// Answers the dotted call [name] through the session's host modules, as
+/// upstream's `callable` does (monty-python 1.2.0 `src/external.rs`: the
+/// name is split at its last dot, the path before it is walked through the
+/// host's modules, one public component at a time, and the leaf is the
+/// attribute the module that path names holds).
+///
+/// The lookup is never consulted for a dotted name: a module attribute is
+/// the only thing such a name can name. The first component of the path
+/// names the host module, and it is resolved as an import resolves it: a
+/// factory is run, and its result is cached for the rest of the session.
+/// A name the modules do not hold is not found: the walk stops at the
+/// first component that is missing, protected, or not a module. A leaf the
+/// module holds but cannot call raises CPython's
+/// `'<type>' object is not callable`.
+Future<pb.ParentRequest> _moduleCall(
+  HostAnswers host,
+  pb.FunctionCall call,
+  ArenaReader reader,
+  String name,
+) async {
+  final dot = name.lastIndexOf('.');
+  final parts = name.substring(0, dot).split('.');
+  final resolution = await host.modules.resolveAsync(
+    parts.firstOrNull ?? '',
+  );
+
+  return switch (resolution) {
+    ResolvedModule(:final module) => _moduleLeaf(
+      host,
+      call,
+      reader,
+      name,
+      module,
+      parts,
+    ),
+    MissingModule() => _resume(
+      call.callId,
+      pb.ExtFunctionResult(notFound: name),
+    ),
+    RefusedModule(:final error) => _resume(
+      call.callId,
+      pb.ExtFunctionResult(error: error),
+    ),
+  };
+}
+
+/// The answer to the dotted call [name]: the attribute the module the path
+/// names holds, called as any other host function.
+///
+/// The module [module] is the one the first component of the path [parts]
+/// named; the components below it are walked through it, one public
+/// attribute at a time.
+Future<pb.ParentRequest> _moduleLeaf(
+  HostAnswers host,
+  pb.FunctionCall call,
+  ArenaReader reader,
+  String name,
+  ExternalModule module,
+  List<String> parts,
+) async {
+  final dot = name.lastIndexOf('.');
+  final target = _moduleBelow(module, parts.skip(1));
+  if (target == null) {
+    return _resume(call.callId, pb.ExtFunctionResult(notFound: name));
+  }
+  final attrs = target.publicAttrs;
+  final leaf = name.substring(dot + 1);
+  if (!attrs.containsKey(leaf)) {
+    return _resume(call.callId, pb.ExtFunctionResult(notFound: name));
+  }
+  final entry = attrs[leaf];
+  if (entry is! MontyHostFunction) {
+    // Upstream calls the attribute, whatever it is.
+    return _resume(
+      call.callId,
+      pb.ExtFunctionResult(error: _notCallableValue(entry)),
+    );
+  }
+
+  return _functionCall(host, call, reader, entry);
+}
+
+/// The module the components [rest] name below [module], or null when the
+/// walk stops: a component that is missing, protected, or not a module ends
+/// the walk, as upstream's `module_of` stops at the first missing
+/// component.
+ExternalModule? _moduleBelow(ExternalModule module, Iterable<String> rest) {
+  var current = module;
+  for (final part in rest) {
+    final attrs = current.publicAttrs;
+    if (!attrs.containsKey(part)) return null;
+    final child = attrs[part];
+    if (child is! ExternalModule) return null;
+    current = child;
+  }
+
+  return current;
 }
 
 /// Answers a method call on the host object [call] names: refused for an
@@ -991,6 +1806,48 @@ pb.RaisedException _notCallable(MontyValue entry) => raisedException(
   const {},
 );
 
+/// The exception a call to the raw host value [entry] raises: CPython's
+/// `TypeError` for a value that is not callable.
+///
+/// The name is the type of the value's Python counterpart, read from the
+/// value's own type and not from a conversion of it, so a value the
+/// conversion refuses still names its type.
+pb.RaisedException _notCallableValue(Object? entry) => raisedException(
+  'TypeError',
+  "'${_rawTypeName(entry)}' object is not callable",
+  const {},
+);
+
+/// The CPython type name of the raw host value [value], as the binding
+/// names it in `'<type>' object is not callable`: the type of the value's
+/// Python counterpart, read from the value's own type, without converting
+/// the value.
+///
+/// A value of the value family names its own type ([_typeName]); an
+/// ordinary Dart value names the type it converts to; a value with no
+/// Python counterpart names its Dart type, as the conversion refusal
+/// does.
+String _rawTypeName(Object? value) => switch (value) {
+  null => 'NoneType',
+  // A byte list is a list, so it is named before the list arm.
+  final Uint8List _ => 'bytes',
+  final BigInt _ => 'int',
+  final List<Object?> _ => 'list',
+  final Map<Object?, Object?> _ => 'dict',
+  final Set<Object?> _ => 'set',
+  final MontyValue monty => _typeName(monty),
+  _ => _dartTypeNames[value.runtimeType] ?? '${value.runtimeType}',
+};
+
+/// The CPython type each plain Dart value stands for, by CPython name.
+const Map<Type, String> _dartTypeNames = {
+  bool: 'bool',
+  int: 'int',
+  double: 'float',
+  String: 'str',
+  DateTime: 'datetime.datetime',
+};
+
 /// The host type each plain [MontyValue] stands for, by CPython name.
 const Map<Type, String> _hostTypeNames = {
   MontyNone: 'NoneType',
@@ -1013,10 +1870,13 @@ const Map<Type, String> _hostTypeNames = {
   MontyTimeZone: 'datetime.timezone',
   MontyEllipsis: 'ellipsis',
   MontyNotImplemented: 'NotImplementedType',
+  MontyComplex: 'complex',
   // Values that decode upstream to the binding's own proxy classes.
   MontyFileHandle: 'pydantic_monty.MontyFileHandle',
   MontyClassProxy: 'pydantic_monty.MontyClassProxy',
+  MontyClassTypeProxy: 'pydantic_monty.MontyClassTypeProxy',
   MontyStdTypeProxy: 'pydantic_monty.MontyStdTypeProxy',
+  ExternalModule: 'pydantic_monty.ExternalModule',
 };
 
 /// `ResumeCall` declining [callId]'s OS call.
@@ -1026,6 +1886,10 @@ pb.ParentRequest _notHandled(int callId) =>
 /// `ResumeCall` raising [error] at [callId]'s call.
 pb.ParentRequest _failed(int callId, Object error) =>
     _resume(callId, pb.ExtFunctionResult(error: raisedFrom(error)));
+
+/// `ResumeCall` raising the Python exception [error] at [callId]'s call.
+pb.ParentRequest _raises(int callId, pb.RaisedException error) =>
+    _resume(callId, pb.ExtFunctionResult(error: error));
 
 /// `ResumeCall` answering [callId] with [value], a [MontyValue] or a host
 /// object's wrapper, registered in [objects].

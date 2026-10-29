@@ -28,6 +28,7 @@ export 'src/mount/os_access.dart' show OSAccess;
 export 'src/mount/stat_result.dart' show StatResult;
 export 'src/platform/monty_value.dart'
     show
+        ExternalModule,
         MontyBigInt,
         MontyBool,
         MontyBytes,

@@ -48,6 +48,13 @@ class WorkerMirrorTest(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp(prefix='worker-mirror-'))
         self.addCleanup(shutil.rmtree, self.tmp)
         mirror = json.loads((ROOT / MIRROR).read_text())
+        self.mirror = mirror
+        # The pin is the oracle: every version and tag a mutation uses comes
+        # from it, so the controls keep testing the mirror check when the
+        # upstream release moves on.
+        pin = json.loads((ROOT / mirror['pin']).read_text())
+        self.version = pin['version']
+        self.tag = pin['tag']
         paths = {MIRROR, mirror['pin'], mirror['worker_manifest'], mirror['worker_lock'],
                  mirror['upstream_lock']['local'], *(f['local'] for f in mirror['verbatim'])}
         paths |= {str(p.relative_to(ROOT)) for d in ('.cargo', 'native/.cargo', 'native/worker/.cargo')
@@ -77,21 +84,29 @@ class WorkerMirrorTest(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
     def test_patched_monty_proto_path_override(self) -> None:
-        # A [patch.crates-io] to local code that still reports 1.1.0.
+        # A [patch.crates-io] to local code that still reports the pinned
+        # version, so only the source override is caught.
         self.edit(MANIFEST, lambda t: t + '\n[patch.crates-io]\nmonty-proto = { path = "../proto" }\n')
-        self.edit(LOCK, lambda t: as_path_entry(t, 'monty-proto', '1.1.0'))
-        self.assert_fails('[patch]', 'monty-proto 1.1.0')
+        self.edit(LOCK, lambda t: as_path_entry(t, 'monty-proto', self.version))
+        self.assert_fails('[patch]', f'monty-proto {self.version}')
 
     def test_monty_proto_lock_entry_without_source(self) -> None:
         # The lock alone: a source-less monty-proto at the pinned version.
-        self.edit(LOCK, lambda t: as_path_entry(t, 'monty-proto', '1.1.0'))
-        self.assert_fails('monty-proto 1.1.0')
+        self.edit(LOCK, lambda t: as_path_entry(t, 'monty-proto', self.version))
+        self.assert_fails(f'monty-proto {self.version}')
 
     def test_monty_proto_checksum_differs(self) -> None:
-        # From crates.io, at 1.1.0, but not the published bytes.
-        self.edit(LOCK, lambda t: re.sub(r'(name = "monty-proto"\nversion = "1.1.0"\nsource = "[^"]*"\n'
-                                         r'checksum = ")[0-9a-f]{64}', r'\g<1>' + '0' * 64, t))
-        self.assert_fails('monty-proto 1.1.0 checksum')
+        # From crates.io, at the pinned version, but not the published bytes.
+        def zero_checksum(text: str) -> str:
+            entry = lock_entry(text, 'monty-proto')
+            block, count = re.subn(r'(checksum = ")[0-9a-f]{64}"',
+                                   r'\g<1>' + '0' * 64 + '"', entry.group(0))
+            if count != 1:
+                raise AssertionError(f'monty-proto: {count} checksums, expected exactly one')
+            return text[:entry.start()] + block + text[entry.end():]
+
+        self.edit(LOCK, zero_checksum)
+        self.assert_fails(f'monty-proto {self.version} checksum')
 
     def test_salsa_0_28_5_as_path_dependency(self) -> None:
         # The drift a fresh resolve produces, smuggled in as a path dependency.
@@ -100,14 +115,24 @@ class WorkerMirrorTest(unittest.TestCase):
         self.assert_fails("salsa: 'path'", 'salsa 0.28.5')
 
     def test_git_dependency(self) -> None:
-        # Still an exact `=1.1.0` requirement, so the version check alone passes.
-        self.edit(MANIFEST, lambda t: t.replace(
-            'monty-alloc = "=1.1.0"',
-            'monty-alloc = { version = "=1.1.0", git = "https://example.invalid/monty", tag = "v1.1.0" }', 1))
+        # Still an exact `={version}` requirement, so the version check alone
+        # passes and only the git source is caught.
+        original = f'monty-alloc = "={self.version}"'
+        replacement = (f'monty-alloc = {{ version = "={self.version}", '
+                       f'git = "https://example.invalid/monty", tag = "{self.tag}" }}')
+
+        def to_git(text: str) -> str:
+            count = text.count(original)
+            if count != 1:
+                raise AssertionError(f'{original!r}: {count} declarations, expected exactly one')
+            return text.replace(original, replacement, 1)
+
+        self.edit(MANIFEST, to_git)
         self.assert_fails("monty-alloc: 'git'")
 
     def test_replace_table(self) -> None:
-        self.edit(MANIFEST, lambda t: t + '\n[replace]\n"monty-types:1.1.0" = { path = "../types" }\n')
+        self.edit(MANIFEST, lambda t: t
+                  + f'\n[replace]\n"monty-types:{self.version}" = {{ path = "../types" }}\n')
         self.assert_fails('[replace]')
 
     def test_cargo_config_patch(self) -> None:

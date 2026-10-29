@@ -4,8 +4,8 @@
 # =============================================================================
 # lib/assets/dart_monty_core_worker.wasm (the O7 build: worker crate,
 # profile mixd, SDK wasm-opt -Os) is what every browser page downloads. Its
-# budget is 5.75 MB of gzip level 9 output. O7 measured 5.66 MB; the in-process
-# engine it is to replace ships at 5.39 MB.
+# budget is 6.25 MB of gzip level 9 output, and its floor is 2.875 MB. The
+# upstream 1.2.0 build measures 5.98 MB.
 #
 # The instrument is zlib's deflate at level 9 (Python's gzip module), the same
 # one the 5.66 figure was measured with. Dart's GZipCodec is NOT used: its zlib
@@ -20,7 +20,8 @@ set -uo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
 WASM=lib/assets/dart_monty_core_worker.wasm
-BUDGET=5750000
+BUDGET=6250000
+FLOOR=2875000
 
 if [ ! -s "$WASM" ]; then
   echo "FAIL: $WASM is missing or empty. Run: bash tool/prebuild.sh"
@@ -34,7 +35,7 @@ GZ=$(python3 -I -c 'import gzip,sys;print(len(gzip.compress(open(sys.argv[1],"rb
 RAW=$(wc -c < "$WASM" | tr -d ' ')
 
 # A floor as well: a truncated or placeholder module must not read as "small".
-if [ "$GZ" -lt $((BUDGET / 2)) ]; then
+if [ "$GZ" -lt "$FLOOR" ]; then
   echo "FAIL: $WASM is $GZ bytes gzipped, implausibly small for the worker."
   exit 1
 fi

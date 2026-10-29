@@ -514,11 +514,15 @@ void main() {
     });
 
     test('__call__ on an instance is refused by its policy', () async {
+      // Upstream 1.2.0 refuses the call with CPython's `TypeError`, not
+      // with an `AttributeError`, and it refuses it whatever the policy
+      // allows: whether the object is callable is the host's answer, and it
+      // comes before the policy is consulted
+      // (`up/crates/monty-python/python/pydantic_monty/class_instance.py:109`).
       final answer = await _host(objects).call(_call('__call__', _one));
-      expect(
-        _raised(answer).message,
-        "'Box' object has no attribute '__call__'",
-      );
+      final raised = _raised(answer);
+      expect(raised.excType, 'TypeError');
+      expect(raised.message, "'Box' object is not callable");
       expect(_ran, isEmpty);
     });
   });

@@ -89,5 +89,11 @@ ExternalResult? lookupOf(pb.ResumeNameLookup lookup) => switch (lookup
 ExternalException exceptionOf(pb.RaisedException raised) => ExternalException(
   raised.excType,
   raised.hasMessage() ? raised.message : null,
-  raised.hasData() ? payloadOf(raised.data)?.attributes ?? const {} : const {},
+  raised.hasData()
+      ? payloadOf(
+              raised.data,
+              raised.hasMessage() ? raised.message : null,
+            )?.attributes ??
+            const {}
+      : const {},
 );

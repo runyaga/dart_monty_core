@@ -7,6 +7,8 @@ import 'package:dart_monty_core/src/platform/monty_value.dart'
     show montyClassProxy, montyClassTypeProxy, montyStdTypeProxy;
 import 'package:dart_monty_core/src/worker/arena_reader.dart';
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
+import 'package:dart_monty_core/src/worker/host_objects.dart';
+import 'package:dart_monty_core/src/worker/monty_error.dart' show raisedError;
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:test/test.dart';
 
@@ -32,6 +34,25 @@ Matcher _refused(String fragment) => throwsA(
   ),
 );
 
+/// The refusal Python makes for a key it cannot hash: its own text,
+/// `TypeError: unhashable type: '<type>'`, on the [ArgumentError] the
+/// writer raises -- in the error's message, or in a [PythonRefusal]'s own
+/// Python message.
+Matcher _refusedUnhashable(String type) {
+  final text = "TypeError: unhashable type: '$type'";
+
+  return throwsA(
+    isA<ArgumentError>().having(
+      (e) => switch (e) {
+        final PythonRefusal p => '${p.excType}: ${p.text}',
+        _ => '${e.message}',
+      },
+      'refusal',
+      contains(text),
+    ),
+  );
+}
+
 const _classId = '0123abcd-0000-4000-8000-00000000cafe';
 
 MontyClassTypeProxy _class({Map<String, MontyValue> attrs = const {}}) =>
@@ -52,6 +73,26 @@ MontyClassProxy _instance(
   instanceId: '00000000-0000-4000-8000-0000000000$suffix',
   attrs: attrs,
 );
+
+/// A host object the writer sends: a class, and an instance of it.
+final class _HostBox {
+  const _HostBox(this.n);
+
+  final int n;
+}
+
+/// The class the wrappers below expose.
+const HostClass<_HostBox> _hostBoxClass = HostClass<_HostBox>('HostBox');
+
+const _hostClassId = '0123abcd-0000-4000-8000-0000000000c1';
+const _hostInstanceId = '0123abcd-0000-4000-8000-0000000000c2';
+
+/// The host class wrapper, as upstream's `ClassType`.
+ClassType<_HostBox> _hostType() => ClassType(_hostBoxClass, id: _hostClassId);
+
+/// The host instance wrapper, as upstream's `ClassInstance`.
+ClassInstance<_HostBox> _hostInstance(ClassType<_HostBox> type) =>
+    ClassInstance(const _HostBox(1), classType: type, id: _hostInstanceId);
 
 void main() {
   group('every kind the worker accepts round-trips', () {
@@ -857,5 +898,176 @@ void main() {
       final tried = parityWriter.tryAdd(null, parity: true);
       expect(itemAt(parityNodes, tried).hasNone(), isTrue);
     });
+  });
+
+  // A host-raised `tomllib.TOMLDecodeError` carries the same five attributes
+  // as a `json.JSONDecodeError`, so upstream maps it onto the same json arm;
+  // the control is the JSON host-exception coverage retained here.
+  test('host TOML exceptions encode JSON payload attributes', () {
+    const full = {
+      'msg': MontyString('Expecting value'),
+      'doc': MontyString('{"a": x}'),
+      'pos': MontyInt(6),
+      'lineno': MontyInt(1),
+      'colno': MontyInt(7),
+    };
+
+    // The JSON host-exception coverage is retained: the control encodes the
+    // json arm with the message the host gave it.
+    final json = raisedException('json.JSONDecodeError', 'm', full);
+    final jsonData = json.data;
+    expect(jsonData.hasJson(), isTrue);
+    expect(jsonData.json.msg, 'Expecting value');
+    expect(jsonData.json.doc, '{"a": x}');
+    expect(json.message, 'm');
+
+    // A TOMLDecodeError carries the same five attributes, so it emits the
+    // same json arm, with its own message beside the payload's `msg`.
+    final toml = raisedException('tomllib.TOMLDecodeError', 'm', full);
+    final tomlData = toml.data;
+    expect(tomlData.hasJson(), isTrue);
+    expect(tomlData.json.msg, 'Expecting value');
+    expect(tomlData.json.doc, '{"a": x}');
+    expect(toml.message, 'm');
+
+    // An exception of another type carries no payload, whatever its
+    // attributes are.
+    expect(raisedException('ValueError', 'm', full).hasData(), isFalse);
+
+    // A payload survives the reader only when the outer message is at least
+    // as long as the payload's `msg` (upstream's `sanitize_json_data`), so a
+    // round trip uses the message upstream formats for each exception.
+    final jsonCanonical = raisedException(
+      'json.JSONDecodeError',
+      'Expecting value: line 1 column 7 (char 6)',
+      full,
+    );
+    final jsonBack = raisedError(
+      pb.RaisedException.fromBuffer(jsonCanonical.writeToBuffer()),
+    ).exception;
+    expect(jsonBack.excType, 'json.JSONDecodeError');
+    expect(jsonBack.message, 'Expecting value: line 1 column 7 (char 6)');
+    expect(jsonBack.attributes, full);
+
+    const tomlFull = {
+      'msg': MontyString('Invalid value'),
+      'doc': MontyString('a = 1\nb = [1,,]'),
+      'pos': MontyInt(13),
+      'lineno': MontyInt(2),
+      'colno': MontyInt(8),
+    };
+    final tomlCanonical = raisedException(
+      'tomllib.TOMLDecodeError',
+      'Invalid value (at line 2, column 8)',
+      tomlFull,
+    );
+    final tomlBack = raisedError(
+      pb.RaisedException.fromBuffer(tomlCanonical.writeToBuffer()),
+    ).exception;
+    expect(tomlBack.excType, 'tomllib.TOMLDecodeError');
+    expect(tomlBack.message, 'Invalid value (at line 2, column 8)');
+    expect(tomlBack.attributes, tomlFull);
+
+    // A message shorter than the payload's `msg` loses the payload: the
+    // reader then rebuilds the exception as a plain `ValueError`.
+    for (final raised in [json, toml]) {
+      final short = raisedError(
+        pb.RaisedException.fromBuffer(raised.writeToBuffer()),
+      );
+      expect(short, isA<MontyRuntimeError>());
+      expect(short.exception.excType, 'ValueError');
+      expect(short.exception.message, 'm');
+      expect(short.exception.attributes, isEmpty);
+    }
+
+    // Unusable-attribute controls: a missing or mistyped attribute drops the
+    // arm, whatever the host type, so neither encodes a json arm.
+    for (final type in ['json.JSONDecodeError', 'tomllib.TOMLDecodeError']) {
+      expect(raisedException(type, 'm', const {}).hasData(), isFalse);
+      expect(
+        raisedException(type, 'm', {...full}..remove('colno')).hasData(),
+        isFalse,
+      );
+      expect(
+        raisedException(type, 'm', {
+          ...full,
+          'pos': const MontyString('6'),
+        }).hasData(),
+        isFalse,
+      );
+    }
+  });
+
+  // Upstream's wrappers are `@dataclass`es (monty 1.2.0,
+  // `crates/monty-python/python/pydantic_monty/class_instance.py`), so they
+  // carry no `__hash__` and Python cannot hash them: a dict key or a set
+  // member that is one is refused with `TypeError: unhashable type:
+  // 'ClassInstance'`. The Dart wrappers hash by identity (the
+  // `host-wrapper-identity-eq` divergence), so the writer must refuse them
+  // itself, before the wire, as upstream's encoder does.
+  test('arena inputs reject Python-unhashable host wrapper keys', () {
+    final type = _hostType();
+    final instance = _hostInstance(type);
+
+    // Each wrapper, as a dict key, a set member and a frozenset member,
+    // and inside a tuple key and a frozenset key.
+    final refused = <(MontyValue, String)>[
+      (MontyDict([(type, const MontyInt(1))]), 'ClassType'),
+      (MontySet([type]), 'ClassType'),
+      (MontyFrozenSet([type]), 'ClassType'),
+      (
+        MontyDict([
+          (MontyTuple([type]), const MontyInt(1)),
+        ]),
+        'ClassType',
+      ),
+      (
+        MontyDict([
+          (MontyFrozenSet([type]), const MontyInt(1)),
+        ]),
+        'ClassType',
+      ),
+      (MontyDict([(instance, const MontyInt(1))]), 'ClassInstance'),
+      (MontySet([instance]), 'ClassInstance'),
+      (MontyFrozenSet([instance]), 'ClassInstance'),
+      (
+        MontyDict([
+          (MontyTuple([instance]), const MontyInt(1)),
+        ]),
+        'ClassInstance',
+      ),
+      (
+        MontyDict([
+          (MontyFrozenSet([instance]), const MontyInt(1)),
+        ]),
+        'ClassInstance',
+      ),
+      (
+        MontySet([
+          MontyTuple([instance]),
+        ]),
+        'ClassInstance',
+      ),
+    ];
+    for (final (value, name) in refused) {
+      expect(
+        () => ArenaWriter(objects: HostObjects()).add(value),
+        _refusedUnhashable(name),
+        reason: name,
+      );
+    }
+
+    // The controls: the same wrappers as ordinary values still cross, and
+    // each registers in the session's registry as it crosses.
+    final objects = HostObjects();
+    final writer = ArenaWriter(objects: objects);
+    expect(() => writer.add(type), returnsNormally);
+    expect(() => writer.add(instance), returnsNormally);
+    expect(
+      () => writer.add(MontyDict([(const MontyInt(1), type)])),
+      returnsNormally,
+    );
+    expect(objects[type.id], same(type));
+    expect(objects[instance.id], same(instance));
   });
 }

@@ -33,6 +33,44 @@ const workerFixtureFunctions = <String>{
   'async_fail',
 };
 
+/// The functions the upstream `tools` module holds as its attributes
+/// (upstream's `make_tools_module`,
+/// `crates/monty-datatest/src/main.rs:591-623`).
+///
+/// These are the fixture functions and nothing else: a module the sandbox
+/// imports holds what upstream's holds, so `tools.add_ints(1, 2)` dispatches
+/// like the bare `add_ints(1, 2)` and no other name reaches the host
+/// through the module.
+const workerFixtureModuleFunctions = {
+  'add_ints',
+  'concat_strings',
+  'return_value',
+  'get_list',
+  'raise_error',
+  'async_call',
+  'async_fail',
+};
+
+/// The functions the upstream `tools.nested` module holds as its attributes
+/// (upstream's `make_tools_module`,
+/// `crates/monty-datatest/src/main.rs:591-623`).
+const workerFixtureNestedFunctions = {'return_value'};
+
+/// The upstream tools that are asynchronous: they hand the sandbox a future
+/// to await (upstream's `DispatchResult::Async`, against the `Sync` of the
+/// others).
+const workerFixtureAsyncTools = {'async_call', 'async_fail'};
+
+/// The upstream `tools` module's identity: `MontyUuid::from_u128(5)`.
+const int workerFixtureModuleId = 5;
+
+/// The upstream `tools.nested` module's identity:
+/// `MontyUuid::from_u128(6)`.
+const int workerFixtureNestedModuleId = 6;
+
+/// The upstream `tools.nested.VERSION`: 7.
+const int workerFixtureNestedVersion = 7;
+
 /// The constants upstream's name lookup resolves (`run_iter_loop`'s
 /// `NameLookup` arm).
 const Map<String, MontyValue> workerFixtureConstants = {
@@ -310,6 +348,12 @@ final class WorkerFixtureRegistry {
     final cls = fixture.className;
     final isPoint = cls == 'Point';
 
+    // The host decides callability; none of its fixtures is callable
+    // (upstream's `(_, "__call__")` arm, crates/monty-datatest/src/main.rs).
+    if (method == '__call__') {
+      return HostRaise('TypeError', "'$cls' object is not callable");
+    }
+
     if ((isPoint || cls == 'MutablePoint') && method == 'sum') {
       return HostReturn(MontyInt(fixture.intAttr('x') + fixture.intAttr('y')));
     }
@@ -358,6 +402,125 @@ final class WorkerFixtureRegistry {
     );
   }
 }
+
+/// The host module upstream's datatest harness supplies: `tools`, with the
+/// submodule `tools.nested`.
+///
+/// Upstream builds the module in `make_tools_module`
+/// (`crates/monty-datatest/src/main.rs:591-623`): the fixture functions as
+/// the module's attributes, so that a call through the module dispatches
+/// like a bare call, and the submodule beside them. The identities are
+/// upstream's: `MontyUuid::from_u128(5)` for the module and `from_u128(6)`
+/// for the submodule, whose `VERSION` is 7.
+///
+/// The module's functions dispatch through the [registry] the harness
+/// answers the bare calls with, so a call through the module and a bare
+/// call are one call.
+final class WorkerFixtureTools {
+  /// Creates the module the calls of [registry] answer.
+  factory WorkerFixtureTools(WorkerFixtureRegistry registry) {
+    final nested = ExternalModule(
+      {
+        for (final name in workerFixtureNestedFunctions)
+          name: _toolFunction(registry, name),
+        'VERSION': workerFixtureNestedVersion,
+      },
+      id: _uuid(workerFixtureNestedModuleId),
+    );
+
+    return WorkerFixtureTools._(
+      registry,
+      ExternalModule(
+        {
+          for (final name in workerFixtureModuleFunctions)
+            name: _toolFunction(registry, name),
+          'nested': nested,
+        },
+        id: _uuid(workerFixtureModuleId),
+      ),
+    );
+  }
+
+  const WorkerFixtureTools._(this.registry, this.module);
+
+  /// The registry the module's functions dispatch through.
+  final WorkerFixtureRegistry registry;
+
+  /// The module as the sandbox imports it: its fixture functions, and the
+  /// submodule `tools.nested` beside them.
+  final ExternalModule module;
+
+  /// The fixture tool the qualified call [name] names, or null when the
+  /// name is not one of the module's own.
+  ///
+  /// The qualified names are the module's path and the function's name:
+  /// `tools.add_ints` and `tools.nested.return_value`. A dotted name that
+  /// is not one of them names nothing: the lookup is never consulted for a
+  /// dotted name, so such a call is not found.
+  String? toolNamed(String name) {
+    for (final tool in workerFixtureModuleFunctions) {
+      if (name == 'tools.$tool') return tool;
+    }
+    for (final tool in workerFixtureNestedFunctions) {
+      if (name == 'tools.nested.$tool') return tool;
+    }
+
+    return null;
+  }
+}
+
+/// The module's attribute for the tool [name]: a host function that
+/// dispatches through [registry], as the module's own function dispatches
+/// upstream.
+///
+/// An asynchronous tool is a coroutine, as upstream's are: it hands the
+/// sandbox a future to await, where the others answer at once.
+MontyHostFunction _toolFunction(
+  WorkerFixtureRegistry registry,
+  String name,
+) {
+  FutureOr<MontyValue> answer(
+    List<MontyValue> args,
+    Map<String, MontyValue> kwargs,
+  ) => _toolAnswer(registry, name, args, kwargs);
+
+  return MontyHostFunction(
+    name,
+    workerFixtureAsyncTools.contains(name) ? coroutine(answer) : answer,
+  );
+}
+
+/// The tool [name]'s answer to the call [args]: the registry's outcome, as
+/// the sandbox sees it.
+///
+/// A pending outcome is a future the sandbox awaits; it settles with the
+/// outcome the registry names.
+FutureOr<MontyValue> _toolAnswer(
+  WorkerFixtureRegistry registry,
+  String name,
+  List<MontyValue> args,
+  Map<String, MontyValue> kwargs,
+) => switch (registry.call(name, args, kwargs)) {
+  HostReturn(:final value) => value,
+  HostRaise(:final excType, :final message) => throw ExternalException(
+    excType,
+    message,
+  ),
+  HostPending(:final settled) => _settles(settled),
+};
+
+/// The future a pending outcome settles with: the value it returns, or the
+/// exception it raises.
+Future<MontyValue> _settles(HostOutcome settled) => Future.sync(
+  () => switch (settled) {
+    HostReturn(:final value) => value,
+    HostRaise(:final excType, :final message) => throw ExternalException(
+      excType,
+      message,
+    ),
+    HostPending() => throw StateError('a pending answer is not settled'),
+  },
+);
 
 // ---------------------------------------------------------------------------
 // The OS handler
@@ -418,6 +581,71 @@ String? _parent(String path) {
   if (i < 0) return null;
 
   return i == 0 ? (path == '/' ? null : '/') : path.substring(0, i);
+}
+
+/// [path] without its trailing slashes, as upstream's `trim_end_matches('/')`
+/// leaves it: `/` itself becomes empty.
+String _trimTrailingSlashes(String path) {
+  var end = path.length;
+  while (end > 0 && path.codeUnitAt(end - 1) == 0x2f) {
+    end--;
+  }
+
+  return path.substring(0, end);
+}
+
+/// [path] as upstream's `normalize_virtual_path` normalizes it
+/// (crates/monty-types/src/virtual_path.rs): an absolute POSIX path with the
+/// empty and `.` components dropped and `..` resolved, stopping at `/` — a
+/// `..` at the root leaves the root. A relative path is rooted at `/`, as
+/// the virtual namespace is; this never reads the host filesystem.
+String _normalizeVirtualPath(String path) {
+  final parts = <String>[];
+  for (final segment in path.split('/')) {
+    switch (segment) {
+      case '' || '.':
+        break;
+      case '..':
+        if (parts.isNotEmpty) parts.removeLast();
+      default:
+        parts.add(segment);
+    }
+  }
+
+  return parts.isEmpty ? '/' : '/${parts.join('/')}';
+}
+
+/// The root of a scan as the request spelled it. Upstream's `ScanArgs.path`
+/// is the path as it was written, so it crosses as a string; a `MontyPath`
+/// has normalized the spelling away (`MontyPath('')` arrives as `.`), and
+/// either way the spelling is the one a scan's errors name.
+String _scanRoot(List<MontyValue> args) => switch (args) {
+  [MontyString(:final value) || MontyPath(:final value), ...] => value,
+  final other => throw StateError('Path.scan requires a path, got $other'),
+};
+
+/// The lookup root of a scan of the mounted tree: [root] normalized
+/// lexically by `_normalizeVirtualPath`, and declined when it names anywhere
+/// but the mount at `/mnt` — the mount table routes on the normalized path,
+/// and a path no mount covers is handed back to the host unanswered
+/// (crates/monty-fs/src/mount_table.rs).
+String _mountedScanRoot(String root) {
+  final normalized = _normalizeVirtualPath(root);
+  if (normalized != '/mnt' && !normalized.startsWith('/mnt/')) {
+    throw const OsCallNotHandledException();
+  }
+
+  return normalized;
+}
+
+/// The lookup root of a scan of the virtual tree: the trailing slashes alone
+/// are trimmed — the root itself stays `/` — and every other spelling is
+/// looked up as it was written (`VirtualScanSource::absolute`,
+/// crates/monty-datatest/src/main.rs).
+String _virtualScanRoot(String root) {
+  final trimmed = _trimTrailingSlashes(root);
+
+  return trimmed.isEmpty ? '/' : trimmed;
 }
 
 /// The environment upstream's handler reports.
@@ -529,7 +757,7 @@ final class WorkerFixtureOs {
         final file = _files[p];
         if (file == null) throw _noFile(p);
         try {
-          return MontyString(utf8.decode(file.$1));
+          return MontyString(_decodeText(file.$1));
         } on FormatException catch (e) {
           throw ExternalException(
             'UnicodeDecodeError',
@@ -619,10 +847,128 @@ final class WorkerFixtureOs {
         return const MontyNone();
       case 'Path.rename':
         return _rename(path(0), path(1));
+      case 'Path.scan':
+        return _scan(_scanRoot(args), kwargs);
     }
 
     throw const OsCallNotHandledException();
   }
+
+  /// Upstream's `Path.scan` (monty v1.2.0, `crates/monty-types/src/scan.rs`,
+  /// driven by `crates/monty-datatest/src/main.rs:1131`): the tree below the
+  /// root, as the tuples `(path, is_dir, is_file, is_symlink)` whose paths are
+  /// relative to the root and whose root is the empty path.
+  ///
+  /// All five keywords upstream's `ScanArgs` takes are accepted. Only
+  /// `max_depth` and `follow_symlinks` shape the reply: the reply is the
+  /// TREE, never the matches, because upstream says a host may ignore the
+  /// pattern and answer with everything within `max_depth` -- the sandbox
+  /// runs the selector over the reply itself, so the pattern is a pruning
+  /// hint and not a contract. `case_sensitive` and `recurse_symlinks` matter
+  /// only to a host that prunes with the pattern, so they change nothing
+  /// here.
+  ///
+  /// A root that is not there raises a `FileNotFoundError` naming it, spelled
+  /// as the root was spelled. A root that is a file is described, not listed:
+  /// it is the only entry of the reply.
+  ///
+  /// The root is normalized for the lookup alone, each mode as its upstream
+  /// original does it (`_mountedScanRoot` and `_virtualScanRoot`): the
+  /// traversal below runs from the normalized root, and nothing else about
+  /// an entry changes. The raw spelling is kept for the failures: the empty
+  /// root -- `''` as written, `.` as an empty `MontyPath` spells it -- is
+  /// nowhere, whatever the tree holds, in either mode.
+  MontyValue _scan(String root, Map<String, MontyValue> kwargs) {
+    _checkName(root);
+    // The empty root fails before either mode normalizes it: it is not
+    // anywhere a tree could be, in either mode, whatever the tree holds.
+    if (root.isEmpty || root == '.') throw _notFound(root);
+    final lookupRoot = real ? _mountedScanRoot(root) : _virtualScanRoot(root);
+    final rootIsDir = _isDir(lookupRoot);
+    final rootIsFile = _files.containsKey(lookupRoot);
+    if (!rootIsDir && !rootIsFile) throw _notFound(root);
+
+    return MontyList([
+      _scanEntry('', isDir: rootIsDir, isFile: rootIsFile),
+      if (rootIsDir)
+        ..._scanEntries(
+          lookupRoot,
+          maxDepth: _scanMaxDepth(kwargs['max_depth']),
+          followSymlinks: _scanFlag(kwargs['follow_symlinks']),
+        ),
+    ]);
+  }
+
+  /// The entries below [root], as the tuples of a scan reply.
+  ///
+  /// Only what the root reaches is listed: a directory that is not there has
+  /// no children, so a subtree moved under one is not reached. The root is
+  /// listed at depth 0, so `max_depth` 0 is the root alone and 1 its
+  /// children.
+  List<MontyValue> _scanEntries(
+    String root, {
+    required int? maxDepth,
+    required bool followSymlinks,
+  }) {
+    final entries = <MontyValue>[];
+    final pending = [(root, 0)];
+    while (pending.isNotEmpty) {
+      final (dir, depth) = pending.removeLast();
+      if (maxDepth != null && depth >= maxDepth) continue;
+      for (final child in _children(dir)) {
+        final childIsDir = _isDir(child);
+        entries.add(
+          _scanEntry(
+            _scanRelative(root, child),
+            isDir: childIsDir,
+            isFile: _files.containsKey(child),
+          ),
+        );
+        // A symlinked directory is descended into only when the call says so.
+        // The fixture tree holds no symlink, so both values report the same
+        // tree.
+        if (childIsDir && (followSymlinks || !_isSymlink(child))) {
+          pending.add((child, depth + 1));
+        }
+      }
+    }
+
+    return entries;
+  }
+
+  /// One entry of a scan reply: its path relative to the root, and what it
+  /// is. An entry of this tree is never a symlink, as `Path.is_symlink` says.
+  MontyValue _scanEntry(
+    String path, {
+    required bool isDir,
+    required bool isFile,
+  }) => MontyTuple([
+    MontyString(path),
+    MontyBool(isDir),
+    MontyBool(isFile),
+    const MontyBool(false),
+  ]);
+
+  /// [path] as it is spelled relative to the scan root [root].
+  String _scanRelative(String root, String path) =>
+      root == '/' ? path.substring(1) : path.substring(root.length + 1);
+
+  /// Whether [path] is a symbolic link: the fixture tree holds none, so the
+  /// flag of every entry is false and `recurse_symlinks` changes nothing.
+  bool _isSymlink(String path) => false;
+
+  /// The `max_depth` keyword: absent or `None` means the whole tree, and a
+  /// negative depth is the root alone, as upstream's depth is a `u32`.
+  int? _scanMaxDepth(MontyValue? keyword) => switch (keyword) {
+    MontyInt(:final value) => value < 0 ? 0 : value,
+    _ => null,
+  };
+
+  /// A boolean keyword: absent or `None` means false.
+  bool _scanFlag(MontyValue? keyword) => switch (keyword) {
+    MontyBool(:final value) => value,
+    _ => false,
+  };
 
   /// The paths directly inside directory [p].
   Set<String> _children(String p) => {
@@ -674,6 +1020,18 @@ final class WorkerFixtureOs {
       ..addAll(dirs.map(moved));
 
     return const MontyNone();
+  }
+
+  /// The file's text: UTF-8, with a leading byte order mark kept — Dart's
+  /// decoder eats it and Python's `read_text` does not, so it goes back on,
+  /// the same compensation `OSAccess`'s text read makes.
+  String _decodeText(Uint8List bytes) {
+    final decoded = utf8.decode(bytes);
+
+    return switch (bytes) {
+      [0xEF, 0xBB, 0xBF, ...] => '\uFEFF$decoded',
+      _ => decoded,
+    };
   }
 
   /// CPython's `UnicodeDecodeError` text for the byte at [offset] that

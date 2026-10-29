@@ -5,23 +5,23 @@
   "upstream_lock": {
     "upstream": "Cargo.lock",
     "local": "tool/upstream/monty-Cargo.lock",
-    "sha256": "09b74d49840851a0ec35502336bd290cf01bc400b6e22bbe9f8c33bde2be322a"
+    "sha256": "e9843e6b1da648aeedf663dec4aa737dda78bda641b082fe05da93b390afd62a"
   },
   "pinned_crates": {
-    "monty": "c695cb21c9535024e263084451d767d965f69ef65658f24f3a7507763680b81e",
-    "monty-alloc": "5ab6540f9aabb557f25a7b71d571ae55ecf9ba2c9f2e6c7dbe329e422faf1195",
-    "monty-macros": "ff5176d386cd79f7e181c703e10314375ffd3d550285da672da9ae8e5952b751",
-    "monty-proto": "f62ede58a8426cfcd96ef1a8222579980c771f54ee63b5c20dabcfa7d3d72f85",
-    "monty-type-checking": "58e6efead36b18c3e8c859b28338d608fcd704a82d78b14c558985bf06aa9c51",
-    "monty-types": "d80ebea7f98c1e7ad4075c111e03c59ef80d18abd813f1fad8984f8c4827d95d",
-    "monty-typeshed": "07a30851142ad0a76ea54df919514fc6a12571b963e1677853be22d4249a0781",
-    "monty-fs": "2e1edf72887e131762ef991f67d4a8fd126554460e0ea8b0dec8a068cf7cf167"
+    "monty": "c7a88714723c0f3a9f162f363f345c92344eb1d26c695047388de453a0424ebc",
+    "monty-alloc": "f0409ec91836694fc57ff8c1a340678cf7853a94cee5b2ef15d734cee21c2b11",
+    "monty-macros": "82ae4a49b9211b7ca43b124f95becb0c286af6df49421f5f99c65cd6a6f51f9e",
+    "monty-proto": "831fb817f8b462cbfa2abc4ca072fcac7f937a0cc19f83527358198c3b0fb8a0",
+    "monty-type-checking": "b7f5a38f6c62d08a80db6d81b34edcae0897dcfc0eeba333369962747d190df8",
+    "monty-types": "09956030c0cd340d5db97b88fd3744f57ed304083093a592ab2a29a3dcab88cb",
+    "monty-typeshed": "7fc2079654d8d7574deb72c526e2b132c4fa7550ffc62df8b9ea1dad26d44797",
+    "monty-fs": "03daf656e21e09bf2bfcca964c6e68ce8eb95237ff3fd7f763be07877246cccb"
   },
   "verbatim": [
     {
       "upstream": "crates/monty-runtime/src/subprocess.rs",
       "local": "native/worker/upstream/subprocess.rs",
-      "sha256": "77a67c871b4cd8985496d0b86d60372e5d5a98e08c0b2ffcf5d383cf050fc8fe"
+      "sha256": "28423dfc6eed1b2ea38643069bf036cdddbc088a0207d7af38bafb03b160fa12"
     }
   ],
   "watched": [
@@ -39,7 +39,7 @@
     },
     {
       "upstream": "crates/monty-wasm-runtime/src/lib.rs",
-      "sha256": "5834e5ba6461c6d903c442dfdbf82c14bb4bde68cb9bc426a8f605fd2424d95a",
+      "sha256": "646c898853f147bfe08b5bef9bdc67ee9b5cc77529aa4f8ac96183a0672a9a68",
       "mirrored_in": "native/worker/src/wasm.rs",
       "why": "wasm turn loop: warm-up, allocator re-arm, refused arm becomes FatalError"
     },
@@ -57,7 +57,7 @@
     },
     {
       "upstream": "crates/monty-types/src/resource.rs",
-      "sha256": "9b78b1926af8764151c544a0162d7db7e437163789f9a38869a9fbcbaaf0d48d",
+      "sha256": "c2eb0a2a0ae603104f02d7f28c18ff7e605f72dda09db726b0195dbcd85f4bb0",
       "mirrored_in": "the Dart process channel",
       "why": "OOM_EXIT_CODE (65)"
     },
@@ -69,7 +69,7 @@
     },
     {
       "upstream": "crates/monty-proto/src/lib.rs",
-      "sha256": "f41aa6a71afd7ee2335dc1909f5a9b5872dbcfef1c227a9302245588df118a9a",
+      "sha256": "997cfcab317f3895ed56a546942be8c1bbecb4bff49f019c8c2d4bbc0a01ed3e",
       "mirrored_in": "the Dart driver",
       "why": "PROTOCOL_VERSION / MIN_SUPPORTED_PROTOCOL_VERSION"
     },
@@ -81,7 +81,7 @@
     },
     {
       "upstream": "crates/monty-proto/proto/monty/v1/monty.proto",
-      "sha256": "ad0b15ebd50e7813ce090808bea986107d1a74bf8246c2523ba9ccc4cbab3238",
+      "sha256": "12e6ea4e04d9dd0b134759c03666f1ce4caf53771b7ac7d04861a1b0285e330e",
       "mirrored_in": "the generated Dart protobuf",
       "why": "schema the Dart bindings are generated from"
     }

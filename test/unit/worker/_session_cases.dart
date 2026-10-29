@@ -589,30 +589,45 @@ void sessionSurfacePoolTests(String label, WithPool withPool) {
       },
     );
 
-    test('a feed the type check rejects does not adopt its cwd '
-        '(upstream: / then /a)', () async {
+    // Measured on upstream pydantic-monty 1.2.0: the directory a feed
+    // carries is taken before its type check runs, so a feed the type
+    // check rejects adopts its cwd all the same. In one checkout with
+    // type_check=True, 1.2.0 answers '/q' then '/b' for the two rejected
+    // feeds below; 1.1.0 answered '/' then '/a', keeping the directory of
+    // the last feed that was not rejected.
+    test('a feed the type check rejects adopts its cwd '
+        '(upstream 1.2.0: /q then /b)', () async {
       await withPool((pool) async {
         final s = await pool.checkout(typeCheck: true);
-        final rejected = throwsA(isA<MontyTypingError>());
-        await expectLater(
-          s.feedRun('x: int = "a"', cwd: '/q', printCallback: _ignore),
-          rejected,
-        );
-        expect(
-          await s.feedRun('import os\nos.getcwd()', printCallback: _ignore),
-          const MontyString('/'),
-        );
-        // A directory a feed adopted is kept past a rejected one.
-        await s.feedRun('1', cwd: '/a', printCallback: _ignore);
-        await expectLater(
-          s.feedRun('x: int = "b"', cwd: '/b', printCallback: _ignore),
-          rejected,
-        );
-        expect(
-          await s.feedRun('import os as o\no.getcwd()', printCallback: _ignore),
-          const MontyString('/a'),
-        );
-        await s.close();
+        try {
+          final rejected = throwsA(isA<MontyTypingError>());
+          await expectLater(
+            s.feedRun('x: int = "a"', cwd: '/q', printCallback: _ignore),
+            rejected,
+          );
+          expect(
+            await s.feedRun(
+              'import os\nos.getcwd()',
+              printCallback: _ignore,
+            ),
+            const MontyString('/q'),
+          );
+          // A directory a feed adopted is taken past a rejected one.
+          await s.feedRun('1', cwd: '/a', printCallback: _ignore);
+          await expectLater(
+            s.feedRun('x: int = "b"', cwd: '/b', printCallback: _ignore),
+            rejected,
+          );
+          expect(
+            await s.feedRun(
+              'import os as o\no.getcwd()',
+              printCallback: _ignore,
+            ),
+            const MontyString('/b'),
+          );
+        } finally {
+          await s.close();
+        }
       });
     });
   });

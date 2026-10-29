@@ -49,7 +49,7 @@ concurrency:
 # The dart_monty_parity commit the `parity` and `parity-e0` jobs run (one
 # pin for both). A change meant to move parity bumps it in the same PR.
 env:
-  PARITY_PIN: ed4432a7a1ba62bfd6240fc772932515e799ffcf
+  PARITY_PIN: 7bfc6c17a686e52473a5eba81d84f53d82c97c61
 
 # Read-only. No job posts checks or comments; a job that needs more grants it
 # on itself (tool/check_workflow_tokens.py rejects writes here).
@@ -217,7 +217,7 @@ jobs:
           # exceptions and the base-ref rule, on recorded dcm reports (no dcm).
           run bash tool/metrics_ratchet.sh --self-test
           run bash tool/check_version_pin.sh
-          # The upstream reference pin (pydantic/monty 1.1.0): shape only here;
+          # The upstream reference pin (pydantic/monty 1.2.0): shape only here;
           # the `upstream-pin` job below fetches and installs it.
           run python3 -I tool/check_upstream_pin.py
           # The frozen capability manifest (187 rows, 185 in scope): schema,
@@ -330,14 +330,14 @@ jobs:
   # ---------------------------------------------------------------------------
   # The upstream reference pin, verified against its sources
   # ---------------------------------------------------------------------------
-  # Every parity number is measured against pydantic/monty 1.1.0 (the oracle),
+  # Every parity number is measured against pydantic/monty 1.2.0 (the oracle),
   # so the pin is checked, not asserted: the tag must still resolve to the
   # recorded commit, the test_cases corpus and limitations pages must hash to
   # the recorded git trees, and pydantic-monty must install with
   # --require-hashes and evaluate `1 + 1` through its own worker. Network-bound,
   # so it is its own job rather than a step of the source-only gate.
   upstream-pin:
-    name: Upstream pin (pydantic/monty 1.1.0)
+    name: Upstream pin (pydantic/monty 1.2.0)
     needs: [changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
@@ -685,25 +685,23 @@ jobs:
       # accepted trade.
       - name: Test (JIT, unit only)
         # The exit-79 tolerance is GONE. It said "no tests found is acceptable
-        # until unit tests exist"; 457 of them exist, so all it could do now was
-        # turn a runner that registered nothing into a green tick -- the
+        # until unit tests exist"; 3968 of them exist, so all it could do now
+        # was turn a runner that registered nothing into a green tick -- the
         # skip-but-green shape this repo has already paid for once (8dbdd59,
         # "646 of 1593 registered tests" asserting nothing). A floor on the test
         # count replaces it: raise the floor when the suite grows, never lower
         # it to make a run pass.
         #
-        # RAISED 400 -> 700 on 2026-09-17. The 400 was set against the 457
-        # tests that existed then; the suite is now 753, so the floor had 353
-        # tests of slack — a third of the suite could have vanished silently
-        # while this step stayed green. Every other floor in this file sits
-        # within ~10% of its observed count. Following this comment's own
-        # instruction, late.
+        # The floor is 3900 against the 3968 unit tests measured here: 68
+        # tests of slack, so a suite that quietly lost 69 of them fails this
+        # step instead of going green. Every floor in this file is set from a
+        # measured count.
         run: |
           set -o pipefail
           dart test --exclude-tags=integration,ladder,worker \
             --coverage=coverage 2>&1 | tee /tmp/unit-test.log
-          # Measured on main 81d96ec: 2592; with the T-values tests 2694.
-          bash tool/assert_test_count.sh /tmp/unit-test.log 3211 unit
+          # Measured on this branch: 3968 unit tests.
+          bash tool/assert_test_count.sh /tmp/unit-test.log 3900 unit
       - name: Generate LCOV
         run: |
           # `dart test --coverage=coverage` writes coverage/test/**/*.json, NOT
@@ -777,8 +775,9 @@ jobs:
   # `test` job it ran after the JIT step and held `coverage-merge` back behind
   # `worker-rust`: it was 552 s of that job's 718 s median.
   #
-  # The floors were one number for both compilers (6212 over the two runs).
-  # They are split in half so their sum is unchanged; observed 3210 and 3206.
+  # The floors are one number for both compilers, so a compiler that loses
+  # tests fails like the other does. Measured on this branch: 3715 on dart2js
+  # and 3711 on dart2wasm, against a floor of 3650 each.
   test-web-unit:
     name: Dart test (web unit, ${{ matrix.compiler }})
     needs: [changes]
@@ -790,9 +789,9 @@ jobs:
       matrix:
         include:
           - compiler: dart2js
-            floor: 3144
+            floor: 3650
           - compiler: dart2wasm
-            floor: 3144
+            floor: 3650
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -976,8 +975,12 @@ jobs:
   # Its own cargo workspace and Cargo.lock, so its own cache, keyed on that lock;
   # this job is that key's one writer.
   # One cargo call builds the executable and the cdylib (two fat-LTO links);
-  # the smoke test runs against that same release executable. The wasm module
-  # is not shipped yet; it is built and driven through its dmw_* exports.
+  # the smoke test runs against that same release executable. The build goes
+  # through tool/build_worker.sh, which copies both binaries to
+  # lib/src/bin/linux-x64/ and writes the stamp that records every build
+  # input beside them: the three files the artefact carries and the consumer
+  # checks. The wasm module is not shipped yet; it is built and driven
+  # through its dmw_* exports.
   worker-rust:
     name: Worker crate (fmt + clippy + build + smoke + deny)
     needs: [changes]
@@ -1009,8 +1012,15 @@ jobs:
         run: cargo clippy --locked --lib --target wasm32-wasip1 -- -D warnings
       - name: Worker build and freshness contract
         run: python3 ../../test/tool/build_worker_test.py
-      - name: Build executable + cdylib
-        run: cargo build --locked --release --lib --bins
+      # The build goes through tool/build_worker.sh, so the binaries the
+      # artefact carries are the ones it stamped: one cargo call for the
+      # executable and the cdylib, then both are copied to
+      # lib/src/bin/linux-x64/ with the stamp beside them. The stamp records
+      # every build input -- the sources, the Cargo configuration and the
+      # compiler -- so the consumer can check it against its own tree.
+      - name: Build executable + cdylib, and stamp them
+        working-directory: ${{ github.workspace }}
+        run: bash tool/build_worker.sh
       - name: Smoke test (Configure, Feed 1 + 1, Shutdown)
         run: cargo test --locked --release
       # Advisories, licences and sources over the worker's dependency graph
@@ -1033,9 +1043,13 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: dart_monty_worker-linux-x64
+          # The three files tool/build_worker.sh writes: the executable, the
+          # mount library and the stamp. The consumer checks the stamp
+          # against its own sources and toolchain.
           path: |
-            native/worker/target/release/dart_monty_worker
-            native/worker/target/release/libdart_monty_worker.so
+            lib/src/bin/linux-x64/dart_monty_worker
+            lib/src/bin/linux-x64/libdart_monty_worker.so
+            lib/src/bin/linux-x64/dart_monty_worker.stamp
           if-no-files-found: error
           retention-days: 7
 
@@ -1044,19 +1058,30 @@ jobs:
   # ---------------------------------------------------------------------------
   # The `worker` tag is skipped by default (dart_test.yaml), so this is the one
   # job that runs it. It tests the executable worker-rust built and uploaded,
-  # not a second build: the tested binary is the shipped one. Its coverage is
-  # merged in coverage-merge, since no other suite loads lib/src/worker/
-  # process_channel.dart.
+  # not a second build: the tested binary is the shipped one, and the stamp
+  # that came with it is checked against this tree's sources and toolchain
+  # (tool/build_worker.sh --check). Its coverage is merged in coverage-merge,
+  # since no other suite loads lib/src/worker/process_channel.dart.
   test-worker-vm:
     name: Worker channel tests (VM)
     needs: [changes, worker-rust]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # The Rust toolchain the stamp was written against is installed here, so
+    # this budget covers that install as well as the suite.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+      # The stamp records `rustc -vV`, so the check that reads it back has to
+      # run against the compiler that built the worker: the same action and
+      # the same version as the worker-rust job that wrote the stamp.
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+          targets: wasm32-wasip1
       - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
         with:
           sdk: 3.13.5
@@ -1066,30 +1091,28 @@ jobs:
           key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
           restore-keys: pub-${{ runner.os }}-
       - run: dart pub get
-      - name: Download the worker executable and mount library
+      - name: Download the worker executable, mount library and stamp
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: dart_monty_worker-linux-x64
           path: lib/src/bin/linux-x64
-      # Where tool/build_worker.sh puts it and worker_locator.dart looks.
+      # Where tool/build_worker.sh puts them and worker_locator.dart looks.
       # Artifacts do not keep the executable bit.
       - run: |
           chmod +x lib/src/bin/linux-x64/dart_monty_worker
           test -x lib/src/bin/linux-x64/dart_monty_worker
           test -s lib/src/bin/linux-x64/libdart_monty_worker.so
+          test -s lib/src/bin/linux-x64/dart_monty_worker.stamp
       - name: Test (worker tag)
-        # Floor under the 431 tests registered with the session-surface
-        # oracle cases (C5-s); 177 once the session's failure
-        # gates joined (11 of them; 165 with the session-settings oracle
-        # cases, 106 with the pool-session tests, 95 with the display cases,
-        # 36 when this job was added). The path is
-        # load-bearing: without it every suite in test/ loads, the wasm ones fail
-        # to, and each skipped suite writes an empty hitmap.
+        # Floor under the 1039 tests this job runs against the real worker,
+        # measured on this branch. The path is load-bearing: without it every
+        # suite in test/ loads, the wasm ones fail to, and each skipped suite
+        # writes an empty hitmap.
         run: |
           set -o pipefail
           dart test test/integration/worker test/contract/contract_worker_test.dart -p vm --tags=worker \
             --coverage=coverage-worker 2>&1 | tee /tmp/worker-test.log
-          bash tool/assert_test_count.sh /tmp/worker-test.log 614 worker
+          bash tool/assert_test_count.sh /tmp/worker-test.log 1000 worker
       - name: Generate worker LCOV
         run: |
           shopt -s globstar nullglob
@@ -1189,9 +1212,9 @@ jobs:
         run: bash tool/test_worker_web.sh --compiler dart2wasm
 
   # ---------------------------------------------------------------------------
-  # The upstream 1.1.0 corpus on the worker, and pool crash recovery
+  # The upstream 1.2.0 corpus on the worker, and pool crash recovery
   # ---------------------------------------------------------------------------
-  # Runs upstream's 643 `test_cases` through the pool session, one session per
+  # Runs upstream's 695 `test_cases` through the pool session, one session per
   # fixture, judged by the strict adjudicator against each file's own
   # directives. Every file the worker fails is listed in the manifest
   # (packages/monty_conformance/lib/src/worker_corpus_manifest.dart) with a
