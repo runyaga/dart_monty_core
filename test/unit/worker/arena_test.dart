@@ -631,13 +631,14 @@ void main() {
       }, id: _pkgId);
 
       // The import graph, post-order: a name leaf and a value for each
-      // public attr, the nested module a node of its own that 'twin' shares,
-      // the instance's class before its eager attrs, the module itself last.
+      // public attr, each nested module a node of its own under the path
+      // it is reached by, the instance's class before its eager attrs, the
+      // module itself last.
       final root = addImport(writer, 'pkg', pkg);
-      expect(root, 14);
+      expect(root, 17);
       final nodes = writer.arena.nodes;
-      expect(nodes, hasLength(15));
-      expect(writer.arena.nodeCount, 15);
+      expect(nodes, hasLength(18));
+      expect(writer.arena.nodeCount, 18);
 
       // Private attrs are filtered before the wire, so '_secret' never
       // appears among the name leaves.
@@ -646,7 +647,7 @@ void main() {
           for (final node in nodes)
             if (node.whichKind() == pb.MontyNode_Kind.str) node.str,
         ],
-        ['add', 'VERSION', 'sub', 'VERSION', 'twin', 'box', 'n'],
+        ['add', 'VERSION', 'sub', 'VERSION', 'twin', 'VERSION', 'box', 'n'],
       );
       final addNode = itemAt(nodes, 1);
       expect(addNode.whichKind(), pb.MontyNode_Kind.function);
@@ -654,11 +655,17 @@ void main() {
       expect(addNode.function.docstring, 'adds two integers');
 
       // A nested module imports under its dotted name, keeps its own id and
-      // carries its attrs as node indexes.
+      // carries its attrs as node indexes. A module reached under two paths
+      // is a module under each path: 'pkg.sub' and 'pkg.twin' are two
+      // nodes, with the same id and their own attrs.
       final pkgArm = _moduleArmOf(itemAt(nodes, root));
       expect(
         _moduleArmOf(itemAt(nodes, 7)),
         _moduleBody('pkg.sub', _subUuid, const [(5, 6)]),
+      );
+      expect(
+        _moduleArmOf(itemAt(nodes, 11)),
+        _moduleBody('pkg.twin', _subUuid, const [(9, 10)]),
       );
       expect(
         pkgArm,
@@ -666,30 +673,30 @@ void main() {
           (0, 1),
           (2, 3),
           (4, 7),
-          (8, 7),
-          (9, 13),
+          (8, 11),
+          (12, 16),
         ]),
       );
 
-      // 'sub' and 'twin' name one module, so one node: the attrs read by
-      // reflection, the first key's zero index supplied by the field's own
-      // default, and pair 3 ('twin') carrying the reference pair 2 ('sub')
-      // does.
+      // 'sub' and 'twin' name one module, but each path names it under
+      // itself: two nodes, each with the attrs read by reflection, the
+      // first key's zero index supplied by the field's own default, and
+      // pair 3 ('twin') carrying a node of its own.
       final pairs = _pairsOf(pkgArm);
       final addPair = _pairAt(pairs, 0);
       expect(_intOf(addPair, 1, 'NodePair.key'), 0);
       expect(_intOf(addPair, 2, 'NodePair.value'), 1);
       final subNode = _intOf(_pairAt(pairs, 2), 2, 'NodePair.value');
       expect(subNode, 7);
-      expect(_intOf(_pairAt(pairs, 3), 2, 'NodePair.value'), subNode);
+      expect(_intOf(_pairAt(pairs, 3), 2, 'NodePair.value'), 11);
 
       // The host object registers in the session's registry as it crosses:
       // the instance as a class instance node, its class beside it.
-      final boxNode = itemAt(nodes, 13);
+      final boxNode = itemAt(nodes, 16);
       expect(boxNode.whichKind(), pb.MontyNode_Kind.classInstance);
       expect(boxNode.classInstance.instanceId.data, _uuidBytes(_boxId));
-      expect(boxNode.classInstance.classType, 10);
-      final typeNode = itemAt(nodes, 10);
+      expect(boxNode.classInstance.classType, 13);
+      final typeNode = itemAt(nodes, 13);
       expect(typeNode.whichKind(), pb.MontyNode_Kind.type);
       expect(typeNode.type.name, 'Box');
       expect(typeNode.type.id.data, _boxClassIdBytes);
