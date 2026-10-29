@@ -1,10 +1,10 @@
 name: Deploy GitHub Pages
 
 on:
-  # Dispatch only (q5): the site still builds the old engine's demo, which the
-  # cutover deleted, so it is not deployed on push until the demo is ported to
-  # the public API. One Pages environment per repository: a dispatch from any
-  # branch deploys to the LIVE site.
+  # Dispatch only: the site is a static catalogue assembled from
+  # repository files, and one Pages environment per repository means a
+  # dispatch from any branch deploys to the LIVE site -- so publishing
+  # stays a deliberate act, never a side effect of a push.
   workflow_dispatch:
 
 permissions:
@@ -31,58 +31,16 @@ jobs:
         with:
           persist-credentials: false
 
-      # ── Toolchains ──────────────────────────────────────────────────────────
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: '24'
-
-      # Same SDK as ci.yaml, so the site is built by the compiler the `pages`
-      # job validated -- not whatever `stable` resolves to on deploy day.
-      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
-        with:
-          sdk: 3.13.5
-
-      # ── Web REPL — uses committed assets (Mode A) ───────────────────────────
-      # Assets live in assets/ and are committed to git. No cargo build or
-      # node build.js step needed. CI's drift-check job guarantees the
-      # committed assets match the Rust source on every PR.
-      #
-      # No npm install either: the worker supplies its own WASI imports
-      # (js/src/wasm_glue.js), so nothing from js/node_modules is served.
-
-      - name: Prepare web REPL assets
-        run: |
-          WEB=packages/dart_monty_web/web
-          dart pub get
-          cd packages/dart_monty_web && dart pub get && cd ../..
-          cp lib/assets/dart_monty_core_bridge.js   $WEB/
-          cp lib/assets/dart_monty_core_worker.js   $WEB/
-          cp lib/assets/dart_monty_core_native.wasm $WEB/
-
-      # ── Web REPL (dart2js) ───────────────────────────────────────────────────
-      - name: Build web REPL (dart2js)
-        run: |
-          dart compile js packages/dart_monty_web/web/repl_demo.dart \
-            -o packages/dart_monty_web/web/repl_demo.dart.js --no-source-maps
-
-      # ── Web REPL (dart2wasm) ─────────────────────────────────────────────────
-      - name: Build web REPL (dart2wasm)
-        run: |
-          dart compile wasm packages/dart_monty_web/web/repl_demo.dart \
-            -o packages/dart_monty_web/web/repl_demo.wasm
-
-      # ── Assemble site/ ───────────────────────────────────────────────────────
-      # Flutter REPL demo removed: the dart_monty_flutter sidecar was deleted
-      # under the Mode A asset refactor. The shim moves to dart_monty as
-      # DartMonty.ensureInitialized(). A replacement Flutter demo can live in
-      # dart_monty/example/ later if wanted.
+      # ── Assemble site/ ──────────────────────────────────────────────────────
+      # Standard-library Python: no Node, no Dart SDK, no package fetch, no
+      # compiled artifacts. The builder reads repository files only
+      # (docs/index.html, pubspec.yaml, tool/upstream/upstream-pin.json and
+      # the example sources), verifies every local link and source copy as
+      # it builds, and writes site/ ready to upload.
       - name: Assemble site
-        run: |
-          mkdir -p site/repl
-          cp -r packages/dart_monty_web/web/. site/repl/
-          cp docs/index.html site/index.html
+        run: python3 -B tool/build_pages.py
 
-      # ── Deploy ───────────────────────────────────────────────────────────────
+      # ── Deploy ──────────────────────────────────────────────────────────────
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
 
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
