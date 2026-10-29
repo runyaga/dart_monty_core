@@ -181,15 +181,29 @@ try {
     requireText(await run("open('output.csv').read()"), 'runtime:');
     requireText(await run("open('/work/hello.txt').read()"), 'runtime:');
     const examples = JSON.parse(readFileSync(join(root, 'repl/examples.json'), 'utf8'));
+    const expectedGroups = ['Basics', 'Host integration', 'Files', 'Standard library 1.2.0', 'Errors'];
+    const actualGroups = await evaluate("Array.from(document.querySelectorAll('#examples optgroup'), g => g.label)");
+    if (JSON.stringify(actualGroups) !== JSON.stringify(expectedGroups)) failures.push(`Example groups: ${JSON.stringify(actualGroups)}`);
+    const assertExampleOutput = (output, expected, label) => {
+      if (expected.error) {
+        requireText(output, `${expected.error}:`);
+      } else {
+        const exact = `${expected.print ?? ''}=> ${expected.result}\n`;
+        if (output !== exact) failures.push(`${label}: expected ${JSON.stringify(exact)}, got ${JSON.stringify(output)}`);
+      }
+    };
     for (const example of examples) {
       try {
         await evaluate(`document.querySelector('#examples').value = ${JSON.stringify(example.id)}; document.querySelector('#examples').dispatchEvent(new Event('change'))`);
         await waitFor("document.querySelector('#run')?.disabled === false");
         text = await run(example.source);
-        requireText(text, example.expected.error ? `${example.expected.error}:` : `=> ${example.expected.result}`);
-        if (example.expected.print) requireText(text, example.expected.print);
-        if (example.expected.nextSource) requireText(await run(example.expected.nextSource), example.expected.nextPrint);
-        if (example.expected.secondResult) requireText(await run(example.source), `=> ${example.expected.secondResult}`);
+        assertExampleOutput(text, example.expected, example.id);
+        if (example.expected.nextSource) assertExampleOutput(await run(example.expected.nextSource), {
+          result: example.expected.nextResult ?? 'None', print: example.expected.nextPrint,
+        }, `${example.id} next feed`);
+        if (example.expected.secondResult) assertExampleOutput(await run(example.source), {
+          result: example.expected.secondResult, print: example.expected.print,
+        }, `${example.id} second feed`);
       } catch (error) {
         failures.push(`example ${example.id}: ${error.message}`);
       }

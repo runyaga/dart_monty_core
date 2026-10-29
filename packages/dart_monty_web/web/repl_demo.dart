@@ -149,12 +149,19 @@ Future<void> main() async {
     if (!response.ok) throw StateError('examples.json: ${response.status}');
     final data =
         jsonDecode((await response.text().toDart).toDart) as List<dynamic>;
+    final groups = <String, web.HTMLOptGroupElement>{};
     for (final raw in data) {
       final item = raw as Map<String, dynamic>;
       final option = web.HTMLOptionElement()
         ..value = item['id'] as String
         ..textContent = item['title'] as String;
-      picker.appendChild(option);
+      final group = item['group'] as String;
+      final container = groups.putIfAbsent(group, () {
+        final element = web.HTMLOptGroupElement()..label = group;
+        picker.appendChild(element);
+        return element;
+      });
+      container.appendChild(option);
     }
     void load() {
       final item = data.cast<Map<String, dynamic>>().firstWhere(
