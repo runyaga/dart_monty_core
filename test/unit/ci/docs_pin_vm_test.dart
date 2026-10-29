@@ -10,10 +10,14 @@
 // dash), while the pages name the plain release version, so the suffix is
 // dropped before the comparison.
 //
-// The pages checked are the ones a reader lands on: the upstream
-// divergences page, the documentation index and the site index. The site
-// index carries both versions, because it is the page that states what the
-// site was built from.
+// The pages checked are the ones a reader lands on and that name the
+// pinned version in prose: the upstream divergences page and the
+// documentation index.
+//
+// The site index is a template: tool/build_pages.py fills the version
+// tokens in it from the pin and the manifest, and refuses a page that
+// hardcodes a version, so the site index is not read for a version but
+// for the tokens it carries -- each of them exactly once.
 //
 // The capability cites are not checked here: they are re-pointed by the
 // docs green from a measured list, so the pages that name the versions are
@@ -44,11 +48,13 @@ const _manifestPath = 'pubspec.yaml';
 const _upstreamPages = [
   'docs/reference/upstream-divergences.md',
   'docs/README.md',
-  'docs/index.html',
 ];
 
-/// The pages that must name the package version.
-const _packagePages = ['docs/index.html'];
+/// The site index: the page the builder fills with the versions.
+const _templatePage = 'docs/index.html';
+
+/// The version tokens the site index carries, each of them exactly once.
+const _templateTokens = ['@dart_monty_core_version@', '@monty_version@'];
 
 /// The manifest line that carries the package version.
 final RegExp _manifestVersion = RegExp(r'^version:\s*(\S+)');
@@ -69,12 +75,7 @@ void main() {
         mismatches.add(mismatch);
       }
     }
-    for (final page in _packagePages) {
-      final mismatch = _mismatch(root, page, package, 'package');
-      if (mismatch != null) {
-        mismatches.add(mismatch);
-      }
-    }
+    mismatches.addAll(_tokenMismatches(root));
     expect(
       mismatches,
       isEmpty,
@@ -161,6 +162,28 @@ String? _mismatch(
 
   return '$page:${reported.line} states ${reported.version}, '
       'not the $kind version $version';
+}
+
+/// What the site index says about the version tokens it must carry: one
+/// message per token that is not carried exactly once, and none when the
+/// page carries every token exactly once.
+List<String> _tokenMismatches(Directory root) {
+  final file = File('${root.path}/$_templatePage');
+  if (!file.existsSync()) {
+    return ['$_templatePage does not exist, so it carries no version token'];
+  }
+  final text = file.readAsStringSync();
+  final mismatches = <String>[];
+  for (final token in _templateTokens) {
+    final count = RegExp(RegExp.escape(token)).allMatches(text).length;
+    if (count != 1) {
+      mismatches.add(
+        '$_templatePage carries $token $count times, not once',
+      );
+    }
+  }
+
+  return mismatches;
 }
 
 /// Whether [lines] name [version] as a version of its own. The version is
