@@ -1083,7 +1083,7 @@ const String _upstreamVersion = '1.3.0';
 const String _upstreamTag = 'v1.3.0';
 
 /// How many fixtures the pinned corpus holds.
-const int _pinnedCorpusFiles = 695;
+const int _pinnedCorpusFiles = 703;
 
 /// The upstream corpus' path in the checkout, as the pin records it.
 const String _corpusPath = 'crates/monty/test_cases';
