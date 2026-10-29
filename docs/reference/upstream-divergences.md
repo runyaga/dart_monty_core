@@ -85,7 +85,8 @@ copied and checked once, at construction, whose `id` is a `uuid.UUID`, and
 whose `__eq__` compares the id, the stubs and the attrs dict. The model
 here is the same one, as a Dart class,
 [`ExternalModule`](../../lib/src/platform/monty_value_structured.dart),
-exported from the package. The differences are these; they are against
+exported from the package. The guide to the module API itself is
+[host modules](host-modules.md). The differences are these; they are against
 upstream 1.2.0, the version that carries the module model, as is every
 other table on this page.
 
