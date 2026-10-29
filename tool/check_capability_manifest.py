@@ -2,7 +2,7 @@
 """Check the frozen capability manifest against its schema and its totals.
 
 The manifest (tool/upstream/capability-manifest.tsv) is the D1 denominator:
-one row per upstream FOSS capability of pydantic/monty 1.1.0, grouped from
+one row per upstream FOSS capability of pydantic/monty 1.3.0, grouped from
 upstream's public items, with the status dart_monty_core's baseline was
 measured at on each backend. tool/upstream/capability-manifest.json freezes
 its content hash and totals. This check fails if either drifts from the

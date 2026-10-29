@@ -1,4 +1,4 @@
-# The reference oracle: upstream pydantic/monty 1.1.0 as published on PyPI,
+# The reference oracle: upstream pydantic/monty as published on PyPI,
 # pinned by content hash. Install ONLY with
 #
 #     pip install --require-hashes --only-binary :all: --no-deps -r tool/upstream/requirements.lock
