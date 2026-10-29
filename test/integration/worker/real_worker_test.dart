@@ -377,7 +377,7 @@ void main() {
   );
 
   test('migration test floors and change fragment match completed suites', () {
-    // The monty v1.2.0 migration registered its suites -- the pin test above
+    // The monty v1.3.0 migration registered its suites -- the pin test above
     // passes -- but nothing followed through: the two floors that count those
     // suites still hold the values they were locked at before it, and
     // changes/ holds no fragment for the upgrade. A floor is raised when a
@@ -390,8 +390,8 @@ void main() {
       greaterThan(_lockedUnitTestsFloor),
       reason:
           'tool/gate.sh still reads "sf unit_tests '
-          '$_lockedUnitTestsFloor"; the migration grew the suite this floor '
-          'counts, so the floor moves up with it',
+          '$_lockedUnitTestsFloor"; the 1.3.0 migration grew the suite this '
+          'floor counts, so the floor moves up with it',
     );
     expect(
       unitFloor,
@@ -407,8 +407,8 @@ void main() {
       greaterThan(_lockedWorkerWebFloor),
       reason:
           'tool/test_worker_web.sh still reads "FLOOR='
-          '$_lockedWorkerWebFloor"; the migration grew the web suites this '
-          'floor counts, so the floor moves up with it',
+          '$_lockedWorkerWebFloor"; the 1.3.0 migration grew the web suites '
+          'this floor counts, so the floor moves up with it',
     );
     expect(
       webFloor,
@@ -438,9 +438,11 @@ void main() {
       _migrationChangeFragment(),
       isNotEmpty,
       reason:
-          'the release upgrade, protocol/imports, Scan, open behavior, '
-          'restore limits, exception codecs and BOM correction are '
-          'user-visible and belong in a changes/<slug>.md fragment',
+          'the 1.3.0 upgrade, the lru_cache type name, the rejection of '
+          'deep feeds, the suspension allowed through reduce/iter/next, the '
+          '703-case corpus and the dump downgrade limit are user-visible '
+          'and belong in a changes/<slug>.md fragment; one must cover: '
+          '${_migrationFragmentTopics.join(', ')}',
     );
   });
 
@@ -541,35 +543,50 @@ String _pinString(String key) {
 }
 
 // The migration follow-through readers below report what the tree holds, not
-// what it should hold: the two floors the completed monty v1.2.0
+// what it should hold: the two floors the completed monty v1.3.0
 // registrations were supposed to raise, the observed counts those floors must
 // stay under, and the changes/<slug>.md fragment recording the upgrade. So
 // 'migration test floors and change fragment match completed suites' fails
 // while any of the three is still missing.
 
-/// The unit_tests floor as it was locked when the monty v1.2.0 migration
-/// began: `sf unit_tests 3211`, tool/gate.sh:270.
-const int _lockedUnitTestsFloor = 3211;
+/// The unit_tests floor as it was locked when the monty v1.3.0 migration
+/// began: `sf unit_tests 3900`, tool/gate.sh:271.
+const int _lockedUnitTestsFloor = 3900;
 
-/// The worker web floor as it was locked when the monty v1.2.0 migration
-/// began: `FLOOR=566`, tool/test_worker_web.sh:44.
-const int _lockedWorkerWebFloor = 566;
+/// The worker web floor as it was locked when the monty v1.3.0 migration
+/// began: `FLOOR=630`, tool/test_worker_web.sh:44.
+const int _lockedWorkerWebFloor = 630;
 
-/// Every topic a `changes/<slug>.md` fragment for the monty v1.2.0 migration
+/// Every topic a `changes/<slug>.md` fragment for the monty v1.3.0 migration
 /// must describe, matched case-insensitively by [_migrationChangeFragment]:
-/// the release upgrade, protocol/imports, Scan, open behavior, restore
-/// limits, exception codecs and BOM correction.
+/// the release upgrade, the `functools.lru_cache` type name, the rejection
+/// of deep feeds, the suspension allowed through `reduce()`, `iter()` and
+/// `next()`, the 703-case corpus and the dump downgrade limit.
+///
+/// A compound topic needs a keyword for each of its parts, as the v1.2.0
+/// list did ('restore limits' became 'restore' and 'limit', 'exception
+/// codecs' became 'exception' and 'codec'). So the type name needs both
+/// 'lru_cache' and 'type', the deep-feed rejection needs 'deep', 'feed'
+/// and 'reject', the suspension needs 'suspen' beside 'reduce', 'iter' and
+/// 'next', the corpus needs 'corpus' and '703', and the dump downgrade
+/// limit needs 'dump', 'downgrade' and 'limit'.
 const List<String> _migrationFragmentTopics = [
-  '1.2.0',
-  'protocol',
-  'import',
-  'scan',
-  'open',
-  'restore',
+  '1.3.0',
+  'lru_cache',
+  'type',
+  'name',
+  'deep',
+  'feed',
+  'reject',
+  'suspen',
+  'reduce',
+  'iter',
+  'next',
+  'corpus',
+  '703',
+  'dump',
+  'downgrade',
   'limit',
-  'exception',
-  'codec',
-  'bom',
 ];
 
 /// The count tool/gate.sh asserts under its [suite] step -- the number in
@@ -608,14 +625,17 @@ int _workerWebFloor() {
 /// keyed by suite ('unit_tests', 'worker_web').
 ///
 /// The counts are the operator's measurements of the complete suites of the
-/// monty v1.2.0 migration, with every registration in place:
+/// monty v1.3.0 migration, with every registration in place:
 ///
-///     unit_tests  3968 passed, 5 skipped   (dart test --exclude-tags=...)
-///     worker_web   645 passed, 5 skipped   (the lower of the two compilers,
-///                                         because the floor is per compiler)
+///     unit_tests  3978 passed, 5 skipped   (dart test --exclude-tags=
+///                                         integration,ladder,example,worker)
+///     worker_web   647 passed, 5 skipped   (the lower of the two compilers:
+///                                         dart2js 652 passed, dart2wasm 647
+///                                         passed + 5 skipped, the selection
+///                                         tool/test_worker_web.sh makes)
 Map<String, int> _observedSuiteCounts() => const {
-  'unit_tests': 3968,
-  'worker_web': 645,
+  'unit_tests': 3978,
+  'worker_web': 647,
 };
 
 /// The observed count recorded for [suite] in [observed], or a failure
@@ -629,10 +649,11 @@ int _observedCount(Map<String, int> observed, String suite) {
   return count;
 }
 
-/// The `changes/<slug>.md` fragment recording the monty v1.2.0 migration,
-/// or a failure naming what is missing: a markdown file directly under
-/// changes/ (README excluded, as tool/check_changelog_fragments.sh does not
-/// assemble it) whose text covers every topic in [_migrationFragmentTopics].
+/// The `changes/<slug>.md` fragment recording the monty v1.3.0 migration: a
+/// markdown file directly under changes/ (README excluded, as
+/// tool/check_changelog_fragments.sh does not assemble it) whose text covers
+/// every topic in [_migrationFragmentTopics]. The empty string when no
+/// fragment covers them all.
 String _migrationChangeFragment() {
   final fragments = <String>[
     if (Directory('changes').existsSync())
@@ -653,10 +674,7 @@ String _migrationChangeFragment() {
     }
   }
 
-  fail(
-    'no changes/<slug>.md fragment describes the monty v1.2.0 migration; one '
-    'must cover: ${_migrationFragmentTopics.join(', ')}',
-  );
+  return '';
 }
 
 // The worker dependency readers below read the two files the worker's build
