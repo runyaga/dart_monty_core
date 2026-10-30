@@ -9,7 +9,7 @@
 
 [GitHub](https://github.com/runyaga/dart_monty_core)
 
-**dart_monty_core 0.120.0 · monty 1.2.0**
+**dart_monty_core 0.120.1 · monty 1.2.0**
 
 `dart_monty_core` runs Python in Dart through
 [pydantic-monty](https://github.com/pydantic/monty), a sandboxed Python

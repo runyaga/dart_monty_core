@@ -808,11 +808,13 @@ void _expectMontyHashDependencies(
 }
 
 /// Both package versions: the Dart package and the worker crate carry the
-/// 0.120.x version that tracks upstream monty 1.2.0.
+/// 0.120.x version that tracks upstream monty 1.2.0. The crate stays 0.120.0
+/// while the worker is unchanged: 0.120.1 reuses the v0.120.0 release
+/// binaries its bundled manifest names.
 void _expectPackageVersionsTrackV120() {
   expect(
     _packageVersion('pubspec.yaml'),
-    '0.120.0',
+    '0.120.1',
     reason:
         'pubspec.yaml must carry the 0.120.x version that tracks '
         'upstream monty 1.2.0',
