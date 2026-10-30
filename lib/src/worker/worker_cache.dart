@@ -16,8 +16,8 @@ export 'package:dart_monty_core/src/worker/worker_verify_reason.dart';
 
 /// Returns the per-user worker cache root for the current host.
 ///
-/// macOS and Linux derive the root only from `HOME`; Windows derives it only
-/// from `LOCALAPPDATA`.
+/// macOS and Linux derive the root only from `HOME`; Windows prefers
+/// `LOCALAPPDATA` and falls back to `%USERPROFILE%\AppData\Local`.
 String workerCacheRoot({
   Map<String, String>? environment,
   String? operatingSystem,
@@ -98,10 +98,32 @@ String _cacheFromHome(Map<String, String> variables, {required bool macos}) {
 
 String _cacheFromLocalAppData(Map<String, String> variables) =>
     path.windows.join(
-      _absoluteVariable(variables, 'LOCALAPPDATA', windows: true),
+      _localAppDataBase(variables),
       'dart_monty',
       'Cache',
     );
+
+/// The Windows per-user local app-data directory.
+///
+/// Prefers `LOCALAPPDATA`, but the Dart hooks runner filters the build-hook
+/// environment to an allowlist that omits `LOCALAPPDATA` while keeping
+/// `USERPROFILE`. When `LOCALAPPDATA` is absent or relative, fall back to
+/// `%USERPROFILE%\AppData\Local` so the worker cache resolves inside build
+/// hooks on Windows.
+String _localAppDataBase(Map<String, String> variables) {
+  final localAppData = variables['LOCALAPPDATA'];
+  if (localAppData != null &&
+      localAppData.isNotEmpty &&
+      _isWindowsAbsolute(localAppData)) {
+    return localAppData;
+  }
+
+  return path.windows.join(
+    _absoluteVariable(variables, 'USERPROFILE', windows: true),
+    'AppData',
+    'Local',
+  );
+}
 
 String _absoluteVariable(
   Map<String, String> variables,

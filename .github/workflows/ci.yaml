@@ -346,7 +346,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: '3.12'
       - run: python3 -I tool/check_upstream_pin.py --online
@@ -589,7 +589,7 @@ jobs:
         with:
           sdk: 3.13.5
       # A version the lock has wheel hashes for (CPython 3.12-3.14).
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: '3.12'
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
@@ -851,7 +851,7 @@ jobs:
       # The worker cdylib the opted-in consumer's hook builds (release, --lib,
       # --target x86_64-unknown-linux-gnu). No other job builds that
       # configuration, so this job is its one writer.
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: native/worker
           key: worker-cdylib-${{ hashFiles('native/worker/Cargo.lock') }}
@@ -1003,7 +1003,7 @@ jobs:
           toolchain: stable
           components: rustfmt, clippy
           targets: wasm32-wasip1
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: native/worker
           key: worker-${{ hashFiles('native/worker/Cargo.lock') }}
@@ -1030,7 +1030,7 @@ jobs:
       # Advisories, licences and sources over the worker's dependency graph
       # (native/worker/deny.toml).
       - name: Install cargo-deny
-        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+        uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
         with:
           tool: cargo-deny
       - name: cargo deny check
@@ -1144,6 +1144,91 @@ jobs:
       - name: Run example smoke tests
         if: success() || failure()
         run: bash tool/run_example_smoke.sh /tmp/example-test.log
+
+  # ---------------------------------------------------------------------------
+  # Windows: one worker build, consumed by every Windows test job
+  # ---------------------------------------------------------------------------
+  # The Windows counterpart of worker-rust's linux-x64 artefact. Nothing else in
+  # this workflow builds Windows (release-worker.yaml does, but only on release
+  # triggers, and packs a release asset), so this is the single build: any
+  # Windows-only suite downloads `dart_monty_worker-windows-x64` instead of
+  # building its own. The fmt/clippy/deny/wasm checks stay in worker-rust;
+  # they are not platform-specific.
+  worker-windows:
+    name: Worker build (Windows)
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: windows-2025
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: native/worker
+          key: worker-windows-${{ hashFiles('native/worker/Cargo.lock') }}
+      - name: Build executable + mount library, and stamp them
+        run: bash tool/build_worker.sh
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: dart_monty_worker-windows-x64
+          path: |
+            lib/src/bin/windows-x64/dart_monty_worker.exe
+            lib/src/bin/windows-x64/dart_monty_worker.dll
+            lib/src/bin/windows-x64/dart_monty_worker.exe.stamp
+          if-no-files-found: error
+          retention-days: 7
+
+  # Junctions, file symlinks, `\..\`, drive letters, reserved device names and
+  # trailing-dot/space aliases only exist on Windows. The suite is
+  # @TestOn('windows'), so test-worker-vm loads none of it. It tests the
+  # binaries worker-windows built, not a second build.
+  test-worker-windows:
+    name: Worker mount tests (Windows)
+    needs: [changes, worker-windows]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: windows-2025
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      # Only for `build_worker.sh --check` below: the stamp records `rustc
+      # -vV`, so it is read back against the compiler worker-windows used.
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+        with:
+          toolchain: stable
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
+        with:
+          sdk: 3.13.5
+      - run: dart pub get
+      - name: Download the worker executable, mount library and stamp
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: dart_monty_worker-windows-x64
+          path: lib/src/bin/windows-x64
+      # The downloaded binaries must be the ones this tree builds: hashes of
+      # the sources, the toolchain and both binaries, without compiling.
+      - name: The binaries match this tree
+        run: bash tool/build_worker.sh --check
+      - name: Test (Windows mount suite)
+        # 41 tests, 3 of which skip where the account may not create file
+        # symlinks; the floor sits under the 38 that always run.
+        run: |
+          set -o pipefail
+          dart test test/integration/worker/mount_windows_io_test.dart -p vm --tags=worker \
+            --reporter=expanded 2>&1 | tee "$RUNNER_TEMP/windows-mount-test.log"
+          bash tool/assert_test_count.sh "$RUNNER_TEMP/windows-mount-test.log" 38 windows-mount
 
   # ---------------------------------------------------------------------------
   # WorkerChannel in Chrome against the COMMITTED worker wasm
@@ -1345,7 +1430,7 @@ jobs:
           persist-credentials: false
           # A push is compared with its first parent (tool/ci_ratchet_base.sh).
           fetch-depth: 2
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: '3.12'
       # R5: each download FAILS if its artifact is absent, and
@@ -1433,7 +1518,7 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: '3.12'
       - name: Install diff-cover
