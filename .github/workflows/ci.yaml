@@ -1142,6 +1142,52 @@ jobs:
         run: bash tool/run_example_smoke.sh /tmp/example-test.log
 
   # ---------------------------------------------------------------------------
+  # Windows: the host-mount escape surface on NTFS
+  # ---------------------------------------------------------------------------
+  # Junctions, file symlinks, `\..\`, drive letters, reserved device names and
+  # trailing-dot/space aliases only exist on Windows, and no other job runs on
+  # it (release-worker.yaml builds the Windows worker but tests nothing). The
+  # suite is @TestOn('windows'), so test-worker-vm loads none of it. Builds its
+  # own worker and mount library: worker-rust's artefact is linux-x64.
+  test-worker-windows:
+    name: Worker mount tests (Windows)
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: windows-2025
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
+        with:
+          sdk: 3.13.5
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: native/worker
+          key: worker-windows-${{ hashFiles('native/worker/Cargo.lock') }}
+      - run: dart pub get
+      - name: Build executable + mount library
+        run: |
+          bash tool/build_worker.sh
+          test -s lib/src/bin/windows-x64/dart_monty_worker.exe
+          test -s lib/src/bin/windows-x64/dart_monty_worker.dll
+      - name: Test (Windows mount suite)
+        # 41 tests, 3 of which skip where the account may not create file
+        # symlinks; the floor sits under the 38 that always run.
+        run: |
+          set -o pipefail
+          dart test test/integration/worker/mount_windows_io_test.dart -p vm --tags=worker \
+            --reporter=expanded 2>&1 | tee "$RUNNER_TEMP/windows-mount-test.log"
+          bash tool/assert_test_count.sh "$RUNNER_TEMP/windows-mount-test.log" 38 windows-mount
+
+  # ---------------------------------------------------------------------------
   # WorkerChannel in Chrome against the COMMITTED worker wasm
   # ---------------------------------------------------------------------------
   # lib/assets/dart_monty_core_worker.{js,wasm} through WorkerChannel on
