@@ -847,7 +847,7 @@ jobs:
       # The worker cdylib the opted-in consumer's hook builds (release, --lib,
       # --target x86_64-unknown-linux-gnu). No other job builds that
       # configuration, so this job is its one writer.
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: native/worker
           key: worker-cdylib-${{ hashFiles('native/worker/Cargo.lock') }}
@@ -999,7 +999,7 @@ jobs:
           toolchain: stable
           components: rustfmt, clippy
           targets: wasm32-wasip1
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: native/worker
           key: worker-${{ hashFiles('native/worker/Cargo.lock') }}
