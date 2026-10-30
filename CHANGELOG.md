@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.120.1 - 2026-10-30
+
+### Fixed
+
+- Windows: the build hook no longer fails with `LOCALAPPDATA must be an absolute path`. The Dart hooks runner filters the hook environment to an allowlist that omits `LOCALAPPDATA`, so the worker cache root now falls back to `%USERPROFILE%\AppData\Local` (`USERPROFILE` is allowlisted) when `LOCALAPPDATA` is absent or relative. This unblocks `dart run` / `dart build` / `dart test` on Windows with SDKs whose hooks runner filters `LOCALAPPDATA` (seen on Dart 3.10.0, which Flutter stable bundles; Dart 3.13.5 passes it through).
+- The worker executable and mount library are unchanged from 0.120.0: the bundled manifest still installs the `v0.120.0` release binaries, and the worker crate stays at 0.120.0.
+
+### Internal
+
+- CI builds the Windows worker and mount library once (`worker-windows`, `windows-2025`) and uploads them as `dart_monty_worker-windows-x64`, the Windows counterpart of worker-rust's linux-x64 artefact. Windows test jobs download it and check its stamp with `build_worker.sh --check` instead of building again.
+- New job `test-worker-windows` runs `test/integration/worker/mount_windows_io_test.dart` on those binaries: junction, file-symlink, `\..\`, drive-letter, rename-out, reserved-device-name and trailing-dot/space cases against a host `MountDir` in all three modes, held to a test-count floor. It is the first job that runs tests on Windows.
+
+
 ## 0.120.0 - 2026-10-29
 
 ### Added
