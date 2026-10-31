@@ -627,15 +627,15 @@ int _workerWebFloor() {
 /// The counts are the operator's measurements of the complete suites of the
 /// monty v1.3.0 migration, with every registration in place:
 ///
-///     unit_tests  3978 passed, 5 skipped   (dart test --exclude-tags=
+///     unit_tests  3982 passed, 5 skipped   (dart test --exclude-tags=
 ///                                         integration,ladder,example,worker)
-///     worker_web   647 passed, 5 skipped   (the lower of the two compilers:
-///                                         dart2js 652 passed, dart2wasm 647
+///     worker_web   656 passed, 5 skipped   (the lower of the two compilers:
+///                                         dart2js 661 passed, dart2wasm 656
 ///                                         passed + 5 skipped, the selection
 ///                                         tool/test_worker_web.sh makes)
 Map<String, int> _observedSuiteCounts() => const {
-  'unit_tests': 3978,
-  'worker_web': 647,
+  'unit_tests': 3982,
+  'worker_web': 656,
 };
 
 /// The observed count recorded for [suite] in [observed], or a failure
