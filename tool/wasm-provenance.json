@@ -3,9 +3,9 @@
   "_worker_source_sha256_comment": "sha256 over every file under native/worker/ (target/ and deny.toml excluded), native/rust-toolchain.toml, tool/build_worker_wasm.sh and tool/rust_remap.sh -- the INPUTS to lib/assets/dart_monty_core_worker.wasm. Updated by tool/prebuild.sh.",
   "assets": {
     "dart_monty_core_worker.wasm": {
-      "bytes": 17716948,
-      "sha256": "69fcb8a22be106049096c9f56845dcd5227551709b3b95f2782b4af8c7d5ecf0"
+      "bytes": 17715246,
+      "sha256": "3345b0e934527a3d9065473d31105a39d3d34469623da15061712af8dfde8a46"
     }
   },
-  "worker_source_sha256": "5424095b2577d80fc583ffa788970404c3a16aca1a5a48f9d4f3ab7f84e3cbce"
+  "worker_source_sha256": "5047d4a6ab1f8aab43c01c9a7293f4fdd3c0f07198e0984b78650ef72f54cb95"
 }
