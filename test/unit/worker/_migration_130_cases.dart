@@ -127,6 +127,7 @@ void migration130SessionTests(String label, MigrationStart start) {
   _cachedDumpRoundTripCase(label, start);
   _idleDump120RestoresCase(label, start);
   _suspensionCases(label, start);
+  _recursionCase(label, start);
 }
 
 /// The feed nested past the parser's limit is rejected at once.
@@ -392,4 +393,87 @@ void _suspensionRefusalCase(
     );
     expect(await session.feedRun('1 + 1'), const MontyInt(2));
   });
+}
+
+/// The recursion limit the recursion case runs under.
+const _recursionLimit = 12;
+
+/// A function that recurses until `n` reaches 0.
+const _recDefinition = 'def rec(n):\n    return 0 if n == 0 else rec(n - 1)\n';
+
+/// Calls `rec(depth)` from a user callback inside each builtin.
+final _builtinRecursion = <String, String Function(int depth)>{
+  'reduce': (depth) =>
+      '${_recDefinition}import functools\n'
+      'functools.reduce(lambda a, b: rec($depth), [0], 0)',
+  'iter': (depth) =>
+      '${_recDefinition}class It:\n'
+      '    def __iter__(self):\n'
+      '        rec($depth)\n'
+      '        return iter(())\n'
+      'list(iter(It()))',
+  'next with default': (depth) =>
+      '${_recDefinition}class N:\n'
+      '    def __iter__(self):\n'
+      '        return self\n'
+      '    def __next__(self):\n'
+      '        rec($depth)\n'
+      '        raise StopIteration\n'
+      'next(N(), None)',
+  'lru_cache miss': (depth) =>
+      '${_recDefinition}import functools\n'
+      'def g(x):\n'
+      '    rec($depth)\n'
+      '    return x\n'
+      'g = functools.lru_cache(maxsize=2)(g)\n'
+      'g(1)',
+};
+
+/// A Python `RecursionError` raised by the worker.
+final TypeMatcher<MontyRuntimeError> _isRecursionError =
+    isA<MontyRuntimeError>().having(
+      (error) => error.exception.excType,
+      'excType',
+      'RecursionError',
+    );
+
+/// Frames inside reduce, iter, next and lru_cache do not count toward the
+/// recursion limit, and the user callback they call does.
+void _recursionCase(String label, MigrationStart start) {
+  test(
+    'frames inside builtins do not count toward the recursion limit ($label)',
+    () async {
+      final pool = await start(const PoolOptions(maxProcesses: 1));
+      addTearDown(pool.close);
+
+      Future<Object?> run(String source) => pool.withSession(
+        (session) => _outcome(session.feedRun(source)),
+        limits: const ResourceLimits(maxRecursionDepth: _recursionLimit),
+      );
+
+      expect(
+        await run('${_recDefinition}rec(11)'),
+        const MontyInt(0),
+        reason: 'at top level rec(11) uses all 12 frames',
+      );
+      expect(
+        await run('${_recDefinition}rec(12)'),
+        _isRecursionError,
+        reason: 'at top level rec(12) needs 13 frames',
+      );
+      for (final MapEntry(key: name, value: source)
+          in _builtinRecursion.entries) {
+        expect(
+          await run(source(10)),
+          isNot(isA<MontyError>()),
+          reason: '$name: only the user callback is charged, so rec(10) fits',
+        );
+        expect(
+          await run(source(11)),
+          _isRecursionError,
+          reason: '$name: the user callback and rec(11) need 13 frames',
+        );
+      }
+    },
+  );
 }
