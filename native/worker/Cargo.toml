@@ -2,8 +2,7 @@
 # crate with three artefacts.
 #
 #   bin    dart_monty_worker                   stdio worker a Dart parent spawns
-#   cdylib dart_monty_worker_main()            the same loop, entered from a
-#                                              relaunched `dart build cli` exe
+#   cdylib dart_monty_worker_main(), dmn_*     self-relaunch and native sessions
 #   cdylib on wasm32-wasip1 (dmw_* exports)    one turn per call, for a Web Worker
 #
 # `upstream/subprocess.rs` is a byte-identical copy of
@@ -11,9 +10,8 @@
 # tool/upstream/upstream-pin.json. tool/check_worker_mirror.py checks the copy,
 # the exact pins below and that Cargo.lock is a version-subset of upstream's.
 #
-# Its own workspace root, with its own Cargo.lock, beside the in-process crate
-# in native/. It shares native/rust-toolchain.toml (rustup finds it by walking
-# up from here).
+# Its own workspace root, with its own Cargo.lock. It shares
+# native/rust-toolchain.toml (rustup finds it by walking up from here).
 [package]
 name = "dart_monty_worker"
 version = "0.130.0-dev.1"
@@ -27,8 +25,8 @@ name = "dart_monty_worker"
 # rlib is what the bin links. No staticlib until a mobile target needs one: it
 # costs a ~227 MB archive and an extra LTO pass.
 crate-type = ["cdylib", "rlib"]
-# No unit tests or doctests: tests/smoke.rs drives the built executable.
-test = false
+# Native in-process unit tests drive the thread transport without a Dart VM.
+test = true
 doctest = false
 
 [[bin]]

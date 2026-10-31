@@ -1,6 +1,6 @@
 //! dart_monty_core's worker: upstream's `monty subprocess` loop, verbatim, plus
-//! the two entry points upstream's binary does not need (the self-relaunch
-//! library and the wasm turn exports).
+//! the entry points upstream's binary does not need (self-relaunch, native
+//! in-process sessions and wasm turns).
 #![expect(unsafe_code, reason = "C ABI entry points for Dart and the Web Worker")]
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -20,6 +20,8 @@ mod subprocess;
 
 #[cfg(not(target_arch = "wasm32"))]
 mod mounts;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod inproc;
 pub mod turn;
 
 #[cfg(target_arch = "wasm32")]
