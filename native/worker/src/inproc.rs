@@ -9,8 +9,7 @@ use std::{
     ffi::{CStr, c_char, c_void},
     mem,
     panic::{AssertUnwindSafe, catch_unwind, set_hook, take_hook},
-    ptr,
-    slice,
+    ptr, slice,
     sync::{
         Arc, Mutex, MutexGuard, Once, OnceLock, PoisonError,
         atomic::{AtomicBool, AtomicI64, Ordering},
@@ -283,9 +282,7 @@ impl Runtime {
             }
             match command {
                 Command::Dispatch(frame) => {
-                    if !self.run_turn(&mut child, reply_port, |child, sink| {
-                        dispatch_owned(child, frame, sink)
-                    }) {
+                    if !self.run_turn(&mut child, reply_port, |child, sink| dispatch_owned(child, frame, sink)) {
                         break;
                     }
                 }
