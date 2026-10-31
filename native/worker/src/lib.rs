@@ -19,9 +19,9 @@ static ALLOC: monty_alloc::LimitedAllocator = monty_alloc::LimitedAllocator;
 mod subprocess;
 
 #[cfg(not(target_arch = "wasm32"))]
-mod mounts;
-#[cfg(not(target_arch = "wasm32"))]
 pub mod inproc;
+#[cfg(not(target_arch = "wasm32"))]
+mod mounts;
 pub mod turn;
 
 #[cfg(target_arch = "wasm32")]

@@ -8,10 +8,11 @@ use std::{
     collections::HashMap,
     ffi::{CStr, c_char, c_void},
     mem,
-    panic::{AssertUnwindSafe, catch_unwind},
+    panic::{AssertUnwindSafe, catch_unwind, set_hook, take_hook},
     ptr,
+    slice,
     sync::{
-        Arc, Mutex, MutexGuard, Once, OnceLock,
+        Arc, Mutex, MutexGuard, Once, OnceLock, PoisonError,
         atomic::{AtomicBool, AtomicI64, Ordering},
         mpsc,
     },
@@ -158,7 +159,7 @@ impl Runtime {
     }
 
     fn registry(&self) -> MutexGuard<'_, Registry> {
-        self.registry.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+        self.registry.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     fn open(self: &Arc<Self>, reply_port: i64, mem_limit: i64, parent_handle: i64) -> i64 {
@@ -202,7 +203,7 @@ impl Runtime {
         let spawn = thread::Builder::new()
             .name(format!("monty-inproc-{handle}"))
             .stack_size(WORKER_STACK_SIZE)
-            .spawn(move || runtime.run_session(handle, reply_port, cancelled, rx));
+            .spawn(move || runtime.run_session(handle, reply_port, &cancelled, &rx));
         if spawn.is_err() {
             let mut registry = self.registry();
             Self::cancel_descendants(&registry.sessions, handle);
@@ -260,8 +261,8 @@ impl Runtime {
         self: Arc<Self>,
         handle: i64,
         reply_port: i64,
-        cancelled: Arc<AtomicBool>,
-        rx: mpsc::Receiver<Command>,
+        cancelled: &AtomicBool,
+        rx: &mpsc::Receiver<Command>,
     ) {
         INPROC_THREAD.set(true);
         let _exit = SessionExit {
@@ -282,7 +283,9 @@ impl Runtime {
             }
             match command {
                 Command::Dispatch(frame) => {
-                    if !self.run_turn(&mut child, reply_port, frame) {
+                    if !self.run_turn(&mut child, reply_port, |child, sink| {
+                        dispatch_owned(child, frame, sink)
+                    }) {
                         break;
                     }
                 }
@@ -290,7 +293,9 @@ impl Runtime {
                 Command::Wake => {}
                 #[cfg(test)]
                 Command::Panic => {
-                    if !self.run_test_panic(reply_port) {
+                    if !self.run_turn(&mut child, reply_port, |_, _| {
+                        panic!("deliberate in-process test panic");
+                    }) {
                         break;
                     }
                 }
@@ -298,36 +303,17 @@ impl Runtime {
         }
     }
 
-    fn run_turn(&self, child: &mut Child, reply_port: i64, frame: Vec<u8>) -> bool {
+    fn run_turn(
+        &self,
+        child: &mut Child,
+        reply_port: i64,
+        work: impl FnOnce(&mut Child, &mut PostingSink) -> HandleOutcome,
+    ) -> bool {
         let mut sink = PostingSink {
             poster: Arc::clone(&self.poster),
             reply_port,
         };
-        let result = catch_unwind(AssertUnwindSafe(|| dispatch_owned(child, frame, &mut sink)));
-        match result {
-            Ok(outcome) => {
-                let keep_running = outcome == HandleOutcome::Continue;
-                self.poster.post_int(reply_port, outcome_code(outcome));
-                keep_running
-            }
-            Err(payload) => {
-                let message = format!("child panicked: {}", panic_message(payload.as_ref()));
-                let _ = sink.send(&fatal_error_event(&message));
-                self.poster.post_int(reply_port, OUTCOME_FATAL);
-                false
-            }
-        }
-    }
-
-    #[cfg(test)]
-    fn run_test_panic(&self, reply_port: i64) -> bool {
-        let mut sink = PostingSink {
-            poster: Arc::clone(&self.poster),
-            reply_port,
-        };
-        let result = catch_unwind(AssertUnwindSafe(|| -> HandleOutcome {
-            panic!("deliberate in-process test panic");
-        }));
+        let result = catch_unwind(AssertUnwindSafe(|| work(child, &mut sink)));
         match result {
             Ok(outcome) => {
                 let keep_running = outcome == HandleOutcome::Continue;
@@ -413,8 +399,8 @@ static RUNTIME: OnceLock<Arc<Runtime>> = OnceLock::new();
 
 fn install_inproc_panic_filter() {
     PANIC_FILTER.call_once(|| {
-        let previous = std::panic::take_hook();
-        std::panic::set_hook(Box::new(move |info| {
+        let previous = take_hook();
+        set_hook(Box::new(move |info| {
             // The stdio hook writes a frame to stdout, so session threads never call it.
             if !INPROC_THREAD.get() {
                 previous(info);
@@ -462,7 +448,9 @@ pub unsafe extern "C" fn dmn_init(api_dl_data: *const c_void, cap_bytes: i64) ->
 /// Opens one native session or returns -1 for admission and -2 for a dead parent.
 #[unsafe(no_mangle)]
 pub extern "C" fn dmn_open(reply_port: i64, mem_limit: i64, parent_handle: i64) -> i64 {
-    RUNTIME.get().map_or(-1, |runtime| runtime.open(reply_port, mem_limit, parent_handle))
+    RUNTIME
+        .get()
+        .map_or(-1, |runtime| runtime.open(reply_port, mem_limit, parent_handle))
 }
 
 /// Copies and enqueues one request frame without waiting for its turn.
@@ -481,7 +469,7 @@ pub unsafe extern "C" fn dmn_dispatch(handle: i64, ptr: *const u8, len: usize) -
         Vec::new()
     } else {
         // SAFETY: the caller keeps the documented readable range live for this copy.
-        unsafe { std::slice::from_raw_parts(ptr, len) }.to_vec()
+        unsafe { slice::from_raw_parts(ptr, len) }.to_vec()
     };
     runtime.dispatch(handle, frame)
 }
@@ -601,14 +589,14 @@ mod tests {
         frame
     }
 
-    fn configure(memory: u64, recursion: u64, feed_micros: Option<u64>) -> Vec<u8> {
+    fn configure(memory: u64, recursion: u64, turn_micros: Option<u64>) -> Vec<u8> {
         request(pb::parent_request::Kind::Configure(pb::Configure {
             script_name: "inproc.py".to_owned(),
             protocol_version: PROTOCOL_VERSION,
             limits: Some(pb::ResourceLimits {
                 max_memory_bytes: Some(memory),
                 max_recursion_depth: Some(recursion),
-                max_feed_duration_micros: feed_micros,
+                max_turn_duration_micros: turn_micros,
                 ..Default::default()
             }),
             ..Default::default()
@@ -621,6 +609,10 @@ mod tests {
             cwd: "/".to_owned(),
             ..Default::default()
         }))
+    }
+
+    fn shutdown() -> Vec<u8> {
+        request(pb::parent_request::Kind::Shutdown(pb::Shutdown {}))
     }
 
     fn decode(frame: Vec<u8>) -> pb::ChildEvent {
@@ -667,11 +659,17 @@ mod tests {
         }
     }
 
-    fn configured(runtime: &Runtime, port: i64, rx: &Receiver<Posted>, memory: u64, recursion: u64) -> i64 {
+    fn configured(runtime: &Arc<Runtime>, port: i64, rx: &Receiver<Posted>, memory: u64, recursion: u64) -> i64 {
         let handle = runtime.open(port, i64::try_from(memory).unwrap(), 0);
         assert!(handle > 0);
         let events = turn(runtime, handle, port, configure(memory, recursion, None), rx);
-        assert!(matches!(events.as_slice(), [pb::ChildEvent { kind: Some(pb::child_event::Kind::Ok(_)), .. }]));
+        assert!(matches!(
+            events.as_slice(),
+            [pb::ChildEvent {
+                kind: Some(pb::child_event::Kind::Ok(_)),
+                ..
+            }]
+        ));
         handle
     }
 
@@ -702,7 +700,13 @@ mod tests {
 
         let second = configured(&runtime, 2, &rx, 64 * 1024 * 1024, 1000);
         let events = turn(&runtime, second, 2, feed("1 + 1"), &rx);
-        assert!(matches!(events.as_slice(), [pb::ChildEvent { kind: Some(pb::child_event::Kind::Complete(_)), .. }]));
+        assert!(matches!(
+            events.as_slice(),
+            [pb::ChildEvent {
+                kind: Some(pb::child_event::Kind::Complete(_)),
+                ..
+            }]
+        ));
         assert_eq!(runtime.close(second), 0);
         wait_exited(&rx, 2);
     }
@@ -714,10 +718,22 @@ mod tests {
         let handle = configured(&runtime, 1, &rx, 16 * 1024 * 1024, 1000);
 
         let events = turn(&runtime, handle, 1, feed("\"x\" * 100000000"), &rx);
-        assert!(matches!(events.as_slice(), [pb::ChildEvent { kind: Some(pb::child_event::Kind::Error(_)), .. }]));
+        assert!(matches!(
+            events.as_slice(),
+            [pb::ChildEvent {
+                kind: Some(pb::child_event::Kind::Error(_)),
+                ..
+            }]
+        ));
         assert!(format!("{events:?}").contains("MemoryError"));
         let events = turn(&runtime, handle, 1, feed("2 + 2"), &rx);
-        assert!(matches!(events.as_slice(), [pb::ChildEvent { kind: Some(pb::child_event::Kind::Complete(_)), .. }]));
+        assert!(matches!(
+            events.as_slice(),
+            [pb::ChildEvent {
+                kind: Some(pb::child_event::Kind::Complete(_)),
+                ..
+            }]
+        ));
         assert_eq!(runtime.close(handle), 0);
         wait_exited(&rx, 1);
     }
@@ -734,7 +750,13 @@ mod tests {
             feed("x = 0\nfor _ in range(30000):\n    x = [x]\nrepr(x)"),
             &rx,
         );
-        assert!(matches!(events.as_slice(), [pb::ChildEvent { kind: Some(pb::child_event::Kind::Complete(_)), .. }]));
+        assert!(matches!(
+            events.as_slice(),
+            [pb::ChildEvent {
+                kind: Some(pb::child_event::Kind::Complete(_)),
+                ..
+            }]
+        ));
         assert_eq!(runtime.close(handle), 0);
         wait_exited(&rx, 1);
     }
@@ -752,7 +774,13 @@ mod tests {
             configure(64 * 1024 * 1024, 1000, Some(500_000)),
             &rx,
         );
-        assert!(matches!(configured.as_slice(), [pb::ChildEvent { kind: Some(pb::child_event::Kind::Ok(_)), .. }]));
+        assert!(matches!(
+            configured.as_slice(),
+            [pb::ChildEvent {
+                kind: Some(pb::child_event::Kind::Ok(_)),
+                ..
+            }]
+        ));
 
         let started = Instant::now();
         assert_eq!(runtime.dispatch(handle, feed("while True:\n    pass")), 0);
@@ -761,22 +789,34 @@ mod tests {
         assert_eq!(runtime.cancel(handle), 0);
         assert!(cancel_started.elapsed() < Duration::from_millis(50));
         assert_eq!(runtime.dispatch(handle, feed("1 + 1")), -1);
-        let mut saw_duration_error = false;
+        let mut duration_error = None;
         loop {
             match recv(&rx) {
                 Posted::Frame(1, frame) => {
                     let event = decode(frame);
-                    saw_duration_error |= matches!(event.kind, Some(pb::child_event::Kind::Error(_)));
+                    if let Some(pb::child_event::Kind::Error(error)) = event.kind {
+                        duration_error = error.exception;
+                    }
                 }
                 Posted::Int(1, EXITED) => break,
                 Posted::Int(1, OUTCOME_CONTINUE) => {}
                 other => panic!("unexpected cancel reply: {other:?}"),
             }
         }
-        assert!(saw_duration_error);
+        let duration_error = duration_error.expect("duration-limit error");
+        assert_eq!(duration_error.exc_type, "TimeoutError");
+        let message = duration_error.message.expect("duration-limit message");
+        assert!(message.starts_with("turn time limit exceeded: "), "{message}");
+        assert!(message.ends_with(" > 500ms"), "{message}");
         let elapsed = started.elapsed();
-        assert!(elapsed >= Duration::from_millis(500), "exited too early after {elapsed:?}");
-        assert!(elapsed <= Duration::from_millis(1500), "exited too late after {elapsed:?}");
+        assert!(
+            elapsed >= Duration::from_millis(500),
+            "exited too early after {elapsed:?}"
+        );
+        assert!(
+            elapsed <= Duration::from_millis(1500),
+            "exited too late after {elapsed:?}"
+        );
     }
 
     #[test]
@@ -793,6 +833,21 @@ mod tests {
         assert_eq!(runtime.dispatch(second, Vec::new()), -1);
         assert_eq!(runtime.open(4, 1, parent), -2);
         wait_exited_all(&rx, &[1, 2, 3]);
+    }
+
+    #[test]
+    fn parent_shutdown_cancels_live_children() {
+        let _test = TEST_LOCK.lock().unwrap();
+        let (runtime, _poster, rx) = runtime(256 * 1024 * 1024);
+        let parent = configured(&runtime, 1, &rx, 64 * 1024 * 1024, 1000);
+        let first = runtime.open(2, 64 * 1024 * 1024, parent);
+        let second = runtime.open(3, 64 * 1024 * 1024, parent);
+        assert!(first > 0 && second > 0);
+
+        assert_eq!(runtime.dispatch(parent, shutdown()), 0);
+        wait_exited_all(&rx, &[1, 2, 3]);
+        assert_eq!(runtime.dispatch(first, Vec::new()), -1);
+        assert_eq!(runtime.dispatch(second, Vec::new()), -1);
     }
 
     #[test]
@@ -825,7 +880,13 @@ mod tests {
         assert!(rx.try_recv().is_err());
         poster.set_accepting(true);
         let events = turn(&runtime, handle, 1, feed("2 + 2"), &rx);
-        assert!(matches!(events.as_slice(), [pb::ChildEvent { kind: Some(pb::child_event::Kind::Complete(_)), .. }]));
+        assert!(matches!(
+            events.as_slice(),
+            [pb::ChildEvent {
+                kind: Some(pb::child_event::Kind::Complete(_)),
+                ..
+            }]
+        ));
         assert_eq!(runtime.close(handle), 0);
         wait_exited(&rx, 1);
     }
