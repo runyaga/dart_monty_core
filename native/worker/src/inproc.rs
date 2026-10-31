@@ -497,8 +497,7 @@ pub unsafe extern "C" fn dmn_dispatch(handle: i64, ptr: *const u8, len: usize) -
     if len != 0 && ptr.is_null() {
         return -1;
     }
-    let max_frame_len = usize::try_from(MAX_FRAME_LEN).expect("frame length fits usize")
-        + mem::size_of::<u32>();
+    let max_frame_len = usize::try_from(MAX_FRAME_LEN).unwrap_or(usize::MAX) + mem::size_of::<u32>();
     if len > max_frame_len {
         return -1;
     }
@@ -912,13 +911,7 @@ mod tests {
         let (runtime, _poster, rx) = runtime(reserved);
         let handle = runtime.open(1, reserved, 0);
         assert!(handle > 0);
-        let events = turn(
-            &runtime,
-            handle,
-            1,
-            configure(memory, 1000, Some(500_000)),
-            &rx,
-        );
+        let events = turn(&runtime, handle, 1, configure(memory, 1000, Some(500_000)), &rx);
         assert!(matches!(
             events.as_slice(),
             [pb::ChildEvent {
@@ -973,10 +966,7 @@ mod tests {
         loop {
             match recv(&rx) {
                 Posted::Frame(1, frame) => {
-                    saw_complete |= matches!(
-                        decode(frame).kind,
-                        Some(pb::child_event::Kind::Complete(_))
-                    );
+                    saw_complete |= matches!(decode(frame).kind, Some(pb::child_event::Kind::Complete(_)));
                 }
                 Posted::Int(1, OUTCOME_CONTINUE) => saw_outcome = true,
                 Posted::Int(1, EXITED) => break,
