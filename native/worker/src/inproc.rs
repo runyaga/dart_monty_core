@@ -19,7 +19,7 @@ use std::{
 };
 
 use monty_proto::{
-    FrameError, pb,
+    FrameError, MAX_FRAME_LEN, pb,
     worker::{Child, EventSink, HandleOutcome, fatal_error_event},
     write_frame,
 };
@@ -47,7 +47,7 @@ struct DartApiEntry {
 
 #[repr(C)]
 struct DartApi {
-    _major: i32,
+    major: i32,
     _minor: i32,
     functions: *const DartApiEntry,
 }
@@ -128,6 +128,7 @@ struct Session {
     parent: i64,
     mem_limit: i64,
     cancelled: Arc<AtomicBool>,
+    closing: bool,
     tx: mpsc::Sender<Command>,
 }
 
@@ -172,7 +173,7 @@ impl Runtime {
             let mut registry = self.registry();
             if parent_handle != 0 {
                 match registry.sessions.get(&parent_handle) {
-                    Some(parent) if !parent.cancelled.load(Ordering::Acquire) => {}
+                    Some(parent) if !parent.cancelled.load(Ordering::Acquire) && !parent.closing => {}
                     _ => return -2,
                 }
             }
@@ -193,6 +194,7 @@ impl Runtime {
                     parent: parent_handle,
                     mem_limit,
                     cancelled: Arc::clone(&cancelled),
+                    closing: false,
                     tx,
                 },
             );
@@ -219,7 +221,7 @@ impl Runtime {
         let Some(session) = registry.sessions.get(&handle) else {
             return -1;
         };
-        if session.cancelled.load(Ordering::Acquire) {
+        if session.cancelled.load(Ordering::Acquire) || session.closing {
             return -1;
         }
         session.tx.send(Command::Dispatch(frame)).map_or(-1, |()| 0)
@@ -237,13 +239,16 @@ impl Runtime {
     }
 
     fn close(&self, handle: i64) -> i64 {
-        let registry = self.registry();
-        let Some(session) = registry.sessions.get(&handle) else {
-            return -1;
-        };
-        let _ = session.tx.send(Command::Shutdown);
-        session.cancelled.store(true, Ordering::Release);
-        let _ = session.tx.send(Command::Wake);
+        let mut registry = self.registry();
+        {
+            let Some(session) = registry.sessions.get_mut(&handle) else {
+                return -1;
+            };
+            if !session.closing {
+                session.closing = true;
+                let _ = session.tx.send(Command::Shutdown);
+            }
+        }
         Self::cancel_descendants(&registry.sessions, handle);
         0
     }
@@ -270,6 +275,10 @@ impl Runtime {
             reply_port,
         };
         let mut child = Child::default();
+        let _cancellation = SessionCancellation {
+            runtime: Arc::clone(&self),
+            handle,
+        };
         loop {
             if cancelled.load(Ordering::Acquire) {
                 break;
@@ -282,7 +291,9 @@ impl Runtime {
             }
             match command {
                 Command::Dispatch(frame) => {
-                    if !self.run_turn(&mut child, reply_port, |child, sink| dispatch_owned(child, frame, sink)) {
+                    if !self.run_turn(handle, &mut child, reply_port, |child, sink| {
+                        dispatch_owned(child, frame, sink)
+                    }) {
                         break;
                     }
                 }
@@ -290,7 +301,7 @@ impl Runtime {
                 Command::Wake => {}
                 #[cfg(test)]
                 Command::Panic => {
-                    if !self.run_turn(&mut child, reply_port, |_, _| {
+                    if !self.run_turn(handle, &mut child, reply_port, |_, _| {
                         panic!("deliberate in-process test panic");
                     }) {
                         break;
@@ -302,6 +313,7 @@ impl Runtime {
 
     fn run_turn(
         &self,
+        handle: i64,
         child: &mut Child,
         reply_port: i64,
         work: impl FnOnce(&mut Child, &mut PostingSink) -> HandleOutcome,
@@ -314,16 +326,28 @@ impl Runtime {
         match result {
             Ok(outcome) => {
                 let keep_running = outcome == HandleOutcome::Continue;
+                if !keep_running {
+                    self.end_session(handle);
+                }
                 self.poster.post_int(reply_port, outcome_code(outcome));
                 keep_running
             }
             Err(payload) => {
                 let message = format!("child panicked: {}", panic_message(payload.as_ref()));
                 let _ = sink.send(&fatal_error_event(&message));
+                self.end_session(handle);
                 self.poster.post_int(reply_port, OUTCOME_FATAL);
                 false
             }
         }
+    }
+
+    fn end_session(&self, handle: i64) {
+        let registry = self.registry();
+        if let Some(session) = registry.sessions.get(&handle) {
+            session.cancelled.store(true, Ordering::Release);
+        }
+        Self::cancel_descendants(&registry.sessions, handle);
     }
 
     fn exit_session(&self, handle: i64, reply_port: i64) {
@@ -343,10 +367,21 @@ impl Runtime {
         let Some(session) = registry.sessions.get(&handle) else {
             return -1;
         };
-        if session.cancelled.load(Ordering::Acquire) {
+        if session.cancelled.load(Ordering::Acquire) || session.closing {
             return -1;
         }
         session.tx.send(Command::Panic).map_or(-1, |()| 0)
+    }
+}
+
+struct SessionCancellation {
+    runtime: Arc<Runtime>,
+    handle: i64,
+}
+
+impl Drop for SessionCancellation {
+    fn drop(&mut self) {
+        self.runtime.end_session(self.handle);
     }
 }
 
@@ -415,12 +450,12 @@ pub unsafe extern "C" fn dmn_init(api_dl_data: *const c_void, cap_bytes: i64) ->
     if api_dl_data.is_null() {
         return -1;
     }
-    if let Some(runtime) = RUNTIME.get() {
-        runtime.cap.store(cap_bytes.max(0), Ordering::Release);
-        return 0;
-    }
     // SAFETY: the caller supplies Dart's live API table as required above.
-    let mut entry = unsafe { (*api_dl_data.cast::<DartApi>()).functions };
+    let api = unsafe { &*api_dl_data.cast::<DartApi>() };
+    if api.major != 2 {
+        return -1;
+    }
+    let mut entry = api.functions;
     let mut post = ptr::null();
     // SAFETY: Dart terminates its API entry array with a null name.
     unsafe {
@@ -437,8 +472,8 @@ pub unsafe extern "C" fn dmn_init(api_dl_data: *const c_void, cap_bytes: i64) ->
     }
     // SAFETY: Dart names this table entry Dart_PostCObject with this stable signature.
     let post = unsafe { mem::transmute::<*const c_void, DartPostCObject>(post) };
-    let runtime = Runtime::new(cap_bytes, Arc::new(DartPoster { post }));
-    let _ = RUNTIME.set(runtime);
+    let runtime = RUNTIME.get_or_init(|| Runtime::new(cap_bytes, Arc::new(DartPoster { post })));
+    runtime.cap.store(cap_bytes.max(0), Ordering::Release);
     0
 }
 
@@ -462,6 +497,11 @@ pub unsafe extern "C" fn dmn_dispatch(handle: i64, ptr: *const u8, len: usize) -
     if len != 0 && ptr.is_null() {
         return -1;
     }
+    let max_frame_len = usize::try_from(MAX_FRAME_LEN).expect("frame length fits usize")
+        + mem::size_of::<u32>();
+    if len > max_frame_len {
+        return -1;
+    }
     let frame = if len == 0 {
         Vec::new()
     } else {
@@ -477,7 +517,7 @@ pub extern "C" fn dmn_cancel(handle: i64) -> i64 {
     RUNTIME.get().map_or(-1, |runtime| runtime.cancel(handle))
 }
 
-/// Requests shutdown, then cancels the session tree.
+/// Closes after queued turns and cancels the session tree.
 #[unsafe(no_mangle)]
 pub extern "C" fn dmn_close(handle: i64) -> i64 {
     RUNTIME.get().map_or(-1, |runtime| runtime.close(handle))
@@ -505,7 +545,7 @@ mod tests {
 
     use monty_proto::{FrameReader, PROTOCOL_VERSION, pb, write_frame};
 
-    use super::{EXITED, OUTCOME_CONTINUE, OUTCOME_FATAL, Poster, Runtime};
+    use super::{EXITED, OUTCOME_CONTINUE, OUTCOME_FATAL, OUTCOME_SHUTDOWN, Poster, Runtime};
 
     static TEST_LOCK: Mutex<()> = Mutex::new(());
     const RECV_TIMEOUT: Duration = Duration::from_secs(3);
@@ -821,14 +861,13 @@ mod tests {
         let _test = TEST_LOCK.lock().unwrap();
         let (runtime, _poster, rx) = runtime(256 * 1024 * 1024);
         let parent = runtime.open(1, 64 * 1024 * 1024, 0);
-        let first = runtime.open(2, 64 * 1024 * 1024, parent);
-        let second = runtime.open(3, 64 * 1024 * 1024, parent);
-        assert!(parent > 0 && first > 0 && second > 0);
+        let child = runtime.open(2, 64 * 1024 * 1024, parent);
+        let grandchild = runtime.open(3, 64 * 1024 * 1024, child);
+        assert!(parent > 0 && child > 0 && grandchild > 0);
 
         assert_eq!(runtime.cancel(parent), 0);
-        assert_eq!(runtime.dispatch(first, Vec::new()), -1);
-        assert_eq!(runtime.dispatch(second, Vec::new()), -1);
-        assert_eq!(runtime.open(4, 1, parent), -2);
+        assert_eq!(runtime.dispatch(grandchild, Vec::new()), -1);
+        assert_eq!(runtime.open(4, 1, child), -2);
         wait_exited_all(&rx, &[1, 2, 3]);
     }
 
@@ -863,6 +902,89 @@ mod tests {
         assert_eq!(runtime.close(first), 0);
         assert_eq!(runtime.close(replacement), 0);
         wait_exited_all(&rx, &[1, 3]);
+    }
+
+    #[test]
+    fn cancellation_holds_admission_until_exited() {
+        let _test = TEST_LOCK.lock().unwrap();
+        let memory = 64_u64 * 1024 * 1024;
+        let reserved = i64::try_from(memory).unwrap();
+        let (runtime, _poster, rx) = runtime(reserved);
+        let handle = runtime.open(1, reserved, 0);
+        assert!(handle > 0);
+        let events = turn(
+            &runtime,
+            handle,
+            1,
+            configure(memory, 1000, Some(500_000)),
+            &rx,
+        );
+        assert!(matches!(
+            events.as_slice(),
+            [pb::ChildEvent {
+                kind: Some(pb::child_event::Kind::Ok(_)),
+                ..
+            }]
+        ));
+
+        assert_eq!(runtime.dispatch(handle, feed("while True:\n    pass")), 0);
+        thread::sleep(Duration::from_millis(50));
+        assert_eq!(runtime.cancel(handle), 0);
+        assert_eq!(runtime.open(2, reserved, 0), -1);
+        wait_exited(&rx, 1);
+
+        let replacement = runtime.open(2, reserved, 0);
+        assert!(replacement > 0);
+        assert_eq!(runtime.close(replacement), 0);
+        wait_exited(&rx, 2);
+    }
+
+    #[test]
+    fn shutdown_outcome_stops_dispatch_and_child_open() {
+        let _test = TEST_LOCK.lock().unwrap();
+        let (runtime, _poster, rx) = runtime(128 * 1024 * 1024);
+        let handle = configured(&runtime, 1, &rx, 64 * 1024 * 1024, 1000);
+
+        assert_eq!(runtime.dispatch(handle, shutdown()), 0);
+        loop {
+            match recv(&rx) {
+                Posted::Int(1, OUTCOME_SHUTDOWN) => break,
+                Posted::Int(1, EXITED) => panic!("session exited before shutdown outcome"),
+                Posted::Frame(1, _) => {}
+                other => panic!("unexpected shutdown reply: {other:?}"),
+            }
+        }
+        assert_eq!(runtime.dispatch(handle, feed("1 + 1")), -1);
+        assert_eq!(runtime.open(2, 1, handle), -2);
+        wait_exited(&rx, 1);
+    }
+
+    #[test]
+    fn close_runs_queued_turn_before_exit() {
+        let _test = TEST_LOCK.lock().unwrap();
+        let (runtime, _poster, rx) = runtime(128 * 1024 * 1024);
+        let handle = configured(&runtime, 1, &rx, 64 * 1024 * 1024, 1000);
+
+        assert_eq!(runtime.dispatch(handle, feed("1 + 1")), 0);
+        assert_eq!(runtime.close(handle), 0);
+        assert_eq!(runtime.dispatch(handle, feed("2 + 2")), -1);
+        let mut saw_complete = false;
+        let mut saw_outcome = false;
+        loop {
+            match recv(&rx) {
+                Posted::Frame(1, frame) => {
+                    saw_complete |= matches!(
+                        decode(frame).kind,
+                        Some(pb::child_event::Kind::Complete(_))
+                    );
+                }
+                Posted::Int(1, OUTCOME_CONTINUE) => saw_outcome = true,
+                Posted::Int(1, EXITED) => break,
+                other => panic!("unexpected close reply: {other:?}"),
+            }
+        }
+        assert!(saw_complete);
+        assert!(saw_outcome);
     }
 
     #[test]
