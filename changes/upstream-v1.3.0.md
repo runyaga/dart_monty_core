@@ -13,9 +13,15 @@
   is rejected at once, as a syntax error (`Source is too deeply nested`).
   On 1.2.0 the type check walked the deep AST instead, so the feed ran into
   its deadline and the worker was killed after the limit and its grace.
-- A user `__iter__` or `__next__` method may suspend: a direct `iter()`, a
-  `next()` (with or without a default) and `functools.reduce()` suspend for a
-  host call inside such a method, where 1.2.0 raised `NotImplementedError`.
+- A host call may suspend inside a user `__iter__` reached by `iter()`, a
+  user `__next__` reached by `next(it, default)`, a `functools.reduce()`
+  callback and a `functools.lru_cache` miss. On 1.2.0 these raised
+  `NotImplementedError`.
+- A host call that still cannot suspend, from a `for` loop over a user
+  `__next__` or a `sorted(key=)` callback, raises `NotImplementedError` with
+  `external function '<name>' cannot suspend in this synchronous context`
+  (`OS function '<name>' ...` for an OS call). The message no longer starts
+  with the context name.
 - The pinned upstream corpus grows to 703 cases, from the 695 the 1.2.0 pin
   recorded: the corpus the worker runs, and the scorecard the corpus jobs
   print, now name 703.
