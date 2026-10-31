@@ -1116,7 +1116,7 @@ jobs:
           set -o pipefail
           dart test test/integration/worker test/contract/contract_worker_test.dart -p vm --tags=worker \
             --coverage=coverage-worker 2>&1 | tee /tmp/worker-test.log
-          bash tool/assert_test_count.sh /tmp/worker-test.log 1000 worker
+          bash tool/assert_test_count.sh /tmp/worker-test.log 1040 worker
       - name: Generate worker LCOV
         run: |
           shopt -s globstar nullglob
@@ -1262,7 +1262,7 @@ jobs:
       # below: tool/test_worker_web.sh says why.
       #
       # The per-compiler floor is the script's FLOOR, one number for each
-      # compiler: 640, under the 652 tests measured on dart2js and the 647 on
+      # compiler: 650, under the 661 tests measured on dart2js and the 656 on
       # dart2wasm.
       - name: Worker channel tests (dart2js)
         run: bash tool/test_worker_web.sh --coverage coverage-web --compiler dart2js
@@ -1302,7 +1302,7 @@ jobs:
           restore-keys: pub-${{ runner.os }}-
       - run: dart pub get
       # The per-compiler floor is the script's FLOOR, one number for each
-      # compiler: 640, under the 647 tests measured on dart2wasm.
+      # compiler: 650, under the 656 tests measured on dart2wasm.
       - name: Worker channel tests (dart2wasm)
         run: bash tool/test_worker_web.sh --compiler dart2wasm
 
