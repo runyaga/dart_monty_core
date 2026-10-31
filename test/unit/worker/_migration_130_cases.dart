@@ -59,6 +59,50 @@ const _dumpHeaderLength = 8;
 /// The header bytes for `DUMP_VERSION` 13 (`0x000d` little-endian).
 const _dumpVersion13Header = [0x4d, 0x4f, 0x4e, 0x54, 0x59, 0, 13, 0];
 
+/// The refusal message when an external call suspends in a sync context.
+const _syncRefusalMessage =
+    "external function 'ext' cannot suspend in this synchronous context";
+
+const _reduceSuspendCode =
+    'import functools\n'
+    'functools.reduce(lambda a, b: a + ext(b), [1, 2, 3], 0)';
+
+const _iterSuspendCode =
+    'class It:\n'
+    '    def __iter__(self):\n'
+    '        ext(1)\n'
+    '        return iter([7, 8])\n'
+    'list(iter(It()))';
+
+const _nextDefaultSuspendCode =
+    'class N:\n'
+    '    def __iter__(self):\n'
+    '        return self\n'
+    '    def __next__(self):\n'
+    '        ext(2)\n'
+    '        raise StopIteration\n'
+    'next(N(), "dflt")';
+
+const _cacheMissSuspendCode =
+    'import functools\n'
+    'def g(x):\n'
+    '    return ext(x) * 10\n'
+    'g = functools.cache(g)\n'
+    'g(4) + g(4)';
+
+const _forLoopNextRefusalCode =
+    'class F:\n'
+    '    def __iter__(self):\n'
+    '        return self\n'
+    '    def __next__(self):\n'
+    '        ext(3)\n'
+    '        raise StopIteration\n'
+    'for _ in F():\n'
+    '    pass\n'
+    '"done"';
+
+const _sortedKeyRefusalCode = 'sorted([3, 1, 2], key=lambda v: ext(v))';
+
 Uint8List _unhex(String hex) => Uint8List.fromList([
   for (var index = 0; index < hex.length; index += 2)
     int.parse(hex.substring(index, index + 2), radix: 16),
@@ -82,6 +126,7 @@ void migration130SessionTests(String label, MigrationStart start) {
   _cachedTypeCase(label, start);
   _cachedDumpRoundTripCase(label, start);
   _idleDump120RestoresCase(label, start);
+  _suspensionCases(label, start);
 }
 
 /// The feed nested past the parser's limit is rejected at once.
@@ -216,4 +261,135 @@ void _idleDump120RestoresCase(String label, MigrationStart start) {
       );
     },
   );
+}
+
+/// Registers the six 1.3.0 suspension boundary cases for [label].
+void _suspensionCases(String label, MigrationStart start) {
+  _suspensionAllowCase(
+    label,
+    start,
+    name: 'reduce callback',
+    code: _reduceSuspendCode,
+    expectedArgs: const [1, 2, 3],
+    output: const MontyInt(306),
+  );
+  _suspensionAllowCase(
+    label,
+    start,
+    name: 'iter method',
+    code: _iterSuspendCode,
+    expectedArgs: const [1],
+    output: const MontyList([MontyInt(7), MontyInt(8)]),
+  );
+  _suspensionAllowCase(
+    label,
+    start,
+    name: 'next with default',
+    code: _nextDefaultSuspendCode,
+    expectedArgs: const [2],
+    output: const MontyString('dflt'),
+  );
+  _suspensionAllowCase(
+    label,
+    start,
+    name: 'cache miss',
+    code: _cacheMissSuspendCode,
+    expectedArgs: const [4],
+    output: const MontyInt(2080),
+  );
+  _suspensionRefusalCase(
+    label,
+    start,
+    name: 'for loop next refusal',
+    code: _forLoopNextRefusalCode,
+  );
+  _suspensionRefusalCase(
+    label,
+    start,
+    name: 'sorted key refusal',
+    code: _sortedKeyRefusalCode,
+  );
+}
+
+/// Runs [code] through `feedStart`, answering each `ext(n)` call with
+/// `n + 100`.
+Future<(List<int>, MontyValue)> _driveExtCalls(
+  MontySession session,
+  String code,
+) async {
+  final seenArgs = <int>[];
+  var snapshot = await session.feedStart(code);
+  while (snapshot is FunctionSnapshot) {
+    expect(snapshot.functionName, 'ext');
+    if (snapshot.args case [final MontyInt argument]) {
+      final number = argument.value;
+      seenArgs.add(number);
+      snapshot = await snapshot.resume(
+        ExternalReturnValue(MontyInt(number + 100)),
+      );
+    } else {
+      fail('expected a single MontyInt argument, got ${snapshot.args}');
+    }
+  }
+  if (snapshot is! MontyComplete) {
+    fail('expected MontyComplete, got $snapshot');
+  }
+
+  return (seenArgs, snapshot.output);
+}
+
+/// Registers a test that verifies [code] suspends on `ext` and returns
+/// [output].
+void _suspensionAllowCase(
+  String label,
+  MigrationStart start, {
+  required String name,
+  required String code,
+  required List<int> expectedArgs,
+  required MontyValue output,
+}) {
+  test('suspension: $name ($label)', () async {
+    final pool = await start(const PoolOptions(maxProcesses: 1));
+    addTearDown(pool.close);
+    final session = await pool.checkoutWith();
+    addTearDown(session.close);
+
+    final (seenArgs, actualOutput) = await _driveExtCalls(session, code);
+    expect(seenArgs, expectedArgs);
+    expect(actualOutput, output);
+    expect(await session.feedRun('1 + 1'), const MontyInt(2));
+  });
+}
+
+/// Registers a test that verifies [code] refuses to suspend in a sync context.
+void _suspensionRefusalCase(
+  String label,
+  MigrationStart start, {
+  required String name,
+  required String code,
+}) {
+  test('suspension: $name ($label)', () async {
+    final pool = await start(const PoolOptions(maxProcesses: 1));
+    addTearDown(pool.close);
+    final session = await pool.checkoutWith();
+    addTearDown(session.close);
+
+    await expectLater(
+      session.feedStart(code),
+      throwsA(
+        isA<MontyRuntimeError>()
+            .having(
+              (error) => error.exception.excType,
+              'excType',
+              'NotImplementedError',
+            )
+            .having(
+              (error) => error.exception.message,
+              'message',
+              contains(_syncRefusalMessage),
+            ),
+      ),
+    );
+    expect(await session.feedRun('1 + 1'), const MontyInt(2));
+  });
 }
