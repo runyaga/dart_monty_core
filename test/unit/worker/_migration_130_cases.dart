@@ -12,6 +12,8 @@
 // (2) The type of a cached function reaches the host as the builtin type
 // proxy it names. On 1.2.0 `functools` had no `cache` at all, so the feed
 // raised AttributeError (finding 21).
+import 'dart:typed_data';
+
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/worker/monty.dart';
 import 'package:dart_monty_core/src/worker/proto_session.dart';
@@ -35,6 +37,17 @@ const _cachedType =
 /// The type the host must see for a cached function.
 const _cachedTypeName = 'functools._lru_cache_wrapper';
 
+/// A feed that populates an `lru_cache` wrapper in globals.
+const _cachedGlobals =
+    'import functools\n'
+    'def sq(n):\n'
+    '    return n * n\n'
+    'sq = functools.lru_cache(maxsize=4)(sq)\n'
+    'sq(3)\n';
+
+/// Reads a cached hit, a fresh miss, and the hit count after restore.
+const _cacheProbe = 'sq(3) + sq(4) + sq.cache_info().hits';
+
 /// The outcome of a feed: the value it answered, or the error it raised.
 ///
 /// The error is a value here, so the expectation below fails on it rather
@@ -51,6 +64,7 @@ Future<Object?> _outcome(Future<MontyValue> feed) async {
 void migration130SessionTests(String label, MigrationStart start) {
   _deepNestingCase(label, start);
   _cachedTypeCase(label, start);
+  _cachedDumpRoundTripCase(label, start);
 }
 
 /// The feed nested past the parser's limit is rejected at once.
@@ -116,6 +130,37 @@ void _cachedTypeCase(String label, MigrationStart start) {
         await session.feedRun('1 + 1'),
         const MontyInt(2),
         reason: 'the session is still usable after the answer',
+      );
+    },
+  );
+}
+
+/// An idle dump holding a cached function restores with its cache intact.
+void _cachedDumpRoundTripCase(String label, MigrationStart start) {
+  test(
+    'an idle dump holding a cached function restores with its cache intact '
+    '($label)',
+    () async {
+      final pool = await start(const PoolOptions(maxProcesses: 1));
+      addTearDown(pool.close);
+
+      final checkout = pool.checkoutWith;
+      final source = await checkout();
+      final Uint8List dump;
+      try {
+        await source.feedRun(_cachedGlobals);
+        dump = await source.dump();
+      } finally {
+        await source.close();
+      }
+
+      final restored = await checkout();
+      addTearDown(restored.close);
+      await restored.loadSession(dump);
+      expect(
+        await restored.feedRun(_cacheProbe),
+        const MontyInt(26),
+        reason: 'sq(3) hits cache (9 + 1 hit) and sq(4) computes 16',
       );
     },
   );
