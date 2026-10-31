@@ -59,6 +59,19 @@ jobs:
       - name: Build worker files
         shell: bash
         run: bash tool/build_worker.sh
+      - name: Linux worker files need no libgcc_s
+        if: startsWith(matrix.target, 'linux-')
+        shell: bash
+        run: |
+          for f in "lib/src/bin/${TARGET}/dart_monty_worker" "lib/src/bin/${TARGET}/libdart_monty_worker.so"; do
+            needed=$(readelf -d "$f")
+            if grep -q 'libgcc_s' <<<"$needed"; then
+              echo "$f needs libgcc_s.so.1"
+              exit 1
+            fi
+          done
+        env:
+          TARGET: ${{ matrix.target }}
       - name: Pack worker files
         shell: bash
         run: >-
