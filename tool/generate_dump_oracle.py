@@ -3,7 +3,7 @@
 
 usage: PYTHON -I tool/generate_dump_oracle.py [--check]
 
-PYTHON is an interpreter with pydantic-monty 1.1.0 installed (the oracle).
+PYTHON is an interpreter with the pydantic-monty that tool/upstream/requirements.lock pins installed (the oracle).
 The two directions of dump portability, each a same-version idle dump:
 
 - upstream to core: the dump recorded here (`upstreamIdleDumpHex`) is loaded by

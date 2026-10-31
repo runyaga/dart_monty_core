@@ -3,7 +3,7 @@
 
 usage: PYTHON -I tool/generate_host_oracle.py [--check]
 
-PYTHON is an interpreter with pydantic-monty 1.1.0 installed (the oracle).
+PYTHON is an interpreter with the pydantic-monty that tool/upstream/requirements.lock pins installed (the oracle).
 Each case builds host objects and their ClassInstance / ClassType wrappers,
 then runs steps on upstream's AsyncMonty. The Dart side
 (test/unit/worker/_host_cases.dart) builds the same objects and wrappers on

@@ -19,9 +19,9 @@
 # by 8 points for a reason that has nothing to do with this suite.
 #
 # Each compiler's run has its own test-count floor: `dart test` exits 0 on a
-# tag filter that matches nothing. 241 tests per compiler observed, 34 of
-# them the dump and load oracle cases, 19 the host-object oracle cases and
-# 36 the print-sink oracle cases.
+# tag filter that matches nothing. Measured on the 1.3.0 migration: 661
+# tests on dart2js and 656 on dart2wasm, so the floor is one number for both
+# compilers.
 #
 # The coverage run loads one suite at a time (`-j 1`). Chrome's precise
 # coverage is binary here: each `Profiler.takePreciseCoverage` reports a
@@ -41,7 +41,7 @@
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
-FLOOR=630
+FLOOR=650
 COV=()
 COMPILERS=(dart2js dart2wasm)
 while [ $# -gt 0 ]; do

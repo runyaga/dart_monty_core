@@ -3,7 +3,7 @@
 
 usage: PYTHON -I tool/generate_restore_oracle.py [--check]
 
-PYTHON is an interpreter with pydantic-monty 1.2.0 installed (the oracle),
+PYTHON is an interpreter with the pydantic-monty that tool/upstream/requirements.lock pins installed (the oracle),
 the release the pin in tool/upstream/requirements.lock names.
 Each case is a script of steps on upstream's AsyncMonty: sessions checked
 out, fed, started, dumped, loaded and resumed, and the outcome of each step.

@@ -512,7 +512,7 @@ dependencies = [
 
 [[package]]
 name = "dart_monty_worker"
-version = "0.120.0"
+version = "0.130.0-dev.1"
 dependencies = [
  "monty-alloc",
  "monty-fs",
@@ -1312,9 +1312,9 @@ dependencies = [
 
 [[package]]
 name = "monty"
-version = "1.2.0"
+version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c7a88714723c0f3a9f162f363f345c92344eb1d26c695047388de453a0424ebc"
+checksum = "7d0f5559d7a445c22ed296fe8252aa067c80b7eb2bc70aeae341cf9967e58012"
 dependencies = [
  "ahash",
  "chrono",
@@ -1354,18 +1354,18 @@ dependencies = [
 
 [[package]]
 name = "monty-alloc"
-version = "1.2.0"
+version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f0409ec91836694fc57ff8c1a340678cf7853a94cee5b2ef15d734cee21c2b11"
+checksum = "c3f9d819abd1c64c36dbfb05518a8d1ba28c55f38eb802a9c0c58818dee3f6d4"
 dependencies = [
  "monty-types",
 ]
 
 [[package]]
 name = "monty-fs"
-version = "1.2.0"
+version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "03daf656e21e09bf2bfcca964c6e68ce8eb95237ff3fd7f763be07877246cccb"
+checksum = "689d6fb1ad3fb85197f2467d18bbaf2c57b1942a23b2927cd6ea8bb4ef094df6"
 dependencies = [
  "ahash",
  "cap-std",
@@ -1375,9 +1375,9 @@ dependencies = [
 
 [[package]]
 name = "monty-macros"
-version = "1.2.0"
+version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82ae4a49b9211b7ca43b124f95becb0c286af6df49421f5f99c65cd6a6f51f9e"
+checksum = "dbd7672e36311f10645e3a9e6776b643711543ec3fb415546ffde751e6d53003"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1386,9 +1386,9 @@ dependencies = [
 
 [[package]]
 name = "monty-proto"
-version = "1.2.0"
+version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "831fb817f8b462cbfa2abc4ca072fcac7f937a0cc19f83527358198c3b0fb8a0"
+checksum = "69d3a77130a14d321832f4ab32e629b9ad790f0590224dca5536ef4dbf69b4b5"
 dependencies = [
  "monty",
  "monty-type-checking",
@@ -1399,9 +1399,9 @@ dependencies = [
 
 [[package]]
 name = "monty-type-checking"
-version = "1.2.0"
+version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b7f5a38f6c62d08a80db6d81b34edcae0897dcfc0eeba333369962747d190df8"
+checksum = "ffdc38ffb186b0158826166fff9e473331b39860a428ecdbb195e21792052e04"
 dependencies = [
  "monty-types",
  "monty-typeshed",
@@ -1418,9 +1418,9 @@ dependencies = [
 
 [[package]]
 name = "monty-types"
-version = "1.2.0"
+version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09956030c0cd340d5db97b88fd3744f57ed304083093a592ab2a29a3dcab88cb"
+checksum = "786b179998d4799dc96a5c25e91e3774a1fa8dd6cca441ddeedc9c146fd9a8cd"
 dependencies = [
  "chrono",
  "jiff",
@@ -1437,9 +1437,9 @@ dependencies = [
 
 [[package]]
 name = "monty-typeshed"
-version = "1.2.0"
+version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7fc2079654d8d7574deb72c526e2b132c4fa7550ffc62df8b9ea1dad26d44797"
+checksum = "8c66fa1f3446c114d9a607f3f4ef033d6c6e7c3b1402ef47510b3ea1e1077887"
 dependencies = [
  "path-slash",
  "ruff_db",

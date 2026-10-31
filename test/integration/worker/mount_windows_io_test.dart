@@ -5,6 +5,7 @@ library;
 import 'dart:io';
 
 import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 // The Windows-only escape surface of a host MountDir, in every mode: NTFS
@@ -205,12 +206,8 @@ void main() {
   }
 
   test('nothing was written outside the mount root', () {
-    final outside =
-        tmp
-            .listSync()
-            .map((e) => e.uri.pathSegments.where((s) => s.isNotEmpty).last)
-            .toList()
-          ..sort();
+    final outside = tmp.listSync().map((e) => p.basename(e.path)).toList()
+      ..sort();
     expect(outside, ['root', 'secret.txt']);
     expect(File('${tmp.path}\\secret.txt').readAsStringSync(), _secret);
   });

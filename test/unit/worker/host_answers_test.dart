@@ -799,7 +799,8 @@ void main() {
   });
 
   test(
-    'v1.2.0 OS calls preserve arguments validate stubs and dispatch scans',
+    'pinned upstream OS calls preserve arguments validate stubs and '
+    'dispatch scans',
     () async {
       // The wire a v1.2.0 worker speaks: `OsCall.import` is field 31,
       // `OsCall.import_stubs` field 32 and `OsCall.scan` field 33 (monty

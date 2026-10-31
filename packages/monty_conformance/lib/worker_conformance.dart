@@ -1,6 +1,6 @@
-/// The pinned upstream corpus (`test_cases` at upstream 1.1.0) on the worker:
-/// the fixtures, the host harness that answers their calls, the runner, and
-/// the manifest of expected failures per platform.
+/// The pinned upstream corpus (`test_cases` at the pinned upstream) on the
+/// worker: the fixtures, the host harness that answers their calls, the
+/// runner, and the manifest of expected failures per platform.
 library;
 
 export 'src/fixture_corpus_v1.dart';

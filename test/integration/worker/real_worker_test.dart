@@ -343,18 +343,18 @@ void main() {
     expect(_completeInt(await fresh.turn(_feed('1 + 1'))), 2);
   });
 
-  test('release pin and oracle lock target v1.2.0', () {
-    expect(_pinnedUpstreamVersion(), '1.2.0');
-    expect(_pinnedUpstreamTag(), 'v1.2.0');
+  test('release pin and oracle lock target the pinned upstream', () {
+    expect(_pinnedUpstreamVersion(), '1.3.0');
+    expect(_pinnedUpstreamTag(), 'v1.3.0');
     expect(_pinnedUpstreamDistributions(), const {
-      'pydantic-monty': '1.2.0',
-      'pydantic-monty-client': '1.2.0',
-      'pydantic-monty-runtime': '1.2.0',
+      'pydantic-monty': '1.3.0',
+      'pydantic-monty-client': '1.3.0',
+      'pydantic-monty-runtime': '1.3.0',
     });
     expect(_offlineUpstreamPinValidationSucceeds(), isTrue);
   });
 
-  test('worker v1.2.0 dependencies and reviewed mirrors are consistent', () {
+  test('worker dependencies and reviewed mirrors are consistent', () {
     // The manifest is read and checked FIRST: it is the file that still
     // pins monty 1.1.0, so this test fails on that declaration, before any
     // later check runs.
@@ -371,13 +371,13 @@ void main() {
   // The aggregate of the v1.2.0 migration's regressions. It runs after the
   // metadata test above, which must pass before it means anything.
   test(
-    'native v1.2.0 worker and mount service pass migration regressions',
+    'native worker and mount service pass migration regressions',
     _migrationRegressions,
     timeout: const Timeout(Duration(minutes: 30)),
   );
 
   test('migration test floors and change fragment match completed suites', () {
-    // The monty v1.2.0 migration registered its suites -- the pin test above
+    // The monty v1.3.0 migration registered its suites -- the pin test above
     // passes -- but nothing followed through: the two floors that count those
     // suites still hold the values they were locked at before it, and
     // changes/ holds no fragment for the upgrade. A floor is raised when a
@@ -390,8 +390,8 @@ void main() {
       greaterThan(_lockedUnitTestsFloor),
       reason:
           'tool/gate.sh still reads "sf unit_tests '
-          '$_lockedUnitTestsFloor"; the migration grew the suite this floor '
-          'counts, so the floor moves up with it',
+          '$_lockedUnitTestsFloor"; the 1.3.0 migration grew the suite this '
+          'floor counts, so the floor moves up with it',
     );
     expect(
       unitFloor,
@@ -407,8 +407,8 @@ void main() {
       greaterThan(_lockedWorkerWebFloor),
       reason:
           'tool/test_worker_web.sh still reads "FLOOR='
-          '$_lockedWorkerWebFloor"; the migration grew the web suites this '
-          'floor counts, so the floor moves up with it',
+          '$_lockedWorkerWebFloor"; the 1.3.0 migration grew the web suites '
+          'this floor counts, so the floor moves up with it',
     );
     expect(
       webFloor,
@@ -438,15 +438,16 @@ void main() {
       _migrationChangeFragment(),
       isNotEmpty,
       reason:
-          'the release upgrade, protocol/imports, Scan, open behavior, '
-          'restore limits, exception codecs and BOM correction are '
-          'user-visible and belong in a changes/<slug>.md fragment',
+          'the 1.3.0 upgrade, the lru_cache type name, the rejection of '
+          'deep feeds, the suspension allowed through reduce/iter/next, the '
+          '703-case corpus and the dump downgrade limit are user-visible '
+          'and belong in a changes/<slug>.md fragment; one must cover: '
+          '${_migrationFragmentTopics.join(', ')}',
     );
   });
 
   test(
-    'v1.2.0 corpus scorecards and capability records match measured '
-    'results',
+    'corpus scorecards and capability records match measured results',
     _corpusScorecardAcceptance,
     timeout: const Timeout(Duration(minutes: 120)),
   );
@@ -474,7 +475,8 @@ String _bits(MontyValue v) => switch (v) {
 // The release pin readers below read the records they name: the pin
 // tool/upstream/upstream-pin.json and the oracle lock it points at. They
 // report what those records say, so 'release pin and oracle lock target
-// v1.2.0' fails while the tree still pins an older upstream release.
+// the pinned upstream' fails while the tree still pins an older upstream
+// release.
 
 /// The upstream monty release this core pins: `version` in
 /// tool/upstream/upstream-pin.json (upstream pydantic/monty).
@@ -541,35 +543,50 @@ String _pinString(String key) {
 }
 
 // The migration follow-through readers below report what the tree holds, not
-// what it should hold: the two floors the completed monty v1.2.0
+// what it should hold: the two floors the completed monty v1.3.0
 // registrations were supposed to raise, the observed counts those floors must
 // stay under, and the changes/<slug>.md fragment recording the upgrade. So
 // 'migration test floors and change fragment match completed suites' fails
 // while any of the three is still missing.
 
-/// The unit_tests floor as it was locked when the monty v1.2.0 migration
-/// began: `sf unit_tests 3211`, tool/gate.sh:270.
-const int _lockedUnitTestsFloor = 3211;
+/// The unit_tests floor as it was locked when the monty v1.3.0 migration
+/// began: `sf unit_tests 3900`, tool/gate.sh:271.
+const int _lockedUnitTestsFloor = 3900;
 
-/// The worker web floor as it was locked when the monty v1.2.0 migration
-/// began: `FLOOR=566`, tool/test_worker_web.sh:44.
-const int _lockedWorkerWebFloor = 566;
+/// The worker web floor as it was locked when the monty v1.3.0 migration
+/// began: `FLOOR=630`, tool/test_worker_web.sh:44.
+const int _lockedWorkerWebFloor = 630;
 
-/// Every topic a `changes/<slug>.md` fragment for the monty v1.2.0 migration
+/// Every topic a `changes/<slug>.md` fragment for the monty v1.3.0 migration
 /// must describe, matched case-insensitively by [_migrationChangeFragment]:
-/// the release upgrade, protocol/imports, Scan, open behavior, restore
-/// limits, exception codecs and BOM correction.
+/// the release upgrade, the `functools.lru_cache` type name, the rejection
+/// of deep feeds, the suspension allowed through `reduce()`, `iter()` and
+/// `next()`, the 703-case corpus and the dump downgrade limit.
+///
+/// A compound topic needs a keyword for each of its parts, as the v1.2.0
+/// list did ('restore limits' became 'restore' and 'limit', 'exception
+/// codecs' became 'exception' and 'codec'). So the type name needs both
+/// 'lru_cache' and 'type', the deep-feed rejection needs 'deep', 'feed'
+/// and 'reject', the suspension needs 'suspen' beside 'reduce', 'iter' and
+/// 'next', the corpus needs 'corpus' and '703', and the dump downgrade
+/// limit needs 'dump', 'downgrade' and 'limit'.
 const List<String> _migrationFragmentTopics = [
-  '1.2.0',
-  'protocol',
-  'import',
-  'scan',
-  'open',
-  'restore',
+  '1.3.0',
+  'lru_cache',
+  'type',
+  'name',
+  'deep',
+  'feed',
+  'reject',
+  'suspen',
+  'reduce',
+  'iter',
+  'next',
+  'corpus',
+  '703',
+  'dump',
+  'downgrade',
   'limit',
-  'exception',
-  'codec',
-  'bom',
 ];
 
 /// The count tool/gate.sh asserts under its [suite] step -- the number in
@@ -608,14 +625,17 @@ int _workerWebFloor() {
 /// keyed by suite ('unit_tests', 'worker_web').
 ///
 /// The counts are the operator's measurements of the complete suites of the
-/// monty v1.2.0 migration, with every registration in place:
+/// monty v1.3.0 migration, with every registration in place:
 ///
-///     unit_tests  3968 passed, 5 skipped   (dart test --exclude-tags=...)
-///     worker_web   645 passed, 5 skipped   (the lower of the two compilers,
-///                                         because the floor is per compiler)
+///     unit_tests  3982 passed, 5 skipped   (dart test --exclude-tags=
+///                                         integration,ladder,example,worker)
+///     worker_web   656 passed, 5 skipped   (the lower of the two compilers:
+///                                         dart2js 661 passed, dart2wasm 656
+///                                         passed + 5 skipped, the selection
+///                                         tool/test_worker_web.sh makes)
 Map<String, int> _observedSuiteCounts() => const {
-  'unit_tests': 3968,
-  'worker_web': 645,
+  'unit_tests': 3982,
+  'worker_web': 656,
 };
 
 /// The observed count recorded for [suite] in [observed], or a failure
@@ -629,16 +649,16 @@ int _observedCount(Map<String, int> observed, String suite) {
   return count;
 }
 
-/// The `changes/<slug>.md` fragment recording the monty v1.2.0 migration, or
-/// CHANGELOG.md once a release has assembled it, or a failure naming what is
-/// missing: a markdown file directly under changes/ (README excluded, as
-/// tool/check_changelog_fragments.sh does not assemble it) or the
-/// `## 0.120.0` section, whose text covers every topic in
-/// [_migrationFragmentTopics].
+/// The `changes/<slug>.md` fragment recording the monty v1.3.0 migration, or
+/// CHANGELOG.md once a release has assembled it: a markdown file directly
+/// under changes/ (README excluded, as tool/check_changelog_fragments.sh does
+/// not assemble it) or the `## 0.130.0` section, whose text covers every
+/// topic in [_migrationFragmentTopics]. The empty string when none covers
+/// them all.
 String _migrationChangeFragment() {
   final changelog = File('CHANGELOG.md').readAsStringSync();
   final released = RegExp(
-    r'^## 0\.120\.0 .*?(?=^## )',
+    r'^## 0\.130\.0 .*?(?=^## )',
     multiLine: true,
     dotAll: true,
   ).firstMatch(changelog)?.group(0);
@@ -665,11 +685,7 @@ String _migrationChangeFragment() {
     }
   }
 
-  fail(
-    'neither a changes/<slug>.md fragment nor the CHANGELOG.md 0.120.0 '
-    'section describes the monty v1.2.0 migration; one must cover: '
-    '${_migrationFragmentTopics.join(', ')}',
-  );
+  return '';
 }
 
 // The worker dependency readers below read the two files the worker's build
@@ -726,7 +742,7 @@ typedef _LockPackage = ({
 typedef _ManifestEntry = ({String table, String name, String value});
 
 /// The manifest's monty requirements, checked first: the worker declares
-/// six of them, and each must pin exactly "=1.2.0".
+/// six of them, and each must pin exactly "=1.3.0".
 void _expectWorkerManifestPinsV120() {
   final requirements = _workerManifestMontyRequirements();
   expect(
@@ -739,16 +755,16 @@ void _expectWorkerManifestPinsV120() {
   for (final requirement in requirements) {
     expect(
       requirement.version,
-      '=1.2.0',
+      '=1.3.0',
       reason:
           'native/worker/Cargo.toml [${requirement.table}] '
-          '${requirement.name} must pin "=1.2.0"',
+          '${requirement.name} must pin "=1.3.0"',
     );
   }
 }
 
 /// The lock's monty packages: exactly the eight the mirror pins, each with
-/// one 1.2.0 resolution.
+/// one 1.3.0 resolution.
 void _expectWorkerLockResolvesV120(Map<String, List<String>> versionsByName) {
   final montyVersions = <String, List<String>>{
     for (final entry in versionsByName.entries)
@@ -772,8 +788,8 @@ void _expectWorkerLockResolvesV120(Map<String, List<String>> versionsByName) {
     );
     expect(
       versions.singleOrNull,
-      '1.2.0',
-      reason: '$name must resolve to 1.2.0 in native/worker/Cargo.lock',
+      '1.3.0',
+      reason: '$name must resolve to 1.3.0 in native/worker/Cargo.lock',
     );
   }
 }
@@ -808,23 +824,21 @@ void _expectMontyHashDependencies(
 }
 
 /// Both package versions: the Dart package and the worker crate carry the
-/// 0.120.x version that tracks upstream monty 1.2.0. The crate stays 0.120.0
-/// while the worker is unchanged: 0.120.1 reuses the v0.120.0 release
-/// binaries its bundled manifest names.
+/// 0.130.0-dev.1 version that tracks upstream monty 1.3.0.
 void _expectPackageVersionsTrackV120() {
   expect(
     _packageVersion('pubspec.yaml'),
-    '0.120.1',
+    '0.130.0-dev.1',
     reason:
-        'pubspec.yaml must carry the 0.120.x version that tracks '
-        'upstream monty 1.2.0',
+        'pubspec.yaml must carry the 0.130.0-dev.1 version that tracks '
+        'upstream monty 1.3.0',
   );
   expect(
     _packageVersion(_workerManifestPath),
-    '0.120.0',
+    '0.130.0-dev.1',
     reason:
-        '$_workerManifestPath must carry the 0.120.x version that '
-        'tracks upstream monty 1.2.0',
+        '$_workerManifestPath must carry the 0.130.0-dev.1 version '
+        'that tracks upstream monty 1.3.0',
   );
 }
 
@@ -1092,13 +1106,13 @@ String _packageVersion(String path) {
 // ---------------------------------------------------------------------------
 
 /// The upstream release this acceptance measures: the pin's version.
-const String _upstreamVersion = '1.2.0';
+const String _upstreamVersion = '1.3.0';
 
 /// The upstream release's tag.
-const String _upstreamTag = 'v1.2.0';
+const String _upstreamTag = 'v1.3.0';
 
 /// How many fixtures the pinned corpus holds.
-const int _pinnedCorpusFiles = 695;
+const int _pinnedCorpusFiles = 703;
 
 /// The upstream corpus' path in the checkout, as the pin records it.
 const String _corpusPath = 'crates/monty/test_cases';

@@ -1,4 +1,4 @@
-// The upstream 1.2.0 corpus on the Web Worker, dart2js or dart2wasm, in
+// The pinned upstream corpus on the Web Worker, dart2js or dart2wasm, in
 // whichever browser runs it; and crash recovery through one pool, under JSPI
 // and under the forced fallback dispatch. Run by CI job `corpus-worker`:
 //
@@ -111,7 +111,7 @@ void main() {
   );
 
   group('corpus', () {
-    test('the upstream 1.2.0 corpus', () async {
+    test('the pinned upstream corpus', () async {
       final target = CorpusTarget(
         label: _backend,
         profile: WorkerCorpusProfile.browser,
@@ -128,7 +128,8 @@ void main() {
     }, timeout: const Timeout(Duration(minutes: 15)));
 
     test(
-      'the four selected v1.2.0 sources meet their directives ($_backend)',
+      'the four selected pinned upstream sources meet their directives '
+      '($_backend)',
       () async {
         final pool = await startMonty(
           corpusPoolOptions,

@@ -3,7 +3,7 @@
 
 usage: PYTHON -I tool/generate_value_oracle.py [--check]
 
-PYTHON is an interpreter with pydantic-monty 1.1.0 installed (the oracle).
+PYTHON is an interpreter with the pydantic-monty that tool/upstream/requirements.lock pins installed (the oracle).
 The values a host sees are upstream's Python objects, so their equality is
 Python's: this records, for each case,
 

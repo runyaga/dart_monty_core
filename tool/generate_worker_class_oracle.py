@@ -3,7 +3,7 @@
 
 usage: PYTHON -I tool/generate_worker_class_oracle.py [--check]
 
-PYTHON is an interpreter with pydantic-monty 1.1.0 installed (the oracle).
+PYTHON is an interpreter with the pydantic-monty that tool/upstream/requirements.lock pins installed (the oracle).
 Each case reads one member of an upstream class that core mirrors in
 lib/src/worker/: `ExternalReturnValue` equality, `FunctionSnapshot.kwargs`
 and `.args`, `SourceRange`'s constructor, and `str()` of a traceback's

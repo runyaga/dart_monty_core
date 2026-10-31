@@ -1,7 +1,7 @@
 {
   "manifest": "tool/upstream/capability-manifest.tsv",
-  "sha256": "709e2fa3767d03f3e7b8bdadb5f1b55a70f3e6aceb474b675734ef08774a3014",
-  "upstream_version": "1.2.0",
+  "sha256": "336dfb8bf1edd91143ee4414488a704cddec3a22ec7bf2463bfcc16f9f637a39",
+  "upstream_version": "1.3.0",
   "rows": 187,
   "in_scope": 185,
   "areas": [

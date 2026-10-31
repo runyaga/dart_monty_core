@@ -3,7 +3,7 @@
 
 usage: PYTHON -I tool/generate_os_handler_oracle.py [--check]
 
-PYTHON is an interpreter with pydantic-monty 1.1.0 installed (the oracle).
+PYTHON is an interpreter with the pydantic-monty that tool/upstream/requirements.lock pins installed (the oracle).
 Each case runs one snippet with `feed_run` on a checkout of upstream's
 AsyncMonty whose `os_policy` routes the clock and sleeps to the host
 (`{'datetime': 'call_host', 'sleep': 'call_host'}`), answered by one `os=`

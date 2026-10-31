@@ -1,11 +1,12 @@
 # Documentation
 
-This index lists every documentation page of the package.
+This index lists every documentation page of the package. The pages describe
+dart_monty_core 0.130.0, which pins pydantic-monty 1.3.0.
 
 ## Concepts
 
 - [Execution model](reference/execution-model.md): States where sessions run, what the worker boundary protects and what it costs, how the pool is sized, grown and reused, and how feeds, protocol turns, callbacks, printing and close behave.
-- [Upstream divergences](reference/upstream-divergences.md): Lists every known place where dart_monty_core behaves differently from pydantic-monty 1.2.0, and why.
+- [Upstream divergences](reference/upstream-divergences.md): Lists every known place where dart_monty_core behaves differently from pydantic-monty 1.3.0, and why.
 
 ## Running code
 

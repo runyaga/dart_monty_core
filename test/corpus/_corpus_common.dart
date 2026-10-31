@@ -67,7 +67,7 @@ final class CorpusTarget {
 void corpusTests(CorpusTarget target) {
   manifestTests();
   test(
-    'the upstream 1.2.0 corpus meets its directives, or is a listed '
+    'the pinned upstream corpus meets its directives, or is a listed '
     'divergence (${target.label})',
     () => runCorpusChecks(target),
     timeout: const Timeout(Duration(minutes: 15)),
@@ -161,11 +161,11 @@ void manifestTests() {
 
   test('the manifest is well formed', () {
     expect(manifestProblems(fixtureCorpusV1.keys), isEmpty);
-    expect(fixtureCorpusV1, hasLength(695));
+    expect(fixtureCorpusV1, hasLength(703));
   });
 
   test(
-    'selected v1.2.0 corpus sources match independent upstream copies',
+    'selected corpus sources match independent pinned upstream copies',
     () {
       // Each production source must be the upstream v1.2.0 text, byte for
       // byte: both sides are strict UTF-8 decodings of the same file, so
@@ -176,7 +176,7 @@ void manifestTests() {
           fixtureCorpusV1,
           containsPair(key, value),
           reason:
-              '$key must equal its independent upstream v1.2.0 copy '
+              '$key must equal its independent pinned upstream copy '
               'byte-for-byte',
         );
       }
@@ -409,8 +409,11 @@ void adjudicatorSelfTests() {
       'one expected value altered in a real upstream fixture fails',
       () async {
         const name = 'edge__float_int_mod.py';
-        final source = fixtureCorpusV1[name]!;
+        final source = fixtureCorpusV1[name];
         expect(source, contains('# Return=1.5'));
+        if (source == null) {
+          fail('$name must be a corpus fixture');
+        }
         expect(await judge({name: source}), isEmpty);
         final altered = await judge({
           name: source.replaceFirst('# Return=1.5', '# Return=1.25'),
