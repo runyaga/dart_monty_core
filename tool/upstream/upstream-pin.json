@@ -1,26 +1,26 @@
 {
   "upstream": "https://github.com/pydantic/monty",
-  "version": "1.3.0",
-  "tag": "v1.3.0",
-  "commit": "9ccbaffdd2cfd5839e0a0ff1248ab901de51eb4c",
+  "version": "1.5.0",
+  "tag": "v1.5.0",
+  "commit": "c707204276f017ce683061e9b8f5ee2b05243359",
   "trees": [
     {
       "path": "crates/monty/test_cases",
-      "git_tree": "7f5c2c2ea7ffcf0d572d2b574ce68b111b9c058f",
-      "files": 703
+      "git_tree": "159eaa325dca83cff882de8b44fbab33f2acb57f",
+      "files": 744
     },
     {
       "path": "docs/limitations",
-      "git_tree": "1e50642d7a1e5159fdfa91968763ac591e6b93ba",
-      "files": 44
+      "git_tree": "6865df5812d06ad0a0f425c05365c9b985b9debf",
+      "files": 47
     }
   ],
   "python": {
     "lock": "tool/upstream/requirements.lock",
     "distributions": {
-      "pydantic-monty": "1.3.0",
-      "pydantic-monty-client": "1.3.0",
-      "pydantic-monty-runtime": "1.3.0"
+      "pydantic-monty": "1.5.0",
+      "pydantic-monty-client": "1.5.0",
+      "pydantic-monty-runtime": "1.5.0"
     }
   }
 }

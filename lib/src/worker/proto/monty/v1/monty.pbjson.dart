@@ -32,6 +32,19 @@ final $typed_data.Uint8List typeOriginDescriptor = $convert.base64Decode(
     '5fQlVJTFRJThABEhcKE1RZUEVfT1JJR0lOX1NBTkRCT1gQAhIUChBUWVBFX09SSUdJTl9IT1NU'
     'EAM=');
 
+@$core.Deprecated('Use executionClockDescriptor instead')
+const ExecutionClock$json = {
+  '1': 'ExecutionClock',
+  '2': [
+    {'1': 'WALL', '2': 0},
+    {'1': 'CPU', '2': 1},
+  ],
+};
+
+/// Descriptor for `ExecutionClock`. Decode as a `google.protobuf.EnumDescriptorProto`.
+final $typed_data.Uint8List executionClockDescriptor =
+    $convert.base64Decode('Cg5FeGVjdXRpb25DbG9jaxIICgRXQUxMEAASBwoDQ1BVEAE=');
+
 @$core.Deprecated('Use persistenceDescriptor instead')
 const Persistence$json = {
   '1': 'Persistence',
@@ -344,6 +357,7 @@ const MontyNode$json = {
       '9': 0,
       '10': 'module'
     },
+    {'1': 'decimal', '3': 33, '4': 1, '5': 9, '9': 0, '10': 'decimal'},
   ],
   '8': [
     {'1': 'kind'},
@@ -376,7 +390,7 @@ final $typed_data.Uint8List montyNodeDescriptor = $convert.base64Decode(
     'R5LnYxLkZpbGVIYW5kbGVIAFIKZmlsZUhhbmRsZRIUCgRyZXByGB0gASgJSABSBHJlcHISFgoF'
     'Y3ljbGUYHiABKAlIAFIFY3ljbGUSLQoHY29tcGxleBgfIAEoCzIRLm1vbnR5LnYxLkNvbXBsZX'
     'hIAFIHY29tcGxleBIuCgZtb2R1bGUYICABKAsyFC5tb250eS52MS5Nb2R1bGVOb2RlSABSBm1v'
-    'ZHVsZUIGCgRraW5k');
+    'ZHVsZRIaCgdkZWNpbWFsGCEgASgJSABSB2RlY2ltYWxCBgoEa2luZA==');
 
 @$core.Deprecated('Use indexesDescriptor instead')
 const Indexes$json = {
@@ -1323,6 +1337,15 @@ const ExtFunctionResult$json = {
       '9': 0,
       '10': 'notHandled'
     },
+    {
+      '1': 'module_file',
+      '3': 6,
+      '4': 1,
+      '5': 11,
+      '6': '.monty.v1.ModuleFile',
+      '9': 0,
+      '10': 'moduleFile'
+    },
   ],
   '8': [
     {'1': 'kind'},
@@ -1334,8 +1357,23 @@ final $typed_data.Uint8List extFunctionResultDescriptor = $convert.base64Decode(
     'ChFFeHRGdW5jdGlvblJlc3VsdBIjCgxyZXR1cm5fdmFsdWUYASABKA1IAFILcmV0dXJuVmFsdW'
     'USMQoFZXJyb3IYAiABKAsyGS5tb250eS52MS5SYWlzZWRFeGNlcHRpb25IAFIFZXJyb3ISGAoG'
     'ZnV0dXJlGAMgASgNSABSBmZ1dHVyZRIdCglub3RfZm91bmQYBCABKAlIAFIIbm90Rm91bmQSMQ'
-    'oLbm90X2hhbmRsZWQYBSABKAsyDi5tb250eS52MS5Vbml0SABSCm5vdEhhbmRsZWRCBgoEa2lu'
-    'ZA==');
+    'oLbm90X2hhbmRsZWQYBSABKAsyDi5tb250eS52MS5Vbml0SABSCm5vdEhhbmRsZWQSNwoLbW9k'
+    'dWxlX2ZpbGUYBiABKAsyFC5tb250eS52MS5Nb2R1bGVGaWxlSABSCm1vZHVsZUZpbGVCBgoEa2'
+    'luZA==');
+
+@$core.Deprecated('Use moduleFileDescriptor instead')
+const ModuleFile$json = {
+  '1': 'ModuleFile',
+  '2': [
+    {'1': 'path', '3': 1, '4': 1, '5': 9, '10': 'path'},
+    {'1': 'source', '3': 2, '4': 1, '5': 9, '10': 'source'},
+  ],
+};
+
+/// Descriptor for `ModuleFile`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List moduleFileDescriptor = $convert.base64Decode(
+    'CgpNb2R1bGVGaWxlEhIKBHBhdGgYASABKAlSBHBhdGgSFgoGc291cmNlGAIgASgJUgZzb3VyY2'
+    'U=');
 
 @$core.Deprecated('Use futureResultDescriptor instead')
 const FutureResult$json = {
@@ -1475,6 +1513,15 @@ const ParentRequest$json = {
       '10': 'abortFeed'
     },
     {
+      '1': 'pong',
+      '3': 12,
+      '4': 1,
+      '5': 11,
+      '6': '.monty.v1.Pong',
+      '9': 0,
+      '10': 'pong'
+    },
+    {
       '1': 'trace_parent',
       '3': 20,
       '4': 1,
@@ -1503,8 +1550,8 @@ final $typed_data.Uint8List parentRequestDescriptor = $convert.base64Decode(
     'bW9udHkudjEuTG9hZEgAUgRsb2FkEicKBXJlc2V0GAkgASgLMg8ubW9udHkudjEuUmVzZXRIAF'
     'IFcmVzZXQSMAoIc2h1dGRvd24YCiABKAsyEi5tb250eS52MS5TaHV0ZG93bkgAUghzaHV0ZG93'
     'bhI0CgphYm9ydF9mZWVkGAsgASgLMhMubW9udHkudjEuQWJvcnRGZWVkSABSCWFib3J0RmVlZB'
-    'ImCgx0cmFjZV9wYXJlbnQYFCABKAlIAVILdHJhY2VQYXJlbnSIAQFCBgoEa2luZEIPCg1fdHJh'
-    'Y2VfcGFyZW50');
+    'IkCgRwb25nGAwgASgLMg4ubW9udHkudjEuUG9uZ0gAUgRwb25nEiYKDHRyYWNlX3BhcmVudBgU'
+    'IAEoCUgBUgt0cmFjZVBhcmVudIgBAUIGCgRraW5kQg8KDV90cmFjZV9wYXJlbnQ=');
 
 @$core.Deprecated('Use configureDescriptor instead')
 const Configure$json = {
@@ -1585,6 +1632,16 @@ const Configure$json = {
       '10': 'profile',
       '17': true
     },
+    {
+      '1': 'execution_clock',
+      '3': 14,
+      '4': 1,
+      '5': 14,
+      '6': '.monty.v1.ExecutionClock',
+      '9': 5,
+      '10': 'executionClock',
+      '17': true
+    },
   ],
   '8': [
     {'1': '_type_check_stubs'},
@@ -1592,6 +1649,7 @@ const Configure$json = {
     {'1': '_print_flush_interval_ms'},
     {'1': '_os_policy'},
     {'1': '_profile'},
+    {'1': '_execution_clock'},
   ],
 };
 
@@ -1608,9 +1666,11 @@ final $typed_data.Uint8List configureDescriptor = $convert.base64Decode(
     'dXNoX2ludGVydmFsX21zGAogASgNSAJSFHByaW50Rmx1c2hJbnRlcnZhbE1ziAEBEjQKCW9zX3'
     'BvbGljeRgLIAEoCzISLm1vbnR5LnYxLk9zUG9saWN5SANSCG9zUG9saWN5iAEBEjcKC3BlcnNp'
     'c3RlbmNlGAwgASgOMhUubW9udHkudjEuUGVyc2lzdGVuY2VSC3BlcnNpc3RlbmNlEh0KB3Byb2'
-    'ZpbGUYDSABKAlIBFIHcHJvZmlsZYgBAUITChFfdHlwZV9jaGVja19zdHVic0IdChtfYXNzZXJ0'
-    'X21lc3NhZ2VfYW5ub3RhdGlvbnNCGgoYX3ByaW50X2ZsdXNoX2ludGVydmFsX21zQgwKCl9vc1'
-    '9wb2xpY3lCCgoIX3Byb2ZpbGU=');
+    'ZpbGUYDSABKAlIBFIHcHJvZmlsZYgBARJGCg9leGVjdXRpb25fY2xvY2sYDiABKA4yGC5tb250'
+    'eS52MS5FeGVjdXRpb25DbG9ja0gFUg5leGVjdXRpb25DbG9ja4gBAUITChFfdHlwZV9jaGVja1'
+    '9zdHVic0IdChtfYXNzZXJ0X21lc3NhZ2VfYW5ub3RhdGlvbnNCGgoYX3ByaW50X2ZsdXNoX2lu'
+    'dGVydmFsX21zQgwKCl9vc19wb2xpY3lCCgoIX3Byb2ZpbGVCEgoQX2V4ZWN1dGlvbl9jbG9jaw'
+    '==');
 
 @$core.Deprecated('Use feedDescriptor instead')
 const Feed$json = {
@@ -1931,6 +1991,15 @@ const ChildEvent$json = {
       '10': 'shutdown'
     },
     {
+      '1': 'ping',
+      '3': 13,
+      '4': 1,
+      '5': 11,
+      '6': '.monty.v1.Ping',
+      '9': 0,
+      '10': 'ping'
+    },
+    {
       '1': 'total_execution_micros',
       '3': 20,
       '4': 1,
@@ -1998,6 +2067,25 @@ const ChildEvent$json = {
       '10': 'sessionId',
       '17': true
     },
+    {
+      '1': 'feed_suspended',
+      '3': 29,
+      '4': 1,
+      '5': 8,
+      '9': 7,
+      '10': 'feedSuspended',
+      '17': true
+    },
+    {
+      '1': 'execution_clock',
+      '3': 30,
+      '4': 1,
+      '5': 14,
+      '6': '.monty.v1.ExecutionClock',
+      '9': 8,
+      '10': 'executionClock',
+      '17': true
+    },
   ],
   '8': [
     {'1': 'kind'},
@@ -2007,6 +2095,8 @@ const ChildEvent$json = {
     {'1': '_max_total_sleep_micros'},
     {'1': '_restored_script_name'},
     {'1': '_session_id'},
+    {'1': '_feed_suspended'},
+    {'1': '_execution_clock'},
   ],
   '9': [
     {'1': 21, '2': 22},
@@ -2026,18 +2116,21 @@ final $typed_data.Uint8List childEventDescriptor = $convert.base64Decode(
     'bXBfcmVzdWx0GAkgASgLMhQubW9udHkudjEuRHVtcFJlc3VsdEgAUgpkdW1wUmVzdWx0Eh4KAm'
     '9rGAogASgLMgwubW9udHkudjEuT2tIAFICb2sSNwoLZmF0YWxfZXJyb3IYCyABKAsyFC5tb250'
     'eS52MS5GYXRhbEVycm9ySABSCmZhdGFsRXJyb3ISNAoIc2h1dGRvd24YDCABKAsyFi5tb250eS'
-    '52MS5TaHV0ZG93bkR1bXBIAFIIc2h1dGRvd24SNAoWdG90YWxfZXhlY3V0aW9uX21pY3JvcxgU'
-    'IAEoBFIUdG90YWxFeGVjdXRpb25NaWNyb3MSLAoPbWF4X3N1c3BlbnNpb25zGBYgASgESAFSDm'
-    '1heFN1c3BlbnNpb25ziAEBEjIKFWZlZWRfZXhlY3V0aW9uX21pY3JvcxgYIAEoBFITZmVlZEV4'
-    'ZWN1dGlvbk1pY3JvcxI8ChhtYXhfZmVlZF9kdXJhdGlvbl9taWNyb3MYGSABKARIAlIVbWF4Rm'
-    'VlZER1cmF0aW9uTWljcm9ziAEBEjwKGG1heF90dXJuX2R1cmF0aW9uX21pY3JvcxgaIAEoBEgD'
-    'UhVtYXhUdXJuRHVyYXRpb25NaWNyb3OIAQESOAoWbWF4X3RvdGFsX3NsZWVwX21pY3JvcxgbIA'
-    'EoBEgEUhNtYXhUb3RhbFNsZWVwTWljcm9ziAEBEjUKFHJlc3RvcmVkX3NjcmlwdF9uYW1lGBcg'
-    'ASgJSAVSEnJlc3RvcmVkU2NyaXB0TmFtZYgBARIiCgpzZXNzaW9uX2lkGBwgASgMSAZSCXNlc3'
-    'Npb25JZIgBAUIGCgRraW5kQhIKEF9tYXhfc3VzcGVuc2lvbnNCGwoZX21heF9mZWVkX2R1cmF0'
-    'aW9uX21pY3Jvc0IbChlfbWF4X3R1cm5fZHVyYXRpb25fbWljcm9zQhkKF19tYXhfdG90YWxfc2'
-    'xlZXBfbWljcm9zQhcKFV9yZXN0b3JlZF9zY3JpcHRfbmFtZUINCgtfc2Vzc2lvbl9pZEoECBUQ'
-    'Fg==');
+    '52MS5TaHV0ZG93bkR1bXBIAFIIc2h1dGRvd24SJAoEcGluZxgNIAEoCzIOLm1vbnR5LnYxLlBp'
+    'bmdIAFIEcGluZxI0ChZ0b3RhbF9leGVjdXRpb25fbWljcm9zGBQgASgEUhR0b3RhbEV4ZWN1dG'
+    'lvbk1pY3JvcxIsCg9tYXhfc3VzcGVuc2lvbnMYFiABKARIAVIObWF4U3VzcGVuc2lvbnOIAQES'
+    'MgoVZmVlZF9leGVjdXRpb25fbWljcm9zGBggASgEUhNmZWVkRXhlY3V0aW9uTWljcm9zEjwKGG'
+    '1heF9mZWVkX2R1cmF0aW9uX21pY3JvcxgZIAEoBEgCUhVtYXhGZWVkRHVyYXRpb25NaWNyb3OI'
+    'AQESPAoYbWF4X3R1cm5fZHVyYXRpb25fbWljcm9zGBogASgESANSFW1heFR1cm5EdXJhdGlvbk'
+    '1pY3Jvc4gBARI4ChZtYXhfdG90YWxfc2xlZXBfbWljcm9zGBsgASgESARSE21heFRvdGFsU2xl'
+    'ZXBNaWNyb3OIAQESNQoUcmVzdG9yZWRfc2NyaXB0X25hbWUYFyABKAlIBVIScmVzdG9yZWRTY3'
+    'JpcHROYW1liAEBEiIKCnNlc3Npb25faWQYHCABKAxIBlIJc2Vzc2lvbklkiAEBEioKDmZlZWRf'
+    'c3VzcGVuZGVkGB0gASgISAdSDWZlZWRTdXNwZW5kZWSIAQESRgoPZXhlY3V0aW9uX2Nsb2NrGB'
+    '4gASgOMhgubW9udHkudjEuRXhlY3V0aW9uQ2xvY2tICFIOZXhlY3V0aW9uQ2xvY2uIAQFCBgoE'
+    'a2luZEISChBfbWF4X3N1c3BlbnNpb25zQhsKGV9tYXhfZmVlZF9kdXJhdGlvbl9taWNyb3NCGw'
+    'oZX21heF90dXJuX2R1cmF0aW9uX21pY3Jvc0IZChdfbWF4X3RvdGFsX3NsZWVwX21pY3Jvc0IX'
+    'ChVfcmVzdG9yZWRfc2NyaXB0X25hbWVCDQoLX3Nlc3Npb25faWRCEQoPX2ZlZWRfc3VzcGVuZG'
+    'VkQhIKEF9leGVjdXRpb25fY2xvY2tKBAgVEBY=');
 
 @$core.Deprecated('Use printSegmentDescriptor instead')
 const PrintSegment$json = {
@@ -2330,6 +2423,15 @@ const OsCall$json = {
       '10': 'scan'
     },
     {
+      '1': 'get_type_hints',
+      '3': 34,
+      '4': 1,
+      '5': 11,
+      '6': '.monty.v1.OsCall.GetTypeHints',
+      '9': 0,
+      '10': 'getTypeHints'
+    },
+    {
       '1': 'values',
       '3': 50,
       '4': 1,
@@ -2367,7 +2469,8 @@ const OsCall$json = {
     OsCall_AsyncSleep$json,
     OsCall_Scan$json,
     OsCall_Import$json,
-    OsCall_ImportStubs$json
+    OsCall_ImportStubs$json,
+    OsCall_GetTypeHints$json
   ],
   '8': [
     {'1': 'call'},
@@ -2519,6 +2622,7 @@ const OsCall_Import$json = {
   '1': 'Import',
   '2': [
     {'1': 'module', '3': 1, '4': 1, '5': 9, '10': 'module'},
+    {'1': 'search_path', '3': 2, '4': 3, '5': 9, '10': 'searchPath'},
   ],
 };
 
@@ -2527,6 +2631,26 @@ const OsCall_ImportStubs$json = {
   '1': 'ImportStubs',
   '2': [
     {'1': 'modules', '3': 1, '4': 3, '5': 9, '10': 'modules'},
+  ],
+};
+
+@$core.Deprecated('Use osCallDescriptor instead')
+const OsCall_GetTypeHints$json = {
+  '1': 'GetTypeHints',
+  '2': [
+    {'1': 'function', '3': 1, '4': 1, '5': 9, '9': 0, '10': 'function'},
+    {
+      '1': 'class_id',
+      '3': 2,
+      '4': 1,
+      '5': 11,
+      '6': '.monty.v1.Uuid',
+      '9': 0,
+      '10': 'classId'
+    },
+  ],
+  '8': [
+    {'1': 'target'},
   ],
 };
 
@@ -2559,25 +2683,28 @@ final $typed_data.Uint8List osCallDescriptor = $convert.base64Decode(
     'bGVlcBIxCgZpbXBvcnQYHyABKAsyFy5tb250eS52MS5Pc0NhbGwuSW1wb3J0SABSBmltcG9ydB'
     'JBCgxpbXBvcnRfc3R1YnMYICABKAsyHC5tb250eS52MS5Pc0NhbGwuSW1wb3J0U3R1YnNIAFIL'
     'aW1wb3J0U3R1YnMSKwoEc2NhbhghIAEoCzIVLm1vbnR5LnYxLk9zQ2FsbC5TY2FuSABSBHNjYW'
-    '4SJwoGdmFsdWVzGDIgASgLMg8ubW9udHkudjEuQXJlbmFSBnZhbHVlcxIqChFhbGxvd19lYWdl'
-    'cl9hd2FpdBgzIAEoCFIPYWxsb3dFYWdlckF3YWl0EjEKCHBvc2l0aW9uGDQgASgLMhUubW9udH'
-    'kudjEuU291cmNlUmFuZ2VSCHBvc2l0aW9uGjMKCVRleHRXcml0ZRISCgRwYXRoGAEgASgJUgRw'
-    'YXRoEhIKBGRhdGEYAiABKAlSBGRhdGEaNAoKQnl0ZXNXcml0ZRISCgRwYXRoGAEgASgJUgRwYX'
-    'RoEhIKBGRhdGEYAiABKAxSBGRhdGEaLgoET3BlbhISCgRwYXRoGAEgASgJUgRwYXRoEhIKBG1v'
-    'ZGUYAiABKAlSBG1vZGUaUAoFTWtkaXISEgoEcGF0aBgBIAEoCVIEcGF0aBIYCgdwYXJlbnRzGA'
-    'IgASgIUgdwYXJlbnRzEhkKCGV4aXN0X29rGAMgASgIUgdleGlzdE9rGiwKBlJlbmFtZRIQCgNz'
-    'cmMYASABKAlSA3NyYxIQCgNkc3QYAiABKAlSA2RzdBo0CgZHZXRlbnYSEAoDa2V5GAEgASgJUg'
-    'NrZXkSGAoHZGVmYXVsdBgCIAEoDVIHZGVmYXVsdBoiCghUaW1lQ2FsbBIWCgZjYWxsZXIYASAB'
-    'KAlSBmNhbGxlcho9CgtEYXRlVGltZU5vdxInCgJ0ehgBIAEoCzISLm1vbnR5LnYxLlRpbWVab2'
-    '5lSABSAnR6iAEBQgUKA190ehodCgdVcmFuZG9tEhIKBHNpemUYASABKARSBHNpemUaIQoFU2xl'
-    'ZXASGAoHc2Vjb25kcxgBIAEoAVIHc2Vjb25kcxoiCgpBc3luY1NsZWVwEhQKBWRlbGF5GAEgAS'
-    'gBUgVkZWxheRr3AQoEU2NhbhISCgRwYXRoGAEgASgJUgRwYXRoEiAKCW1heF9kZXB0aBgCIAEo'
-    'DUgAUghtYXhEZXB0aIgBARInCg9mb2xsb3dfc3ltbGlua3MYAyABKAhSDmZvbGxvd1N5bWxpbm'
-    'tzEhgKB3BhdHRlcm4YBCADKAlSB3BhdHRlcm4SKgoOY2FzZV9zZW5zaXRpdmUYBSABKAhIAVIN'
-    'Y2FzZVNlbnNpdGl2ZYgBARIpChByZWN1cnNlX3N5bWxpbmtzGAYgASgIUg9yZWN1cnNlU3ltbG'
-    'lua3NCDAoKX21heF9kZXB0aEIRCg9fY2FzZV9zZW5zaXRpdmUaIAoGSW1wb3J0EhYKBm1vZHVs'
-    'ZRgBIAEoCVIGbW9kdWxlGicKC0ltcG9ydFN0dWJzEhgKB21vZHVsZXMYASADKAlSB21vZHVsZX'
-    'NCBgoEY2FsbA==');
+    '4SRQoOZ2V0X3R5cGVfaGludHMYIiABKAsyHS5tb250eS52MS5Pc0NhbGwuR2V0VHlwZUhpbnRz'
+    'SABSDGdldFR5cGVIaW50cxInCgZ2YWx1ZXMYMiABKAsyDy5tb250eS52MS5BcmVuYVIGdmFsdW'
+    'VzEioKEWFsbG93X2VhZ2VyX2F3YWl0GDMgASgIUg9hbGxvd0VhZ2VyQXdhaXQSMQoIcG9zaXRp'
+    'b24YNCABKAsyFS5tb250eS52MS5Tb3VyY2VSYW5nZVIIcG9zaXRpb24aMwoJVGV4dFdyaXRlEh'
+    'IKBHBhdGgYASABKAlSBHBhdGgSEgoEZGF0YRgCIAEoCVIEZGF0YRo0CgpCeXRlc1dyaXRlEhIK'
+    'BHBhdGgYASABKAlSBHBhdGgSEgoEZGF0YRgCIAEoDFIEZGF0YRouCgRPcGVuEhIKBHBhdGgYAS'
+    'ABKAlSBHBhdGgSEgoEbW9kZRgCIAEoCVIEbW9kZRpQCgVNa2RpchISCgRwYXRoGAEgASgJUgRw'
+    'YXRoEhgKB3BhcmVudHMYAiABKAhSB3BhcmVudHMSGQoIZXhpc3Rfb2sYAyABKAhSB2V4aXN0T2'
+    'saLAoGUmVuYW1lEhAKA3NyYxgBIAEoCVIDc3JjEhAKA2RzdBgCIAEoCVIDZHN0GjQKBkdldGVu'
+    'dhIQCgNrZXkYASABKAlSA2tleRIYCgdkZWZhdWx0GAIgASgNUgdkZWZhdWx0GiIKCFRpbWVDYW'
+    'xsEhYKBmNhbGxlchgBIAEoCVIGY2FsbGVyGj0KC0RhdGVUaW1lTm93EicKAnR6GAEgASgLMhIu'
+    'bW9udHkudjEuVGltZVpvbmVIAFICdHqIAQFCBQoDX3R6Gh0KB1VyYW5kb20SEgoEc2l6ZRgBIA'
+    'EoBFIEc2l6ZRohCgVTbGVlcBIYCgdzZWNvbmRzGAEgASgBUgdzZWNvbmRzGiIKCkFzeW5jU2xl'
+    'ZXASFAoFZGVsYXkYASABKAFSBWRlbGF5GvcBCgRTY2FuEhIKBHBhdGgYASABKAlSBHBhdGgSIA'
+    'oJbWF4X2RlcHRoGAIgASgNSABSCG1heERlcHRoiAEBEicKD2ZvbGxvd19zeW1saW5rcxgDIAEo'
+    'CFIOZm9sbG93U3ltbGlua3MSGAoHcGF0dGVybhgEIAMoCVIHcGF0dGVybhIqCg5jYXNlX3Nlbn'
+    'NpdGl2ZRgFIAEoCEgBUg1jYXNlU2Vuc2l0aXZliAEBEikKEHJlY3Vyc2Vfc3ltbGlua3MYBiAB'
+    'KAhSD3JlY3Vyc2VTeW1saW5rc0IMCgpfbWF4X2RlcHRoQhEKD19jYXNlX3NlbnNpdGl2ZRpBCg'
+    'ZJbXBvcnQSFgoGbW9kdWxlGAEgASgJUgZtb2R1bGUSHwoLc2VhcmNoX3BhdGgYAiADKAlSCnNl'
+    'YXJjaFBhdGgaJwoLSW1wb3J0U3R1YnMSGAoHbW9kdWxlcxgBIAMoCVIHbW9kdWxlcxpjCgxHZX'
+    'RUeXBlSGludHMSHAoIZnVuY3Rpb24YASABKAlIAFIIZnVuY3Rpb24SKwoIY2xhc3NfaWQYAiAB'
+    'KAsyDi5tb250eS52MS5VdWlkSABSB2NsYXNzSWRCCAoGdGFyZ2V0QgYKBGNhbGw=');
 
 @$core.Deprecated('Use nameLookupDescriptor instead')
 const NameLookup$json = {
@@ -2729,3 +2856,124 @@ const ShutdownDump$json = {
 /// Descriptor for `ShutdownDump`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List shutdownDumpDescriptor = $convert.base64Decode(
     'CgxTaHV0ZG93bkR1bXASFwoEZHVtcBgBIAEoDEgAUgRkdW1wiAEBQgcKBV9kdW1w');
+
+@$core.Deprecated('Use pingDescriptor instead')
+const Ping$json = {
+  '1': 'Ping',
+};
+
+/// Descriptor for `Ping`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List pingDescriptor = $convert.base64Decode('CgRQaW5n');
+
+@$core.Deprecated('Use pongDescriptor instead')
+const Pong$json = {
+  '1': 'Pong',
+};
+
+/// Descriptor for `Pong`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List pongDescriptor = $convert.base64Decode('CgRQb25n');
+
+const $core.Map<$core.String, $core.dynamic> MontySessionServiceBase$json = {
+  '1': 'MontySession',
+  '2': [
+    {
+      '1': 'Session',
+      '2': '.monty.v1.ParentRequest',
+      '3': '.monty.v1.ChildEvent',
+      '5': true,
+      '6': true
+    },
+  ],
+};
+
+@$core.Deprecated('Use montySessionServiceDescriptor instead')
+const $core.Map<$core.String, $core.Map<$core.String, $core.dynamic>>
+    MontySessionServiceBase$messageJson = {
+  '.monty.v1.ParentRequest': ParentRequest$json,
+  '.monty.v1.Configure': Configure$json,
+  '.monty.v1.ResourceLimits': ResourceLimits$json,
+  '.monty.v1.OsPolicy': OsPolicy$json,
+  '.monty.v1.Unit': Unit$json,
+  '.monty.v1.FixedDateTime': FixedDateTime$json,
+  '.monty.v1.SandboxTimeZone': SandboxTimeZone$json,
+  '.monty.v1.TimeZone': TimeZone$json,
+  '.monty.v1.SleepMode': SleepMode$json,
+  '.monty.v1.SystemSleep': SystemSleep$json,
+  '.monty.v1.RandomSeed': RandomSeed$json,
+  '.monty.v1.InstallDependencies': InstallDependencies$json,
+  '.monty.v1.Feed': Feed$json,
+  '.monty.v1.NamedRef': NamedRef$json,
+  '.monty.v1.Arena': Arena$json,
+  '.monty.v1.MontyNode': MontyNode$json,
+  '.monty.v1.BigInt': BigInt$json,
+  '.monty.v1.Uuid': Uuid$json,
+  '.monty.v1.Indexes': Indexes$json,
+  '.monty.v1.NamedTupleNode': NamedTupleNode$json,
+  '.monty.v1.NodePairs': NodePairs$json,
+  '.monty.v1.NodePair': NodePair$json,
+  '.monty.v1.Date': Date$json,
+  '.monty.v1.Time': Time$json,
+  '.monty.v1.DateTime': DateTime$json,
+  '.monty.v1.TimeDelta': TimeDelta$json,
+  '.monty.v1.Exception': Exception$json,
+  '.monty.v1.Type': Type$json,
+  '.monty.v1.ClassInstanceNode': ClassInstanceNode$json,
+  '.monty.v1.Function': Function_$json,
+  '.monty.v1.FileHandle': FileHandle$json,
+  '.monty.v1.Complex': Complex$json,
+  '.monty.v1.ModuleNode': ModuleNode$json,
+  '.monty.v1.ResumeCall': ResumeCall$json,
+  '.monty.v1.ExtFunctionResult': ExtFunctionResult$json,
+  '.monty.v1.RaisedException': RaisedException$json,
+  '.monty.v1.StackFrame': StackFrame$json,
+  '.monty.v1.CodeLoc': CodeLoc$json,
+  '.monty.v1.ExcData': ExcData$json,
+  '.monty.v1.UnicodeErrorData': UnicodeErrorData$json,
+  '.monty.v1.JsonErrorData': JsonErrorData$json,
+  '.monty.v1.ModuleFile': ModuleFile$json,
+  '.monty.v1.ResumeNameLookup': ResumeNameLookup$json,
+  '.monty.v1.ResumeFutures': ResumeFutures$json,
+  '.monty.v1.FutureResult': FutureResult$json,
+  '.monty.v1.Dump': Dump$json,
+  '.monty.v1.Load': Load$json,
+  '.monty.v1.Reset': Reset$json,
+  '.monty.v1.Shutdown': Shutdown$json,
+  '.monty.v1.AbortFeed': AbortFeed$json,
+  '.monty.v1.Pong': Pong$json,
+  '.monty.v1.ChildEvent': ChildEvent$json,
+  '.monty.v1.Print': Print$json,
+  '.monty.v1.PrintSegment': PrintSegment$json,
+  '.monty.v1.FunctionCall': FunctionCall$json,
+  '.monty.v1.SourceRange': SourceRange$json,
+  '.monty.v1.OsCall': OsCall$json,
+  '.monty.v1.OsCall.TextWrite': OsCall_TextWrite$json,
+  '.monty.v1.OsCall.BytesWrite': OsCall_BytesWrite$json,
+  '.monty.v1.OsCall.Open': OsCall_Open$json,
+  '.monty.v1.OsCall.Mkdir': OsCall_Mkdir$json,
+  '.monty.v1.OsCall.Rename': OsCall_Rename$json,
+  '.monty.v1.OsCall.Getenv': OsCall_Getenv$json,
+  '.monty.v1.OsCall.DateTimeNow': OsCall_DateTimeNow$json,
+  '.monty.v1.OsCall.Urandom': OsCall_Urandom$json,
+  '.monty.v1.OsCall.TimeCall': OsCall_TimeCall$json,
+  '.monty.v1.OsCall.Sleep': OsCall_Sleep$json,
+  '.monty.v1.OsCall.AsyncSleep': OsCall_AsyncSleep$json,
+  '.monty.v1.OsCall.Import': OsCall_Import$json,
+  '.monty.v1.OsCall.ImportStubs': OsCall_ImportStubs$json,
+  '.monty.v1.OsCall.Scan': OsCall_Scan$json,
+  '.monty.v1.OsCall.GetTypeHints': OsCall_GetTypeHints$json,
+  '.monty.v1.NameLookup': NameLookup$json,
+  '.monty.v1.ResolveFutures': ResolveFutures$json,
+  '.monty.v1.Complete': Complete$json,
+  '.monty.v1.Error': Error$json,
+  '.monty.v1.TypingError': TypingError$json,
+  '.monty.v1.DumpResult': DumpResult$json,
+  '.monty.v1.Ok': Ok$json,
+  '.monty.v1.FatalError': FatalError$json,
+  '.monty.v1.ShutdownDump': ShutdownDump$json,
+  '.monty.v1.Ping': Ping$json,
+};
+
+/// Descriptor for `MontySession`. Decode as a `google.protobuf.ServiceDescriptorProto`.
+final $typed_data.Uint8List montySessionServiceDescriptor = $convert.base64Decode(
+    'CgxNb250eVNlc3Npb24SPAoHU2Vzc2lvbhIXLm1vbnR5LnYxLlBhcmVudFJlcXVlc3QaFC5tb2'
+    '50eS52MS5DaGlsZEV2ZW50KAEwAQ==');

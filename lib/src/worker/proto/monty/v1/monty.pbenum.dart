@@ -52,6 +52,26 @@ class TypeOrigin extends $pb.ProtobufEnum {
   const TypeOrigin._(super.value, super.name);
 }
 
+/// One clock for VM budgets and subprocess supervision. Wall time is the default.
+class ExecutionClock extends $pb.ProtobufEnum {
+  static const ExecutionClock WALL =
+      ExecutionClock._(0, _omitEnumNames ? '' : 'WALL');
+  static const ExecutionClock CPU =
+      ExecutionClock._(1, _omitEnumNames ? '' : 'CPU');
+
+  static const $core.List<ExecutionClock> values = <ExecutionClock>[
+    WALL,
+    CPU,
+  ];
+
+  static final $core.List<ExecutionClock?> _byValue =
+      $pb.ProtobufEnum.$_initByValueList(values, 1);
+  static ExecutionClock? valueOf($core.int value) =>
+      value < 0 || value >= _byValue.length ? null : _byValue[value];
+
+  const ExecutionClock._(super.value, super.name);
+}
+
 /// How a serving relay treats the session's state; children ignore it.
 class Persistence extends $pb.ProtobufEnum {
   /// The relay's default.

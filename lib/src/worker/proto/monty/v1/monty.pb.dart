@@ -10,6 +10,7 @@
 // ignore_for_file: deprecated_member_use_from_same_package, library_prefixes
 // ignore_for_file: non_constant_identifier_names, prefer_relative_imports
 
+import 'dart:async' as $async;
 import 'dart:core' as $core;
 
 import 'package:fixnum/fixnum.dart' as $fixnum;
@@ -167,6 +168,7 @@ enum MontyNode_Kind {
   cycle,
   complex,
   module,
+  decimal,
   notSet
 }
 
@@ -209,6 +211,7 @@ class MontyNode extends $pb.GeneratedMessage {
     $core.String? cycle,
     Complex? complex,
     ModuleNode? module,
+    $core.String? decimal,
   }) {
     final result = MontyNode._();
     if (ellipsis != null) result.ellipsis = ellipsis;
@@ -243,6 +246,7 @@ class MontyNode extends $pb.GeneratedMessage {
     if (cycle != null) result.cycle = cycle;
     if (complex != null) result.complex = complex;
     if (module != null) result.module = module;
+    if (decimal != null) result.decimal = decimal;
     return result;
   }
 
@@ -288,6 +292,7 @@ class MontyNode extends $pb.GeneratedMessage {
     30: MontyNode_Kind.cycle,
     31: MontyNode_Kind.complex,
     32: MontyNode_Kind.module,
+    33: MontyNode_Kind.decimal,
     0: MontyNode_Kind.notSet
   };
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(
@@ -326,7 +331,8 @@ class MontyNode extends $pb.GeneratedMessage {
       29,
       30,
       31,
-      32
+      32,
+      33
     ])
     ..aOM<Unit>(1, _omitFieldNames ? '' : 'ellipsis',
         subBuilder: Unit.$_createMessage)
@@ -386,6 +392,7 @@ class MontyNode extends $pb.GeneratedMessage {
         subBuilder: Complex.$_createMessage)
     ..aOM<ModuleNode>(32, _omitFieldNames ? '' : 'module',
         subBuilder: ModuleNode.$_createMessage)
+    ..aOS(33, _omitFieldNames ? '' : 'decimal')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -440,6 +447,7 @@ class MontyNode extends $pb.GeneratedMessage {
   @$pb.TagNumber(30)
   @$pb.TagNumber(31)
   @$pb.TagNumber(32)
+  @$pb.TagNumber(33)
   MontyNode_Kind whichKind() => _MontyNode_KindByTag[$_whichOneof(0)]!;
   @$pb.TagNumber(1)
   @$pb.TagNumber(2)
@@ -473,6 +481,7 @@ class MontyNode extends $pb.GeneratedMessage {
   @$pb.TagNumber(30)
   @$pb.TagNumber(31)
   @$pb.TagNumber(32)
+  @$pb.TagNumber(33)
   void clearKind() => $_clearField($_whichOneof(0));
 
   @$pb.TagNumber(1)
@@ -824,6 +833,18 @@ class MontyNode extends $pb.GeneratedMessage {
   void clearModule() => $_clearField(32);
   @$pb.TagNumber(32)
   ModuleNode ensureModule() => $_ensure(31);
+
+  /// A decimal.Decimal as its canonical string, str(d): "1.20", "1E+5",
+  /// "-NaN12", "Infinity". Carried as text; whoever builds a Decimal from it
+  /// parses it as Decimal(text) and rejects malformed text there.
+  @$pb.TagNumber(33)
+  $core.String get decimal => $_getSZ(32);
+  @$pb.TagNumber(33)
+  set decimal($core.String value) => $_setString(32, value);
+  @$pb.TagNumber(33)
+  $core.bool hasDecimal() => $_has(32);
+  @$pb.TagNumber(33)
+  void clearDecimal() => $_clearField(33);
 }
 
 /// Indexes of a container's children (list, tuple, set, frozenset items).
@@ -3951,6 +3972,7 @@ enum ExtFunctionResult_Kind {
   future,
   notFound,
   notHandled,
+  moduleFile,
   notSet
 }
 
@@ -3964,6 +3986,7 @@ class ExtFunctionResult extends $pb.GeneratedMessage {
     $core.int? future,
     $core.String? notFound,
     Unit? notHandled,
+    ModuleFile? moduleFile,
   }) {
     final result = ExtFunctionResult._();
     if (returnValue != null) result.returnValue = returnValue;
@@ -3971,6 +3994,7 @@ class ExtFunctionResult extends $pb.GeneratedMessage {
     if (future != null) result.future = future;
     if (notFound != null) result.notFound = notFound;
     if (notHandled != null) result.notHandled = notHandled;
+    if (moduleFile != null) result.moduleFile = moduleFile;
     return result;
   }
 
@@ -3990,13 +4014,14 @@ class ExtFunctionResult extends $pb.GeneratedMessage {
     3: ExtFunctionResult_Kind.future,
     4: ExtFunctionResult_Kind.notFound,
     5: ExtFunctionResult_Kind.notHandled,
+    6: ExtFunctionResult_Kind.moduleFile,
     0: ExtFunctionResult_Kind.notSet
   };
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(
       _omitMessageNames ? '' : 'ExtFunctionResult',
       package: const $pb.PackageName(_omitMessageNames ? '' : 'monty.v1'),
       createEmptyInstance: ExtFunctionResult.$_createMessage)
-    ..oo(0, [1, 2, 3, 4, 5])
+    ..oo(0, [1, 2, 3, 4, 5, 6])
     ..aI(1, _omitFieldNames ? '' : 'returnValue',
         fieldType: $pb.PbFieldType.OU3)
     ..aOM<RaisedException>(2, _omitFieldNames ? '' : 'error',
@@ -4005,6 +4030,8 @@ class ExtFunctionResult extends $pb.GeneratedMessage {
     ..aOS(4, _omitFieldNames ? '' : 'notFound')
     ..aOM<Unit>(5, _omitFieldNames ? '' : 'notHandled',
         subBuilder: Unit.$_createMessage)
+    ..aOM<ModuleFile>(6, _omitFieldNames ? '' : 'moduleFile',
+        subBuilder: ModuleFile.$_createMessage)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -4034,6 +4061,7 @@ class ExtFunctionResult extends $pb.GeneratedMessage {
   @$pb.TagNumber(3)
   @$pb.TagNumber(4)
   @$pb.TagNumber(5)
+  @$pb.TagNumber(6)
   ExtFunctionResult_Kind whichKind() =>
       _ExtFunctionResult_KindByTag[$_whichOneof(0)]!;
   @$pb.TagNumber(1)
@@ -4041,6 +4069,7 @@ class ExtFunctionResult extends $pb.GeneratedMessage {
   @$pb.TagNumber(3)
   @$pb.TagNumber(4)
   @$pb.TagNumber(5)
+  @$pb.TagNumber(6)
   void clearKind() => $_clearField($_whichOneof(0));
 
   /// The call returned this value: an index into the carrying message's
@@ -4101,6 +4130,89 @@ class ExtFunctionResult extends $pb.GeneratedMessage {
   void clearNotHandled() => $_clearField(5);
   @$pb.TagNumber(5)
   Unit ensureNotHandled() => $_ensure(4);
+
+  /// The module's `.py` file, answering an `import` call with a non-empty
+  /// `search_path`; the child runs it as the module.
+  @$pb.TagNumber(6)
+  ModuleFile get moduleFile => $_getN(5);
+  @$pb.TagNumber(6)
+  set moduleFile(ModuleFile value) => $_setField(6, value);
+  @$pb.TagNumber(6)
+  $core.bool hasModuleFile() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearModuleFile() => $_clearField(6);
+  @$pb.TagNumber(6)
+  ModuleFile ensureModuleFile() => $_ensure(5);
+}
+
+/// A module's file found on an `import` call's search path.
+class ModuleFile extends $pb.GeneratedMessage {
+  factory ModuleFile({
+    $core.String? path,
+    $core.String? source,
+  }) {
+    final result = ModuleFile._();
+    if (path != null) result.path = path;
+    if (source != null) result.source = source;
+    return result;
+  }
+
+  ModuleFile._();
+
+  factory ModuleFile.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      ModuleFile()..mergeFromBuffer(data, registry);
+  factory ModuleFile.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      ModuleFile()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'ModuleFile',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'monty.v1'),
+      createEmptyInstance: ModuleFile.$_createMessage)
+    ..aOS(1, _omitFieldNames ? '' : 'path')
+    ..aOS(2, _omitFieldNames ? '' : 'source')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ModuleFile clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ModuleFile copyWith(void Function(ModuleFile) updates) =>
+      super.copyWith((message) => updates(message as ModuleFile)) as ModuleFile;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  @$core.Deprecated('Use ModuleFile() / ModuleFile.new instead')
+  static ModuleFile create() => ModuleFile._();
+  static $pb.GeneratedMessage $_createMessage() => ModuleFile._();
+  @$core.override
+  ModuleFile createEmptyInstance() => ModuleFile._();
+  @$core.pragma('dart2js:noInline')
+  static ModuleFile getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<ModuleFile>(ModuleFile.$_createMessage);
+  static ModuleFile? _defaultInstance;
+
+  /// The virtual path it was read from.
+  @$pb.TagNumber(1)
+  $core.String get path => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set path($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasPath() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearPath() => $_clearField(1);
+
+  /// The file's text.
+  @$pb.TagNumber(2)
+  $core.String get source => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set source($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasSource() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearSource() => $_clearField(2);
 }
 
 class FutureResult extends $pb.GeneratedMessage {
@@ -4255,6 +4367,7 @@ enum ParentRequest_Kind {
   reset,
   shutdown,
   abortFeed,
+  pong,
   notSet
 }
 
@@ -4277,6 +4390,7 @@ class ParentRequest extends $pb.GeneratedMessage {
     Reset? reset,
     Shutdown? shutdown,
     AbortFeed? abortFeed,
+    Pong? pong,
     $core.String? traceParent,
   }) {
     final result = ParentRequest._();
@@ -4292,6 +4406,7 @@ class ParentRequest extends $pb.GeneratedMessage {
     if (reset != null) result.reset = reset;
     if (shutdown != null) result.shutdown = shutdown;
     if (abortFeed != null) result.abortFeed = abortFeed;
+    if (pong != null) result.pong = pong;
     if (traceParent != null) result.traceParent = traceParent;
     return result;
   }
@@ -4318,13 +4433,14 @@ class ParentRequest extends $pb.GeneratedMessage {
     9: ParentRequest_Kind.reset,
     10: ParentRequest_Kind.shutdown,
     11: ParentRequest_Kind.abortFeed,
+    12: ParentRequest_Kind.pong,
     0: ParentRequest_Kind.notSet
   };
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(
       _omitMessageNames ? '' : 'ParentRequest',
       package: const $pb.PackageName(_omitMessageNames ? '' : 'monty.v1'),
       createEmptyInstance: ParentRequest.$_createMessage)
-    ..oo(0, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
+    ..oo(0, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
     ..aOM<Configure>(1, _omitFieldNames ? '' : 'configure',
         subBuilder: Configure.$_createMessage)
     ..aOM<InstallDependencies>(2, _omitFieldNames ? '' : 'installDependencies',
@@ -4347,6 +4463,8 @@ class ParentRequest extends $pb.GeneratedMessage {
         subBuilder: Shutdown.$_createMessage)
     ..aOM<AbortFeed>(11, _omitFieldNames ? '' : 'abortFeed',
         subBuilder: AbortFeed.$_createMessage)
+    ..aOM<Pong>(12, _omitFieldNames ? '' : 'pong',
+        subBuilder: Pong.$_createMessage)
     ..aOS(20, _omitFieldNames ? '' : 'traceParent')
     ..hasRequiredFields = false;
 
@@ -4383,6 +4501,7 @@ class ParentRequest extends $pb.GeneratedMessage {
   @$pb.TagNumber(9)
   @$pb.TagNumber(10)
   @$pb.TagNumber(11)
+  @$pb.TagNumber(12)
   ParentRequest_Kind whichKind() => _ParentRequest_KindByTag[$_whichOneof(0)]!;
   @$pb.TagNumber(1)
   @$pb.TagNumber(2)
@@ -4395,6 +4514,7 @@ class ParentRequest extends $pb.GeneratedMessage {
   @$pb.TagNumber(9)
   @$pb.TagNumber(10)
   @$pb.TagNumber(11)
+  @$pb.TagNumber(12)
   void clearKind() => $_clearField($_whichOneof(0));
 
   @$pb.TagNumber(1)
@@ -4518,16 +4638,27 @@ class ParentRequest extends $pb.GeneratedMessage {
   @$pb.TagNumber(11)
   AbortFeed ensureAbortFeed() => $_ensure(10);
 
+  @$pb.TagNumber(12)
+  Pong get pong => $_getN(11);
+  @$pb.TagNumber(12)
+  set pong(Pong value) => $_setField(12, value);
+  @$pb.TagNumber(12)
+  $core.bool hasPong() => $_has(11);
+  @$pb.TagNumber(12)
+  void clearPong() => $_clearField(12);
+  @$pb.TagNumber(12)
+  Pong ensurePong() => $_ensure(11);
+
   /// W3C `traceparent` identifying the caller's span, so a child that exports
   /// its own telemetry can attach its spans to the trace the request came
   /// from. Purely additive context: the child's execution of the request must
   /// not depend on it, and it is absent whenever the parent is not tracing.
   @$pb.TagNumber(20)
-  $core.String get traceParent => $_getSZ(11);
+  $core.String get traceParent => $_getSZ(12);
   @$pb.TagNumber(20)
-  set traceParent($core.String value) => $_setString(11, value);
+  set traceParent($core.String value) => $_setString(12, value);
   @$pb.TagNumber(20)
-  $core.bool hasTraceParent() => $_has(11);
+  $core.bool hasTraceParent() => $_has(12);
   @$pb.TagNumber(20)
   void clearTraceParent() => $_clearField(20);
 }
@@ -4552,6 +4683,7 @@ class Configure extends $pb.GeneratedMessage {
     OsPolicy? osPolicy,
     Persistence? persistence,
     $core.String? profile,
+    ExecutionClock? executionClock,
   }) {
     final result = Configure._();
     if (scriptName != null) result.scriptName = scriptName;
@@ -4569,6 +4701,7 @@ class Configure extends $pb.GeneratedMessage {
     if (osPolicy != null) result.osPolicy = osPolicy;
     if (persistence != null) result.persistence = persistence;
     if (profile != null) result.profile = profile;
+    if (executionClock != null) result.executionClock = executionClock;
     return result;
   }
 
@@ -4605,6 +4738,8 @@ class Configure extends $pb.GeneratedMessage {
     ..aE<Persistence>(12, _omitFieldNames ? '' : 'persistence',
         enumValues: Persistence.values)
     ..aOS(13, _omitFieldNames ? '' : 'profile')
+    ..aE<ExecutionClock>(14, _omitFieldNames ? '' : 'executionClock',
+        enumValues: ExecutionClock.values)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -4720,7 +4855,7 @@ class Configure extends $pb.GeneratedMessage {
   /// Version of the wire schema the parent speaks. The child rejects the
   /// session with a `FatalError` naming its own supported range when this
   /// falls outside it, so a parent deployed separately from its worker (over
-  /// a websocket, say) learns what to downgrade to without a handshake.
+  /// a gRPC stream, say) learns what to downgrade to without a handshake.
   ///
   /// 0 means the parent declared nothing — either it predates this field or it
   /// is not a monty parent — and is always rejected. The protocol has no
@@ -4752,7 +4887,8 @@ class Configure extends $pb.GeneratedMessage {
   void clearPrintFlushIntervalMs() => $_clearField(10);
 
   /// Absent = `OsPolicy::default()`: the child's clock in UTC and its entropy,
-  /// with parent-serviced sleeps capped at 10s. `Load` restores the dump's settings.
+  /// with parent-serviced sleeps capped at 10s. It also governs a session restored by
+  /// `Load`, replacing the policy the dump was taken under.
   @$pb.TagNumber(11)
   OsPolicy get osPolicy => $_getN(10);
   @$pb.TagNumber(11)
@@ -4785,6 +4921,17 @@ class Configure extends $pb.GeneratedMessage {
   $core.bool hasProfile() => $_has(12);
   @$pb.TagNumber(13)
   void clearProfile() => $_clearField(13);
+
+  /// Local VM and supervisor clock; absent defaults to wall time in the child.
+  /// Remote clients leave this absent. The server selects the worker's clock.
+  @$pb.TagNumber(14)
+  ExecutionClock get executionClock => $_getN(13);
+  @$pb.TagNumber(14)
+  set executionClock(ExecutionClock value) => $_setField(14, value);
+  @$pb.TagNumber(14)
+  $core.bool hasExecutionClock() => $_has(13);
+  @$pb.TagNumber(14)
+  void clearExecutionClock() => $_clearField(14);
 }
 
 /// Executes one snippet against the session. Turn ends with `Complete`,
@@ -5295,6 +5442,8 @@ class Dump extends $pb.GeneratedMessage {
 /// the restored state was suspended, the child re-emits the suspension event so
 /// the parent learns the resume point; otherwise it replies `Ok`. A relay
 /// without session storage answers `Error` and the session carries on.
+/// The restored session takes the preceding `Configure`'s `os_policy` (the
+/// default without one), not the policy it was dumped under.
 class Load extends $pb.GeneratedMessage {
   factory Load({
     $core.List<$core.int>? state,
@@ -5509,6 +5658,7 @@ enum ChildEvent_Kind {
   ok,
   fatalError,
   shutdown,
+  ping,
   notSet
 }
 
@@ -5534,6 +5684,7 @@ class ChildEvent extends $pb.GeneratedMessage {
     Ok? ok,
     FatalError? fatalError,
     ShutdownDump? shutdown,
+    Ping? ping,
     $fixnum.Int64? totalExecutionMicros,
     $fixnum.Int64? maxSuspensions,
     $core.String? restoredScriptName,
@@ -5542,6 +5693,8 @@ class ChildEvent extends $pb.GeneratedMessage {
     $fixnum.Int64? maxTurnDurationMicros,
     $fixnum.Int64? maxTotalSleepMicros,
     $core.List<$core.int>? sessionId,
+    $core.bool? feedSuspended,
+    ExecutionClock? executionClock,
   }) {
     final result = ChildEvent._();
     if (print != null) result.print = print;
@@ -5556,6 +5709,7 @@ class ChildEvent extends $pb.GeneratedMessage {
     if (ok != null) result.ok = ok;
     if (fatalError != null) result.fatalError = fatalError;
     if (shutdown != null) result.shutdown = shutdown;
+    if (ping != null) result.ping = ping;
     if (totalExecutionMicros != null)
       result.totalExecutionMicros = totalExecutionMicros;
     if (maxSuspensions != null) result.maxSuspensions = maxSuspensions;
@@ -5570,6 +5724,8 @@ class ChildEvent extends $pb.GeneratedMessage {
     if (maxTotalSleepMicros != null)
       result.maxTotalSleepMicros = maxTotalSleepMicros;
     if (sessionId != null) result.sessionId = sessionId;
+    if (feedSuspended != null) result.feedSuspended = feedSuspended;
+    if (executionClock != null) result.executionClock = executionClock;
     return result;
   }
 
@@ -5595,13 +5751,14 @@ class ChildEvent extends $pb.GeneratedMessage {
     10: ChildEvent_Kind.ok,
     11: ChildEvent_Kind.fatalError,
     12: ChildEvent_Kind.shutdown,
+    13: ChildEvent_Kind.ping,
     0: ChildEvent_Kind.notSet
   };
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(
       _omitMessageNames ? '' : 'ChildEvent',
       package: const $pb.PackageName(_omitMessageNames ? '' : 'monty.v1'),
       createEmptyInstance: ChildEvent.$_createMessage)
-    ..oo(0, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
+    ..oo(0, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13])
     ..aOM<Print>(1, _omitFieldNames ? '' : 'print',
         subBuilder: Print.$_createMessage)
     ..aOM<FunctionCall>(2, _omitFieldNames ? '' : 'functionCall',
@@ -5625,6 +5782,8 @@ class ChildEvent extends $pb.GeneratedMessage {
         subBuilder: FatalError.$_createMessage)
     ..aOM<ShutdownDump>(12, _omitFieldNames ? '' : 'shutdown',
         subBuilder: ShutdownDump.$_createMessage)
+    ..aOM<Ping>(13, _omitFieldNames ? '' : 'ping',
+        subBuilder: Ping.$_createMessage)
     ..a<$fixnum.Int64>(
         20, _omitFieldNames ? '' : 'totalExecutionMicros', $pb.PbFieldType.OU6,
         defaultOrMaker: $fixnum.Int64.ZERO)
@@ -5646,6 +5805,9 @@ class ChildEvent extends $pb.GeneratedMessage {
         defaultOrMaker: $fixnum.Int64.ZERO)
     ..a<$core.List<$core.int>>(
         28, _omitFieldNames ? '' : 'sessionId', $pb.PbFieldType.OY)
+    ..aOB(29, _omitFieldNames ? '' : 'feedSuspended')
+    ..aE<ExecutionClock>(30, _omitFieldNames ? '' : 'executionClock',
+        enumValues: ExecutionClock.values)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -5680,6 +5842,7 @@ class ChildEvent extends $pb.GeneratedMessage {
   @$pb.TagNumber(10)
   @$pb.TagNumber(11)
   @$pb.TagNumber(12)
+  @$pb.TagNumber(13)
   ChildEvent_Kind whichKind() => _ChildEvent_KindByTag[$_whichOneof(0)]!;
   @$pb.TagNumber(1)
   @$pb.TagNumber(2)
@@ -5693,6 +5856,7 @@ class ChildEvent extends $pb.GeneratedMessage {
   @$pb.TagNumber(10)
   @$pb.TagNumber(11)
   @$pb.TagNumber(12)
+  @$pb.TagNumber(13)
   void clearKind() => $_clearField($_whichOneof(0));
 
   @$pb.TagNumber(1)
@@ -5827,6 +5991,17 @@ class ChildEvent extends $pb.GeneratedMessage {
   @$pb.TagNumber(12)
   ShutdownDump ensureShutdown() => $_ensure(11);
 
+  @$pb.TagNumber(13)
+  Ping get ping => $_getN(12);
+  @$pb.TagNumber(13)
+  set ping(Ping value) => $_setField(13, value);
+  @$pb.TagNumber(13)
+  $core.bool hasPing() => $_has(12);
+  @$pb.TagNumber(13)
+  void clearPing() => $_clearField(13);
+  @$pb.TagNumber(13)
+  Ping ensurePing() => $_ensure(12);
+
   /// Cumulative execution time consumed by the session's sandbox code, in
   /// microseconds. The in-sandbox clock runs only while the interpreter is
   /// executing bytecode — never while suspended waiting on the parent or idle
@@ -5836,22 +6011,22 @@ class ChildEvent extends $pb.GeneratedMessage {
   /// keeping a second clock. Bounds nothing: the budgets are per-feed and
   /// per-turn.
   @$pb.TagNumber(20)
-  $fixnum.Int64 get totalExecutionMicros => $_getI64(12);
+  $fixnum.Int64 get totalExecutionMicros => $_getI64(13);
   @$pb.TagNumber(20)
-  set totalExecutionMicros($fixnum.Int64 value) => $_setInt64(12, value);
+  set totalExecutionMicros($fixnum.Int64 value) => $_setInt64(13, value);
   @$pb.TagNumber(20)
-  $core.bool hasTotalExecutionMicros() => $_has(12);
+  $core.bool hasTotalExecutionMicros() => $_has(13);
   @$pb.TagNumber(20)
   void clearTotalExecutionMicros() => $_clearField(20);
 
   /// Echoes the parent-enforced budget so a host restoring an opaque dump can
   /// recover it.
   @$pb.TagNumber(22)
-  $fixnum.Int64 get maxSuspensions => $_getI64(13);
+  $fixnum.Int64 get maxSuspensions => $_getI64(14);
   @$pb.TagNumber(22)
-  set maxSuspensions($fixnum.Int64 value) => $_setInt64(13, value);
+  set maxSuspensions($fixnum.Int64 value) => $_setInt64(14, value);
   @$pb.TagNumber(22)
-  $core.bool hasMaxSuspensions() => $_has(13);
+  $core.bool hasMaxSuspensions() => $_has(14);
   @$pb.TagNumber(22)
   void clearMaxSuspensions() => $_clearField(22);
 
@@ -5860,11 +6035,11 @@ class ChildEvent extends $pb.GeneratedMessage {
   /// inside the opaque dump bytes) learns it without parsing the dump. Set only
   /// on a successful `Load` reply; unset on all other events.
   @$pb.TagNumber(23)
-  $core.String get restoredScriptName => $_getSZ(14);
+  $core.String get restoredScriptName => $_getSZ(15);
   @$pb.TagNumber(23)
-  set restoredScriptName($core.String value) => $_setString(14, value);
+  set restoredScriptName($core.String value) => $_setString(15, value);
   @$pb.TagNumber(23)
-  $core.bool hasRestoredScriptName() => $_has(14);
+  $core.bool hasRestoredScriptName() => $_has(15);
   @$pb.TagNumber(23)
   void clearRestoredScriptName() => $_clearField(23);
 
@@ -5873,11 +6048,11 @@ class ChildEvent extends $pb.GeneratedMessage {
   /// Lets the parent backstop `max_feed_duration_micros` without tracking feed
   /// boundaries against a clock it cannot see. Zero outside a session.
   @$pb.TagNumber(24)
-  $fixnum.Int64 get feedExecutionMicros => $_getI64(15);
+  $fixnum.Int64 get feedExecutionMicros => $_getI64(16);
   @$pb.TagNumber(24)
-  set feedExecutionMicros($fixnum.Int64 value) => $_setInt64(15, value);
+  set feedExecutionMicros($fixnum.Int64 value) => $_setInt64(16, value);
   @$pb.TagNumber(24)
-  $core.bool hasFeedExecutionMicros() => $_has(15);
+  $core.bool hasFeedExecutionMicros() => $_has(16);
   @$pb.TagNumber(24)
   void clearFeedExecutionMicros() => $_clearField(24);
 
@@ -5886,30 +6061,30 @@ class ChildEvent extends $pb.GeneratedMessage {
   /// session via `Load` (where the limits travel inside the opaque state
   /// bytes) still learns its budgets.
   @$pb.TagNumber(25)
-  $fixnum.Int64 get maxFeedDurationMicros => $_getI64(16);
+  $fixnum.Int64 get maxFeedDurationMicros => $_getI64(17);
   @$pb.TagNumber(25)
-  set maxFeedDurationMicros($fixnum.Int64 value) => $_setInt64(16, value);
+  set maxFeedDurationMicros($fixnum.Int64 value) => $_setInt64(17, value);
   @$pb.TagNumber(25)
-  $core.bool hasMaxFeedDurationMicros() => $_has(16);
+  $core.bool hasMaxFeedDurationMicros() => $_has(17);
   @$pb.TagNumber(25)
   void clearMaxFeedDurationMicros() => $_clearField(25);
 
   @$pb.TagNumber(26)
-  $fixnum.Int64 get maxTurnDurationMicros => $_getI64(17);
+  $fixnum.Int64 get maxTurnDurationMicros => $_getI64(18);
   @$pb.TagNumber(26)
-  set maxTurnDurationMicros($fixnum.Int64 value) => $_setInt64(17, value);
+  set maxTurnDurationMicros($fixnum.Int64 value) => $_setInt64(18, value);
   @$pb.TagNumber(26)
-  $core.bool hasMaxTurnDurationMicros() => $_has(17);
+  $core.bool hasMaxTurnDurationMicros() => $_has(18);
   @$pb.TagNumber(26)
   void clearMaxTurnDurationMicros() => $_clearField(26);
 
   /// Parent-enforced sleep budget, also reported on `Load`.
   @$pb.TagNumber(27)
-  $fixnum.Int64 get maxTotalSleepMicros => $_getI64(18);
+  $fixnum.Int64 get maxTotalSleepMicros => $_getI64(19);
   @$pb.TagNumber(27)
-  set maxTotalSleepMicros($fixnum.Int64 value) => $_setInt64(18, value);
+  set maxTotalSleepMicros($fixnum.Int64 value) => $_setInt64(19, value);
   @$pb.TagNumber(27)
-  $core.bool hasMaxTotalSleepMicros() => $_has(18);
+  $core.bool hasMaxTotalSleepMicros() => $_has(19);
   @$pb.TagNumber(27)
   void clearMaxTotalSleepMicros() => $_clearField(27);
 
@@ -5918,13 +6093,35 @@ class ChildEvent extends $pb.GeneratedMessage {
   /// reply's kind. Unset for ephemeral sessions or for remotes that don't
   /// support persistence.
   @$pb.TagNumber(28)
-  $core.List<$core.int> get sessionId => $_getN(19);
+  $core.List<$core.int> get sessionId => $_getN(20);
   @$pb.TagNumber(28)
-  set sessionId($core.List<$core.int> value) => $_setBytes(19, value);
+  set sessionId($core.List<$core.int> value) => $_setBytes(20, value);
   @$pb.TagNumber(28)
-  $core.bool hasSessionId() => $_has(19);
+  $core.bool hasSessionId() => $_has(20);
   @$pb.TagNumber(28)
   void clearSessionId() => $_clearField(28);
+
+  /// On Error or TypingError, whether the feed still awaits a host answer.
+  /// Absent for older workers or errors generated outside the session state
+  /// machine. Parents must preserve an outstanding suspension when unknown.
+  @$pb.TagNumber(29)
+  $core.bool get feedSuspended => $_getBF(21);
+  @$pb.TagNumber(29)
+  set feedSuspended($core.bool value) => $_setBool(21, value);
+  @$pb.TagNumber(29)
+  $core.bool hasFeedSuspended() => $_has(21);
+  @$pb.TagNumber(29)
+  void clearFeedSuspended() => $_clearField(29);
+
+  /// Configure acknowledgment. Local CPU-mode parents require this before execution.
+  @$pb.TagNumber(30)
+  ExecutionClock get executionClock => $_getN(22);
+  @$pb.TagNumber(30)
+  set executionClock(ExecutionClock value) => $_setField(30, value);
+  @$pb.TagNumber(30)
+  $core.bool hasExecutionClock() => $_has(22);
+  @$pb.TagNumber(30)
+  void clearExecutionClock() => $_clearField(30);
 }
 
 /// One run of print() output on a single stream, as one `Print` event may
@@ -7062,13 +7259,15 @@ class OsCall_Scan extends $pb.GeneratedMessage {
   void clearRecurseSymlinks() => $_clearField(6);
 }
 
-/// The argument of `OsCall.import`.
+/// The arguments of `OsCall.import`.
 class OsCall_Import extends $pb.GeneratedMessage {
   factory OsCall_Import({
     $core.String? module,
+    $core.Iterable<$core.String>? searchPath,
   }) {
     final result = OsCall_Import._();
     if (module != null) result.module = module;
+    if (searchPath != null) result.searchPath.addAll(searchPath);
     return result;
   }
 
@@ -7086,6 +7285,7 @@ class OsCall_Import extends $pb.GeneratedMessage {
       package: const $pb.PackageName(_omitMessageNames ? '' : 'monty.v1'),
       createEmptyInstance: OsCall_Import.$_createMessage)
     ..aOS(1, _omitFieldNames ? '' : 'module')
+    ..pPS(2, _omitFieldNames ? '' : 'searchPath')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -7110,6 +7310,7 @@ class OsCall_Import extends $pb.GeneratedMessage {
           OsCall_Import.$_createMessage);
   static OsCall_Import? _defaultInstance;
 
+  /// The dotted module name.
   @$pb.TagNumber(1)
   $core.String get module => $_getSZ(0);
   @$pb.TagNumber(1)
@@ -7118,6 +7319,10 @@ class OsCall_Import extends $pb.GeneratedMessage {
   $core.bool hasModule() => $_has(0);
   @$pb.TagNumber(1)
   void clearModule() => $_clearField(1);
+
+  /// Absolute virtual directories to search, in order, for the module's `.py` file.
+  @$pb.TagNumber(2)
+  $pb.PbList<$core.String> get searchPath => $_getList(1);
 }
 
 /// The argument of `OsCall.import_stubs`, in source order.
@@ -7172,6 +7377,99 @@ class OsCall_ImportStubs extends $pb.GeneratedMessage {
   $pb.PbList<$core.String> get modules => $_getList(0);
 }
 
+enum OsCall_GetTypeHints_Target { function, classId, notSet }
+
+/// The host object `OsCall.get_type_hints` asks about.
+class OsCall_GetTypeHints extends $pb.GeneratedMessage {
+  factory OsCall_GetTypeHints({
+    $core.String? function,
+    Uuid? classId,
+  }) {
+    final result = OsCall_GetTypeHints._();
+    if (function != null) result.function = function;
+    if (classId != null) result.classId = classId;
+    return result;
+  }
+
+  OsCall_GetTypeHints._();
+
+  factory OsCall_GetTypeHints.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      OsCall_GetTypeHints()..mergeFromBuffer(data, registry);
+  factory OsCall_GetTypeHints.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      OsCall_GetTypeHints()..mergeFromJson(json, registry);
+
+  static const $core.Map<$core.int, OsCall_GetTypeHints_Target>
+      _OsCall_GetTypeHints_TargetByTag = {
+    1: OsCall_GetTypeHints_Target.function,
+    2: OsCall_GetTypeHints_Target.classId,
+    0: OsCall_GetTypeHints_Target.notSet
+  };
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'OsCall.GetTypeHints',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'monty.v1'),
+      createEmptyInstance: OsCall_GetTypeHints.$_createMessage)
+    ..oo(0, [1, 2])
+    ..aOS(1, _omitFieldNames ? '' : 'function')
+    ..aOM<Uuid>(2, _omitFieldNames ? '' : 'classId',
+        subBuilder: Uuid.$_createMessage)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  OsCall_GetTypeHints clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  OsCall_GetTypeHints copyWith(void Function(OsCall_GetTypeHints) updates) =>
+      super.copyWith((message) => updates(message as OsCall_GetTypeHints))
+          as OsCall_GetTypeHints;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  @$core
+      .Deprecated('Use OsCall_GetTypeHints() / OsCall_GetTypeHints.new instead')
+  static OsCall_GetTypeHints create() => OsCall_GetTypeHints._();
+  static $pb.GeneratedMessage $_createMessage() => OsCall_GetTypeHints._();
+  @$core.override
+  OsCall_GetTypeHints createEmptyInstance() => OsCall_GetTypeHints._();
+  @$core.pragma('dart2js:noInline')
+  static OsCall_GetTypeHints getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<OsCall_GetTypeHints>(
+          OsCall_GetTypeHints.$_createMessage);
+  static OsCall_GetTypeHints? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  @$pb.TagNumber(2)
+  OsCall_GetTypeHints_Target whichTarget() =>
+      _OsCall_GetTypeHints_TargetByTag[$_whichOneof(0)]!;
+  @$pb.TagNumber(1)
+  @$pb.TagNumber(2)
+  void clearTarget() => $_clearField($_whichOneof(0));
+
+  /// A host function, by the name the sandbox calls it with.
+  @$pb.TagNumber(1)
+  $core.String get function => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set function($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasFunction() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearFunction() => $_clearField(1);
+
+  /// A host class, by the id of the `ClassType` it crossed as.
+  @$pb.TagNumber(2)
+  Uuid get classId => $_getN(1);
+  @$pb.TagNumber(2)
+  set classId(Uuid value) => $_setField(2, value);
+  @$pb.TagNumber(2)
+  $core.bool hasClassId() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearClassId() => $_clearField(2);
+  @$pb.TagNumber(2)
+  Uuid ensureClassId() => $_ensure(1);
+}
+
 enum OsCall_Call {
   exists,
   isFile,
@@ -7205,6 +7503,7 @@ enum OsCall_Call {
   import,
   importStubs,
   scan,
+  getTypeHints,
   notSet
 }
 
@@ -7257,6 +7556,7 @@ class OsCall extends $pb.GeneratedMessage {
     OsCall_Import? import,
     OsCall_ImportStubs? importStubs,
     OsCall_Scan? scan,
+    OsCall_GetTypeHints? getTypeHints,
     Arena? values,
     $core.bool? allowEagerAwait,
     SourceRange? position,
@@ -7295,6 +7595,7 @@ class OsCall extends $pb.GeneratedMessage {
     if (import != null) result.import = import;
     if (importStubs != null) result.importStubs = importStubs;
     if (scan != null) result.scan = scan;
+    if (getTypeHints != null) result.getTypeHints = getTypeHints;
     if (values != null) result.values = values;
     if (allowEagerAwait != null) result.allowEagerAwait = allowEagerAwait;
     if (position != null) result.position = position;
@@ -7343,6 +7644,7 @@ class OsCall extends $pb.GeneratedMessage {
     31: OsCall_Call.import,
     32: OsCall_Call.importStubs,
     33: OsCall_Call.scan,
+    34: OsCall_Call.getTypeHints,
     0: OsCall_Call.notSet
   };
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(
@@ -7381,7 +7683,8 @@ class OsCall extends $pb.GeneratedMessage {
       30,
       31,
       32,
-      33
+      33,
+      34
     ])
     ..aI(1, _omitFieldNames ? '' : 'callId', fieldType: $pb.PbFieldType.OU3)
     ..aOS(2, _omitFieldNames ? '' : 'exists')
@@ -7436,6 +7739,8 @@ class OsCall extends $pb.GeneratedMessage {
         subBuilder: OsCall_ImportStubs.$_createMessage)
     ..aOM<OsCall_Scan>(33, _omitFieldNames ? '' : 'scan',
         subBuilder: OsCall_Scan.$_createMessage)
+    ..aOM<OsCall_GetTypeHints>(34, _omitFieldNames ? '' : 'getTypeHints',
+        subBuilder: OsCall_GetTypeHints.$_createMessage)
     ..aOM<Arena>(50, _omitFieldNames ? '' : 'values',
         subBuilder: Arena.$_createMessage)
     ..aOB(51, _omitFieldNames ? '' : 'allowEagerAwait')
@@ -7495,6 +7800,7 @@ class OsCall extends $pb.GeneratedMessage {
   @$pb.TagNumber(31)
   @$pb.TagNumber(32)
   @$pb.TagNumber(33)
+  @$pb.TagNumber(34)
   OsCall_Call whichCall() => _OsCall_CallByTag[$_whichOneof(0)]!;
   @$pb.TagNumber(2)
   @$pb.TagNumber(3)
@@ -7528,6 +7834,7 @@ class OsCall extends $pb.GeneratedMessage {
   @$pb.TagNumber(31)
   @$pb.TagNumber(32)
   @$pb.TagNumber(33)
+  @$pb.TagNumber(34)
   void clearCall() => $_clearField($_whichOneof(0));
 
   @$pb.TagNumber(1)
@@ -7882,41 +8189,54 @@ class OsCall extends $pb.GeneratedMessage {
   @$pb.TagNumber(33)
   OsCall_Scan ensureScan() => $_ensure(32);
 
+  /// typing.get_type_hints() of a host function or class. Answer with a dict
+  /// of hints, which the call returns as is; `not_handled` means `{}`.
+  @$pb.TagNumber(34)
+  OsCall_GetTypeHints get getTypeHints => $_getN(33);
+  @$pb.TagNumber(34)
+  set getTypeHints(OsCall_GetTypeHints value) => $_setField(34, value);
+  @$pb.TagNumber(34)
+  $core.bool hasGetTypeHints() => $_has(33);
+  @$pb.TagNumber(34)
+  void clearGetTypeHints() => $_clearField(34);
+  @$pb.TagNumber(34)
+  OsCall_GetTypeHints ensureGetTypeHints() => $_ensure(33);
+
   /// The arena any value-typed argument (`Getenv.default`) indexes.
   @$pb.TagNumber(50)
-  Arena get values => $_getN(33);
+  Arena get values => $_getN(34);
   @$pb.TagNumber(50)
   set values(Arena value) => $_setField(50, value);
   @$pb.TagNumber(50)
-  $core.bool hasValues() => $_has(33);
+  $core.bool hasValues() => $_has(34);
   @$pb.TagNumber(50)
   void clearValues() => $_clearField(50);
   @$pb.TagNumber(50)
-  Arena ensureValues() => $_ensure(33);
+  Arena ensureValues() => $_ensure(34);
 
   /// As on `FunctionCall`: the parent may await a coroutine and answer with
   /// `ResumeFutures` for `call_id`. Only ever set on `async_sleep`, the one
   /// call a future may answer at all.
   @$pb.TagNumber(51)
-  $core.bool get allowEagerAwait => $_getBF(34);
+  $core.bool get allowEagerAwait => $_getBF(35);
   @$pb.TagNumber(51)
-  set allowEagerAwait($core.bool value) => $_setBool(34, value);
+  set allowEagerAwait($core.bool value) => $_setBool(35, value);
   @$pb.TagNumber(51)
-  $core.bool hasAllowEagerAwait() => $_has(34);
+  $core.bool hasAllowEagerAwait() => $_has(35);
   @$pb.TagNumber(51)
   void clearAllowEagerAwait() => $_clearField(51);
 
   /// Where the call expression is in the source; absent as on `FunctionCall`.
   @$pb.TagNumber(52)
-  SourceRange get position => $_getN(35);
+  SourceRange get position => $_getN(36);
   @$pb.TagNumber(52)
   set position(SourceRange value) => $_setField(52, value);
   @$pb.TagNumber(52)
-  $core.bool hasPosition() => $_has(35);
+  $core.bool hasPosition() => $_has(36);
   @$pb.TagNumber(52)
   void clearPosition() => $_clearField(52);
   @$pb.TagNumber(52)
-  SourceRange ensurePosition() => $_ensure(35);
+  SourceRange ensurePosition() => $_ensure(36);
 }
 
 /// Suspension: the sandbox read an undefined name — typically probing whether
@@ -8438,10 +8758,9 @@ class FatalError extends $pb.GeneratedMessage {
 /// and did NOT run the request it is replying to. Sent only in reply to an
 /// in-flight request, so the client is always reading when it arrives.
 ///
-/// Every other server policy action (idle/session/turn timeout, capacity) is
-/// just a dropped connection, which the client already classifies as a dead
-/// worker — only shutdown needs a message, because only shutdown has state to
-/// hand back.
+/// Every other server policy action (idle/session/turn timeout, capacity,
+/// memory) ends the stream with a gRPC status instead — only shutdown needs a
+/// message, because only shutdown has state to hand back.
 class ShutdownDump extends $pb.GeneratedMessage {
   factory ShutdownDump({
     $core.List<$core.int>? dump,
@@ -8502,6 +8821,110 @@ class ShutdownDump extends $pb.GeneratedMessage {
   $core.bool hasDump() => $_has(0);
   @$pb.TagNumber(1)
   void clearDump() => $_clearField(1);
+}
+
+/// Liveness probe from a serving relay, never a turn end. A parent answers
+/// each one with `Pong` without otherwise acting on it; a relay that hears
+/// nothing back for a further interval treats the parent as gone. A parent
+/// reads the stream in order, so the answer follows the events before the
+/// ping, which a slow host callback may hold: a relay sends it between turns.
+/// In-band because HTTP/2 PING frames stop at the nearest proxy, while the
+/// parent a relay wants to hear from sits beyond it. A child never sends one.
+class Ping extends $pb.GeneratedMessage {
+  factory Ping() => Ping._();
+
+  Ping._();
+
+  factory Ping.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      Ping()..mergeFromBuffer(data, registry);
+  factory Ping.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      Ping()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'Ping',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'monty.v1'),
+      createEmptyInstance: Ping.$_createMessage)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  Ping clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  Ping copyWith(void Function(Ping) updates) =>
+      super.copyWith((message) => updates(message as Ping)) as Ping;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  @$core.Deprecated('Use Ping() / Ping.new instead')
+  static Ping create() => Ping._();
+  static $pb.GeneratedMessage $_createMessage() => Ping._();
+  @$core.override
+  Ping createEmptyInstance() => Ping._();
+  @$core.pragma('dart2js:noInline')
+  static Ping getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<Ping>(Ping.$_createMessage);
+  static Ping? _defaultInstance;
+}
+
+/// The parent's answer to `Ping`. Not a request: it opens no turn, and a child
+/// or relay that receives one between turns simply notes the parent is alive.
+class Pong extends $pb.GeneratedMessage {
+  factory Pong() => Pong._();
+
+  Pong._();
+
+  factory Pong.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      Pong()..mergeFromBuffer(data, registry);
+  factory Pong.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      Pong()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'Pong',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'monty.v1'),
+      createEmptyInstance: Pong.$_createMessage)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  Pong clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  Pong copyWith(void Function(Pong) updates) =>
+      super.copyWith((message) => updates(message as Pong)) as Pong;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  @$core.Deprecated('Use Pong() / Pong.new instead')
+  static Pong create() => Pong._();
+  static $pb.GeneratedMessage $_createMessage() => Pong._();
+  @$core.override
+  Pong createEmptyInstance() => Pong._();
+  @$core.pragma('dart2js:noInline')
+  static Pong getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<Pong>(Pong.$_createMessage);
+  static Pong? _defaultInstance;
+}
+
+/// One REPL session per stream over a shared HTTP/2 connection. The server
+/// sends its response headers as soon as it admits the stream — a client sends
+/// nothing, not even `Configure`, until it sees them — or refuses it with a
+/// trailers-only status. Once admitted, the alternation above follows. Closing
+/// the request side or cancelling the stream ends the session; the server ends
+/// it by policy with a status carrying a `monty-cause` trailer.
+class MontySessionApi {
+  final $pb.RpcClient _client;
+
+  MontySessionApi(this._client);
+
+  $async.Future<ChildEvent> session(
+          $pb.ClientContext? ctx, ParentRequest request) =>
+      _client.invoke<ChildEvent>(
+          ctx, 'MontySession', 'Session', request, ChildEvent());
 }
 
 const $core.bool _omitFieldNames =

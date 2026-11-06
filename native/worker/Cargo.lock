@@ -329,6 +329,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
+name = "cfg_aliases"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f079e83a288787bcd14a6aea84cee5c87a67c5a3e660c30f557a3d24761b3527"
+
+[[package]]
 name = "chacha20"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -512,7 +518,7 @@ dependencies = [
 
 [[package]]
 name = "dart_monty_worker"
-version = "0.130.0-dev.1"
+version = "0.150.0-dev.1"
 dependencies = [
  "monty-alloc",
  "monty-fs",
@@ -663,14 +669,20 @@ dependencies = [
 
 [[package]]
 name = "fancy-regex"
-version = "0.17.0"
+version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72cf461f865c862bb7dc573f643dd6a2b6842f7c30b07882b56bd148cc2761b8"
+checksum = "20ed7f62ce0ae0da1a8b93c3c7104ab7e0760a74491e097c701fff966e945390"
 dependencies = [
  "bit-set",
  "regex-automata",
  "regex-syntax",
 ]
+
+[[package]]
+name = "fastrand"
+version = "2.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
 
 [[package]]
 name = "filetime"
@@ -1312,9 +1324,9 @@ dependencies = [
 
 [[package]]
 name = "monty"
-version = "1.3.0"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d0f5559d7a445c22ed296fe8252aa067c80b7eb2bc70aeae341cf9967e58012"
+checksum = "cd3e3404a0a11ea8669e30dab21b27462554536b29500b75824582ce850ebbbe"
 dependencies = [
  "ahash",
  "chrono",
@@ -1354,18 +1366,18 @@ dependencies = [
 
 [[package]]
 name = "monty-alloc"
-version = "1.3.0"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c3f9d819abd1c64c36dbfb05518a8d1ba28c55f38eb802a9c0c58818dee3f6d4"
+checksum = "d4dfa747a27361e1b859df9aeecd301eb84d0faf948c4a600d19b86504605984"
 dependencies = [
  "monty-types",
 ]
 
 [[package]]
 name = "monty-fs"
-version = "1.3.0"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "689d6fb1ad3fb85197f2467d18bbaf2c57b1942a23b2927cd6ea8bb4ef094df6"
+checksum = "a4957c3d3197ff155ec2da9aa181878ecc28174eb8d912c9395961a422387929"
 dependencies = [
  "ahash",
  "cap-std",
@@ -1375,9 +1387,9 @@ dependencies = [
 
 [[package]]
 name = "monty-macros"
-version = "1.3.0"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dbd7672e36311f10645e3a9e6776b643711543ec3fb415546ffde751e6d53003"
+checksum = "42f92efd684a093a15b538139f8cc82a7c9c7c58fc2aa4733ecf32fd979e44ab"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1386,9 +1398,9 @@ dependencies = [
 
 [[package]]
 name = "monty-proto"
-version = "1.3.0"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69d3a77130a14d321832f4ab32e629b9ad790f0590224dca5536ef4dbf69b4b5"
+checksum = "2872d390d01ccaeacc99a72f8edac02fc06696bbc5ac9cced642c9d4e68922c6"
 dependencies = [
  "monty",
  "monty-type-checking",
@@ -1399,9 +1411,9 @@ dependencies = [
 
 [[package]]
 name = "monty-type-checking"
-version = "1.3.0"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ffdc38ffb186b0158826166fff9e473331b39860a428ecdbb195e21792052e04"
+checksum = "e9df7b59d421dc82929f7be2e042aeef87fc1ae023016520df61c677abf689a5"
 dependencies = [
  "monty-types",
  "monty-typeshed",
@@ -1418,13 +1430,14 @@ dependencies = [
 
 [[package]]
 name = "monty-types"
-version = "1.3.0"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "786b179998d4799dc96a5c25e91e3774a1fa8dd6cca441ddeedc9c146fd9a8cd"
+checksum = "7a6d36dbb6f4f754e5f12ad3040e5c1d0455aee431f46cd48d36cf309e58691a"
 dependencies = [
  "chrono",
  "jiff",
  "monty-macros",
+ "nix",
  "num-bigint",
  "num-traits",
  "ruff_python_stdlib",
@@ -1437,14 +1450,26 @@ dependencies = [
 
 [[package]]
 name = "monty-typeshed"
-version = "1.3.0"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8c66fa1f3446c114d9a607f3f4ef033d6c6e7c3b1402ef47510b3ea1e1077887"
+checksum = "9c711779fe23dd21f8788e471dc65fbce387c65bc748111b1bf29d89715fad42"
 dependencies = [
  "path-slash",
  "ruff_db",
  "walkdir",
  "zip 0.6.6",
+]
+
+[[package]]
+name = "nix"
+version = "0.31.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf20d2fde8ff38632c426f1165ed7436270b44f199fc55284c38276f9db47c3d"
+dependencies = [
+ "bitflags 2.13.2",
+ "cfg-if",
+ "cfg_aliases",
+ "libc",
 ]
 
 [[package]]
@@ -1570,7 +1595,18 @@ version = "0.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fd6780a80ae0c52cc120a26a1a42c1ae51b247a253e4e06113d23d2c2edd078"
 dependencies = [
- "phf_shared",
+ "phf_shared 0.11.3",
+]
+
+[[package]]
+name = "phf"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "913273894cec178f401a31ec4b656318d95473527be05c0752cc41cdc32be8b7"
+dependencies = [
+ "phf_macros",
+ "phf_shared 0.12.1",
+ "serde",
 ]
 
 [[package]]
@@ -1579,8 +1615,8 @@ version = "0.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aef8048c789fa5e851558d709946d6d79a8ff88c0440c587967f8e94bfb1216a"
 dependencies = [
- "phf_generator",
- "phf_shared",
+ "phf_generator 0.11.3",
+ "phf_shared 0.11.3",
 ]
 
 [[package]]
@@ -1589,8 +1625,31 @@ version = "0.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3c80231409c20246a13fddb31776fb942c38553c51e871f8cbd687a4cfb5843d"
 dependencies = [
- "phf_shared",
+ "phf_shared 0.11.3",
  "rand 0.8.8",
+]
+
+[[package]]
+name = "phf_generator"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2cbb1126afed61dd6368748dae63b1ee7dc480191c6262a3b4ff1e29d86a6c5b"
+dependencies = [
+ "fastrand",
+ "phf_shared 0.12.1",
+]
+
+[[package]]
+name = "phf_macros"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d713258393a82f091ead52047ca779d37e5766226d009de21696c4e667044368"
+dependencies = [
+ "phf_generator 0.12.1",
+ "phf_shared 0.12.1",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -1598,6 +1657,15 @@ name = "phf_shared"
 version = "0.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67eabc2ef2a60eb7faa00097bd1ffdb5bd28e62bf39990626a582201b7a754e5"
+dependencies = [
+ "siphasher",
+]
+
+[[package]]
+name = "phf_shared"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "06005508882fb681fd97892ecff4b7fd0fee13ef1aa569f8695dae7ab9099981"
 dependencies = [
  "siphasher",
 ]
@@ -2515,6 +2583,7 @@ version = "0.27.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af23d6f6c1a224baef9d3f61e287d2761385a5b88fdab4eb4c6f11aeb54c4bcf"
 dependencies = [
+ "phf 0.12.1",
  "strum_macros 0.27.2",
 ]
 
@@ -2955,7 +3024,7 @@ version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d1673eca9782c84de5f81b82e4109dcfb3611c8ba0d52930ec4a9478f547b2dd"
 dependencies = [
- "phf",
+ "phf 0.11.3",
  "unicode_names2_generator",
 ]
 
