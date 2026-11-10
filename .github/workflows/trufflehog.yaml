@@ -92,7 +92,7 @@ jobs:
         # every run executes whatever is on that branch at that moment, with
         # repo read access -- the supply-chain shape this scanner exists to
         # find.
-        uses: trufflesecurity/trufflehog@31ce31ee1abbcc7dc8eee5764c17121c3044c8b2 # v3.99.7
+        uses: trufflesecurity/trufflehog@ea68ca03c865c5f324e86e849ced20ed3cf9dbbb # v3.99.8
         with:
           base: ${{ steps.range.outputs.base }}
           head: ${{ steps.range.outputs.head }}
