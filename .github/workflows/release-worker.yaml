@@ -71,6 +71,7 @@ jobs:
           name: worker-${{ matrix.target }}
           path: dist
           if-no-files-found: error
+          retention-days: 3
 
   assemble:
     name: Assemble release assets
@@ -133,6 +134,7 @@ jobs:
             dist/*.gz
             dist/worker-manifest.json
           if-no-files-found: error
+          retention-days: 3
 
   publish:
     name: Create draft release

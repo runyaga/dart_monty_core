@@ -56,3 +56,4 @@ jobs:
           name: flutter-macos-probe-log
           path: flutter-macos-probe.log
           if-no-files-found: warn
+          retention-days: 7
