@@ -1030,7 +1030,7 @@ jobs:
       # Advisories, licences and sources over the worker's dependency graph
       # (native/worker/deny.toml).
       - name: Install cargo-deny
-        uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+        uses: taiki-e/install-action@25f51f6b1bf4e18876107cece836f4f77ac17c8c # v2.90.7
         with:
           tool: cargo-deny
       - name: cargo deny check
