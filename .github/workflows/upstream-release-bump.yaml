@@ -194,6 +194,7 @@ jobs:
           name: upstream-bump
           path: ${{ runner.temp }}/bump
           if-no-files-found: error
+          retention-days: 3
 
   publish:
     needs: prepare

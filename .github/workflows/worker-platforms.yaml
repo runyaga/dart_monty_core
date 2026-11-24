@@ -63,3 +63,4 @@ jobs:
           name: native-probe-${{ matrix.key }}
           path: native-probe-${{ matrix.key }}.log
           if-no-files-found: error
+          retention-days: 7
