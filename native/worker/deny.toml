@@ -25,6 +25,18 @@ ignore = [
     # drops zstd 0.11.
     "RUSTSEC-2026-0403",
     "RUSTSEC-2026-0410",
+    # More zip advisories against the same upstream typeshed zips: extract-time
+    # symlink and path handling, AES authentication, legacy decoders and stream
+    # names. The worker never extracts to disk, decrypts or streams an archive.
+    # These entries are removed with the RUSTSEC-2026-0367 group above.
+    "RUSTSEC-2026-0429",
+    "RUSTSEC-2026-0545",
+    "RUSTSEC-2026-0546",
+    "RUSTSEC-2026-0547",
+    "RUSTSEC-2026-0548",
+    # chrono is unmaintained. monty's crates depend on it, and the worker takes
+    # it through them. Removed when upstream moves off chrono.
+    "RUSTSEC-2026-0543",
 ]
 
 [licenses]
