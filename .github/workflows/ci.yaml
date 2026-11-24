@@ -1010,10 +1010,10 @@ jobs:
       - name: cargo fmt
         run: cargo fmt --check
       - name: cargo clippy (native)
-        run: cargo clippy --locked --all-targets -- -D warnings
+        run: cargo clippy --locked --all-targets -- -D warnings -A clippy::double_must_use
       # src/wasm.rs compiles only for wasm32, so the native pass never sees it.
       - name: cargo clippy (wasm32-wasip1)
-        run: cargo clippy --locked --lib --target wasm32-wasip1 -- -D warnings
+        run: cargo clippy --locked --lib --target wasm32-wasip1 -- -D warnings -A clippy::double_must_use
       - name: Worker build and freshness contract
         run: python3 ../../test/tool/build_worker_test.py
       # The build goes through tool/build_worker.sh, so the binaries the

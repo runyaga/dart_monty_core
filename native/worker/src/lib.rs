@@ -29,7 +29,7 @@ pub mod wasm;
 /// 3 when stdout is gone, 4 on a fatal error, 76 on a framing error, 101 on a
 /// panic, and 65 when the allocator's hard limit is breached.
 #[cfg(not(target_arch = "wasm32"))]
-#[must_use = "the exit code is the worker's status for its host"]
+#[must_use]
 pub fn run_stdio() -> ExitCode {
     subprocess::run()
 }
